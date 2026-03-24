@@ -4819,12 +4819,35 @@ function exportCurrentStoreExcel() {
     showToast('❌ ExcelJS 로딩 중... 잠시 후 다시 시도하세요');
     return;
   }
-  const storeName = storeNames[currentStore] || currentStore;
+
+  // Firebase 지점 포함 전체 데이터 소스
+  var allNames = window.storeNames || storeNames;
+  var allSnaps = window.storeZonesSnapshot || storeZonesSnapshot;
+  var allOvrs  = window.storeUserOverrides || storeUserOverrides;
+  var cs = currentStore;
+
+  const storeName = allNames[cs] || cs;
+
+  // 현재 지점 zones: 전역 zones 배열 (switchStore로 이미 로드됨)
+  var exportZones = zones;
+  if (!exportZones || exportZones.length === 0) {
+    var snap = allSnaps[cs];
+    if (snap && snap.length > 0) exportZones = snap;
+  }
+
+  if (!exportZones || exportZones.length === 0) {
+    showToast('⚠️ ' + storeName + ' 도면 데이터가 없습니다. 지점을 선택 후 다시 시도하세요.');
+    return;
+  }
+
+  // 현재 지점 overrides
+  var exportOverrides = userOverrides;
+
   const now = new Date();
   const ymd = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
   const wk = WEEKS[curWkIdx];
   const wkLabel = wk ? wk.id : '';
-  const currentOverrides = userOverrides[wkLabel] || {};
+  const currentOverrides = exportOverrides[wkLabel] || {};
 
   showToast('📊 도면 엑셀 생성 중...');
 
@@ -4846,7 +4869,7 @@ function exportCurrentStoreExcel() {
 
   const scale = 2;
   let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
-  zones.forEach(z => {
+  exportZones.forEach(z => {
     const c = Math.round(z.col * scale), r = Math.round(z.row * scale);
     const c2 = Math.round((z.col + (z.cols||1)) * scale);
     const r2 = Math.round((z.row + (z.rows||1)) * scale);
@@ -4879,7 +4902,7 @@ function exportCurrentStoreExcel() {
   }
 
   // 구역 렌더링
-  zones.forEach(z => {
+  exportZones.forEach(z => {
     const ov = currentOverrides[z.id] || {};
     const label = (ov.prod || z.prod || '').trim();
     const c0 = Math.round(z.col * scale) - minC;
@@ -4922,11 +4945,11 @@ function exportCurrentStoreExcel() {
   // 주차별 배치 시트
   const ws2 = wb.addWorksheet('주차별배치');
   ws2.addRow(['주차', '구역ID', '구역명', '배치상품', '상태', '비고']);
-  Object.keys(userOverrides).sort().forEach(wkId => {
-    const wkOv = userOverrides[wkId];
+  Object.keys(exportOverrides).sort().forEach(wkId => {
+    const wkOv = exportOverrides[wkId];
     Object.keys(wkOv).forEach(zoneId => {
       const ov = wkOv[zoneId];
-      const z = zones.find(z => z.id === zoneId) || {};
+      const z = exportZones.find(z => z.id === zoneId) || {};
       ws2.addRow([wkId, zoneId, z.name || zoneId, ov.prod || '', ov.status || '', ov.note || '']);
     });
   });
