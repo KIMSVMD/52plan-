@@ -4593,6 +4593,12 @@ window.storeNames = storeNames;
 window.storeUserOverrides = storeUserOverrides;
 window.storeZonesSnapshot = storeZonesSnapshot;
 window.updateSaveDropdown = function() { if (typeof updateSaveDropdown === 'function') updateSaveDropdown(); };
+// currentStore는 let이라 window에 자동 노출 안 됨 → 명시적으로 연결
+Object.defineProperty(window, 'currentStore', {
+  get: function() { return currentStore; },
+  set: function(v) { currentStore = v; },
+  configurable: true
+});
 
 // ═══════════════════════════════════════════════════════
 //  엑셀 도면 업로드 기능
@@ -4726,49 +4732,65 @@ function parseExcelToZones(workbook, sheetName) {
 // 지점 추가 모달
 // ── 지점명 수정 ──
 function openRenameStoreModal() {
-  const name = storeNames[currentStore] || currentStore;
+  const sel = document.getElementById('storeSelect');
+  const code = (sel && sel.value) || currentStore;
+  const name = storeNames[code] || code;
   document.getElementById('renameStoreCurrentName').textContent = name;
   document.getElementById('renameStoreInput').value = name;
-  document.getElementById('renameStoreModal').style.display = 'flex';
+  document.getElementById('renameStoreModal').setAttribute('data-code', code);
+  document.getElementById('renameStoreModal').classList.add('open');
   setTimeout(() => document.getElementById('renameStoreInput').select(), 100);
 }
 function closeRenameStoreModal() {
-  document.getElementById('renameStoreModal').style.display = 'none';
+  document.getElementById('renameStoreModal').classList.remove('open');
 }
 async function doRenameStore() {
   const newName = document.getElementById('renameStoreInput').value.trim();
   if (!newName) { showToast('❌ 지점명을 입력하세요'); return; }
-  const code = window.currentStore || currentStore;
 
-  // 메모리 업데이트 (window 기준으로)
-  if (window.storeNames) window.storeNames[code] = newName;
+  // 모달에 저장된 code 사용 (가장 확실한 방법)
+  const modal = document.getElementById('renameStoreModal');
+  const sel = document.getElementById('storeSelect');
+  const code = modal.getAttribute('data-code')
+    || (sel && sel.value)
+    || currentStore
+    || 'gs';
+
+  if (!code) { showToast('❌ 지점 코드를 확인할 수 없습니다'); return; }
+
+  // 메모리 즉시 업데이트
   storeNames[code] = newName;
-  if (window.storeMap && window.storeMap[code]) window.storeMap[code].name = newName;
   if (storeMap[code]) storeMap[code].name = newName;
+  if (window.storeNames) window.storeNames[code] = newName;
+  if (window.storeMap && window.storeMap[code]) window.storeMap[code].name = newName;
 
-  // 드롭다운 옵션 즉시 업데이트
-  const select = document.getElementById('storeSelect');
-  if (select) {
-    const opt = select.querySelector('option[value="' + code + '"]');
+  // 드롭다운 즉시 반영
+  if (sel) {
+    const opt = sel.querySelector('option[value="' + code + '"]');
     if (opt) opt.textContent = newName;
   }
   updateSaveDropdown();
 
-  // Firebase _stores 경로 업데이트 → 다른 사용자에게도 실시간 반영
+  // 모달 먼저 닫고 토스트 표시 (Firebase 결과 기다리지 않음)
+  closeRenameStoreModal();
+  showToast('✅ "' + newName + '"으로 변경됨');
+
+  // Firebase 저장 (백그라운드)
   if (typeof window._updateStoreName === 'function') {
-    await window._updateStoreName(code, newName);
+    window._updateStoreName(code, newName);
   } else {
-    // _updateStoreName 아직 로딩 안 됐을 경우 직접 처리
-    console.warn('_updateStoreName not ready, retrying...');
-    setTimeout(() => {
+    // Firebase 모듈 로딩 완료 후 저장
+    let retry = 0;
+    const timer = setInterval(() => {
+      retry++;
       if (typeof window._updateStoreName === 'function') {
         window._updateStoreName(code, newName);
+        clearInterval(timer);
+      } else if (retry > 10) {
+        clearInterval(timer);
       }
-    }, 1000);
+    }, 500);
   }
-
-  closeRenameStoreModal();
-  showToast('✅ 지점명이 "' + newName + '"으로 변경됨');
 }
 
 // ── 엑셀 내보내기 ──
