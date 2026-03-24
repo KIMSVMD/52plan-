@@ -737,11 +737,7 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
   // ── 지점명 Firebase 업데이트 ──
   window._updateStoreName = async function(code, newName) {
     try {
-      // name 필드만 업데이트 (다른 데이터 보존)
       await set(ref(db, 'plan2026/_stores/' + code), { code: code, name: newName });
-      // storeNames window 객체도 즉시 업데이트
-      if (window.storeNames) window.storeNames[code] = newName;
-      if (window.storeMap && window.storeMap[code]) window.storeMap[code].name = newName;
       syncUI('saved', '✅ 지점명 저장됨');
     } catch(e) {
       syncUI('error', '❌ 저장 실패');
@@ -749,31 +745,7 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
     }
   };
 
-  // ── 기본 지점들 _stores 등록: Firebase에 저장된 이름 우선, 없으면 기본값 ──
-  const defaultStores = { gs:'강서점', bd:'분당점', gn:'강남점', sp:'송파점', pc:'평촌점', rdw:'구의점' };
-  get(ref(db, 'plan2026/_stores')).then(snap => {
-    const existing = snap.val() || {};
-    Object.entries(defaultStores).forEach(([code, defaultName]) => {
-      if (!existing[code]) {
-        // _stores에 없으면 기본값으로 등록
-        set(ref(db, 'plan2026/_stores/' + code), { code, name: defaultName });
-      } else {
-        // _stores에 있으면 → Firebase 저장된 이름으로 로컬 업데이트
-        const savedName = existing[code].name;
-        if (savedName) {
-          if (window.storeNames) window.storeNames[code] = savedName;
-          if (window.storeMap && window.storeMap[code]) window.storeMap[code].name = savedName;
-          storeNames[code] = savedName;
-          if (storeMap[code]) storeMap[code].name = savedName;
-          // 드롭다운도 즉시 반영
-          const opt = document.querySelector('#storeSelect option[value="' + code + '"]');
-          if (opt) opt.textContent = savedName;
-        }
-      }
-    });
-    // 저장 드롭다운 갱신
-    if (typeof window.updateSaveDropdown === 'function') window.updateSaveDropdown();
-  }).catch(() => {});
+  // ── 기본 지점 _stores 등록은 storesRef onValue에서 통합 처리 ──
 
   // ── 저장된 지점 목록 불러오기 + 지점명 실시간 동기화 ──
   const storesRef = ref(db, 'plan2026/_stores');
@@ -784,25 +756,26 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
       const info = data[code];
       if (!info) return;
 
-      // ── 이미 있는 지점: 지점명 항상 최신으로 반영 ──
+      // ── 이미 있는 지점: 지점명 Firebase 값으로 업데이트 ──
       if (window.storeMap && window.storeMap[code]) {
         const remoteName = info.name;
         if (remoteName) {
-          // 메모리 업데이트 (항상)
-          window.storeNames[code] = remoteName;
-          storeNames[code] = remoteName;
-          if (window.storeMap[code]) window.storeMap[code].name = remoteName;
-          if (storeMap[code]) storeMap[code].name = remoteName;
-          // 드롭다운 옵션 텍스트 업데이트
-          const select = document.getElementById('storeSelect');
-          if (select) {
-            const opt = select.querySelector('option[value="' + code + '"]');
-            if (opt && opt.textContent !== remoteName) opt.textContent = remoteName;
+          // 기존 이름과 다를 때만 업데이트 (불필요한 렌더링 방지)
+          const currentName = storeNames[code];
+          if (currentName !== remoteName) {
+            storeNames[code] = remoteName;
+            if (window.storeNames) window.storeNames[code] = remoteName;
+            if (storeMap[code]) storeMap[code].name = remoteName;
+            if (window.storeMap[code]) window.storeMap[code].name = remoteName;
+            // 드롭다운 이름 업데이트
+            const sel = document.getElementById('storeSelect');
+            if (sel) {
+              const opt = sel.querySelector('option[value="' + code + '"]');
+              if (opt) opt.textContent = remoteName;
+            }
+            if (typeof window.updateSaveDropdown === 'function') window.updateSaveDropdown();
+            if (window.currentStore === code && typeof renderNav === 'function') renderNav();
           }
-          // 저장 드롭다운 갱신
-          if (typeof window.updateSaveDropdown === 'function') window.updateSaveDropdown();
-          // 현재 보고 있는 지점이면 헤더도 갱신
-          if (window.currentStore === code && typeof renderNav === 'function') renderNav();
         }
         return;
       }
