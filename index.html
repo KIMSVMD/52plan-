@@ -799,6 +799,7 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
 
       // 드롭다운 옵션 추가 (지연 실행으로 DOM + 일반 스크립트 준비 보장)
       const addDropdown = () => {
+        // 1) 지점 선택 드롭다운에 옵션 추가
         const select = document.getElementById('storeSelect');
         if (select && !select.querySelector('option[value="'+code+'"]')) {
           const option = document.createElement('option');
@@ -806,11 +807,18 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
           option.textContent = info.name;
           select.appendChild(option);
         }
-        // debounce: 모든 지점 등록 완료 후 한 번만 렌더링
-        clearTimeout(window._saveDropTimer);
-        window._saveDropTimer = setTimeout(function() {
-          if (typeof window.updateSaveDropdown === 'function') window.updateSaveDropdown();
-        }, 300);
+        // 2) 개별 저장 버튼 직접 추가 (이미 있으면 스킵)
+        const container = document.getElementById('individualSaveContainer');
+        if (container && !container.querySelector('button[data-store="'+code+'"]')) {
+          const btn = document.createElement('button');
+          btn.setAttribute('data-store', code);
+          btn.style.cssText = 'width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;';
+          btn.textContent = info.name;
+          btn.onmouseover = function() { this.style.background = '#f9fafb'; };
+          btn.onmouseout  = function() { this.style.background = 'none'; };
+          btn.onclick = (function(c) { return function() { saveStore(c); closeSaveDrop(); }; })(code);
+          container.appendChild(btn);
+        }
       };
       setTimeout(addDropdown, 200);
 
@@ -985,12 +993,12 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
         </div>
         <div style="border-top:1px solid #f3f4f6;padding:6px 0;" id="individualSaveContainer">
           <div style="font-size:9px;font-weight:800;color:#9ca3af;letter-spacing:.5px;padding:4px 14px 2px;">개별 저장</div>
-          <button onclick="saveStore('gs');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">강서점</button>
-          <button onclick="saveStore('bd');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">분당점</button>
-          <button onclick="saveStore('gn');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">강남점</button>
-          <button onclick="saveStore('sp');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">송파점</button>
-          <button onclick="saveStore('pc');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">평촌점</button>
-          <button onclick="saveStore('rdw');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">구의점</button>
+          <button data-store="gs" onclick="saveStore('gs');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">강서점</button>
+          <button data-store="bd" onclick="saveStore('bd');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">분당점</button>
+          <button data-store="gn" onclick="saveStore('gn');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">강남점</button>
+          <button data-store="sp" onclick="saveStore('sp');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">송파점</button>
+          <button data-store="pc" onclick="saveStore('pc');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">평촌점</button>
+          <button data-store="rdw" onclick="saveStore('rdw');closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='none'">구의점</button>
         </div>
       </div>
     </div>
@@ -4285,12 +4293,7 @@ function downloadJSON(data, fname) {
 function toggleSaveDrop(e) {
   e.stopPropagation();
   var m = document.getElementById('saveDropMenu');
-  if (m.style.display === 'none' || m.style.display === '') {
-    m.style.display = '';
-    updateSaveDropdown(); // 열 때마다 최신 지점 목록 반영
-  } else {
-    m.style.display = 'none';
-  }
+  m.style.display = m.style.display === 'none' ? '' : 'none';
 }
 function closeSaveDrop() {
   var m = document.getElementById('saveDropMenu');
@@ -5061,23 +5064,22 @@ function deleteCurrentStore() {
 }
 
 function updateSaveDropdown() {
-  var container = document.getElementById('individualSaveContainer');
+  const container = document.getElementById('individualSaveContainer');
   if (!container) return;
-  // 기존 버튼만 제거 (라벨 div 보존)
-  Array.from(container.querySelectorAll('button')).forEach(function(b) { b.remove(); });
-  // storeSelect 옵션 기준으로 버튼 생성 (Firebase 포함 전체 지점 반영)
-  var select = document.getElementById('storeSelect');
-  var codes = select
-    ? Array.from(select.options).map(function(o) { return o.value; })
-    : Object.keys(storeMap);
-  codes.forEach(function(code) {
-    var c = code;
-    var btn = document.createElement('button');
+  
+  // 기존 버튼들 제거 (첫번째 라벨 제외)
+  const label = container.querySelector('div');
+  container.innerHTML = '';
+  container.appendChild(label);
+  
+  // 모든 지점 버튼 추가
+  Object.keys(storeMap).forEach(code => {
+    const btn = document.createElement('button');
     btn.style.cssText = 'width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;cursor:pointer;color:#374151;';
-    btn.textContent = storeNames[c] || c;
+    btn.textContent = storeNames[code] || code;
     btn.onmouseover = function() { this.style.background = '#f9fafb'; };
-    btn.onmouseout  = function() { this.style.background = 'none'; };
-    btn.onclick     = function() { saveStore(c); closeSaveDrop(); };
+    btn.onmouseout = function() { this.style.background = 'none'; };
+    btn.onclick = function() { saveStore(code); closeSaveDrop(); };
     container.appendChild(btn);
   });
 }
