@@ -733,6 +733,16 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
     }
   };
 
+  // ── 지점명 Firebase 업데이트 ──
+  window._updateStoreName = async function(code, newName) {
+    try {
+      await set(ref(db, 'plan2026/_stores/' + code + '/name'), newName);
+      syncUI('saved', '✅ 지점명 저장됨');
+    } catch(e) {
+      console.error('Store name update error:', e);
+    }
+  };
+
   // ── 저장된 지점 목록 불러오기 ──
   const storesRef = ref(db, 'plan2026/_stores');
   onValue(storesRef, snap => {
@@ -911,6 +921,7 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
         <option value="rdw">구의점</option>
       </select>
       <button class="btn btn-gh" onclick="openAddStoreModal()" title="새 지점 추가">＋</button>
+      <button class="btn btn-gh" onclick="openRenameStoreModal()" title="지점명 수정">✏️</button>
       <button class="btn btn-gh" onclick="confirmDeleteStore()" title="현재 지점 삭제" style="color:#dc2626;">🗑</button>
     </div><span class="badge b-edit" id="modeTag">편집</span>
     <button class="btn btn-gh" onclick="toggleMode()">보기</button>
@@ -929,6 +940,12 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
           <div style="font-size:9px;font-weight:800;color:#16a34a;letter-spacing:.5px;padding:4px 14px 2px;">🔄 실시간 동기화</div>
           <button onclick="syncToFirebase();closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:#f0fdf4;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;color:#16a34a;" onmouseover="this.style.background='#dcfce7'" onmouseout="this.style.background='#f0fdf4'">
             🔄 서버에 동기화 저장
+          </button>
+        </div>
+        <div style="border-top:1px solid #f3f4f6;padding:6px 0;">
+          <div style="font-size:9px;font-weight:800;color:#9ca3af;letter-spacing:.5px;padding:4px 14px 2px;">📊 엑셀 내려받기</div>
+          <button onclick="exportCurrentStoreExcel();closeSaveDrop()" style="width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;color:#1d4ed8;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='none'">
+            📊 현재 지점 엑셀
           </button>
         </div>
         <div style="border-top:1px solid #f3f4f6;padding:6px 0;">
@@ -1506,6 +1523,45 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
     </div>
     
     <div class="mbtns"><button class="mcancel" onclick="closeAddStoreModal()">취소</button><button class="mok" onclick="addNewStore()">추가</button></div>
+  </div>
+</div>
+
+<!-- JSON 불러오기 확인 모달 -->
+<div class="modal-bg" id="jsonConfirmModal" style="display:none;">
+  <div class="modal" style="max-width:360px;text-align:center;">
+    <div style="font-size:32px;margin-bottom:8px;">⚠️</div>
+    <h3 style="margin-bottom:12px;">도면 덮어쓰기 확인</h3>
+    <div style="font-size:13px;color:#6b7280;line-height:1.7;margin-bottom:16px;">
+      <strong id="jsonConfirmStoreName" style="color:#111;"></strong> 의 현재 도면을<br>
+      JSON 파일 데이터(<strong id="jsonConfirmZoneCount" style="color:#1d4ed8;"></strong>개 구역)로<br>
+      <span style="color:#dc2626;font-weight:700;">덮어씌우겠습니까?</span>
+    </div>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:20px;">
+      <div style="font-size:11px;color:#991b1b;">기존 도면 데이터는 복구되지 않습니다.</div>
+    </div>
+    <div class="mbtns">
+      <button class="mcancel" onclick="cancelPendingJson()">취소</button>
+      <button class="mok" onclick="applyPendingJson()" style="background:#dc2626;">덮어쓰기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 지점명 수정 모달 -->
+<div class="modal-bg" id="renameStoreModal">
+  <div class="modal" style="max-width:360px;">
+    <h3>✏️ 지점명 수정</h3>
+    <div class="mf">
+      <label>현재 지점명</label>
+      <div id="renameStoreCurrentName" style="font-size:13px;font-weight:700;color:#374151;padding:8px 12px;background:#f9fafb;border-radius:6px;border:1.5px solid #e5e7eb;"></div>
+    </div>
+    <div class="mf">
+      <label>새 지점명 *</label>
+      <input id="renameStoreInput" placeholder="새 지점명을 입력하세요" style="width:100%;"/>
+    </div>
+    <div class="mbtns">
+      <button class="mcancel" onclick="closeRenameStoreModal()">취소</button>
+      <button class="mok" onclick="doRenameStore()">변경</button>
+    </div>
   </div>
 </div>
 
@@ -4210,22 +4266,91 @@ document.addEventListener('click', function(e){
   var w = document.getElementById('saveDropWrap');
   if (w && !w.contains(e.target)) closeSaveDrop();
 });
+// JSON 파싱 결과 임시 저장
+let _pendingJsonData = null;
+
 function loadJSON(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=e=>{
     try{
       const data=JSON.parse(e.target.result);
-      if(data.zones&&Array.isArray(data.zones)){
-        zones=data.zones;
-        if(data.userOverrides){
-          Object.assign(userOverrides,data.userOverrides);
+      let loadedZones = null;
+      let loadedOverrides = null;
+
+      // 형식 1: { zones: [...], userOverrides: {...} }  ← Firebase 저장 형식
+      if(data.zones && Array.isArray(data.zones)){
+        loadedZones = data.zones;
+        loadedOverrides = data.userOverrides || null;
+      }
+      // 형식 2: 배열 자체 [ {...zone}, ... ]
+      else if(Array.isArray(data)){
+        loadedZones = data;
+      }
+      // 형식 3: { data: { zones: [...] } }  ← 일부 export 형식
+      else if(data.data && data.data.zones && Array.isArray(data.data.zones)){
+        loadedZones = data.data.zones;
+        loadedOverrides = data.data.userOverrides || null;
+      }
+      // 형식 4: { savedAt, stores: { code: { name, zones, userOverrides } } } ← 전체 백업 형식
+      else if(data.stores && typeof data.stores === 'object'){
+        // 현재 지점 코드에 해당하는 데이터 찾기
+        const storeCode = window.currentStore || 'gs';
+        const storeData = data.stores[storeCode];
+        if(storeData && storeData.zones && Array.isArray(storeData.zones)){
+          loadedZones = storeData.zones;
+          loadedOverrides = storeData.userOverrides || null;
+        } else {
+          // 현재 지점 없으면 첫 번째 지점 데이터 사용
+          const firstCode = Object.keys(data.stores)[0];
+          const firstStore = data.stores[firstCode];
+          if(firstStore && firstStore.zones && Array.isArray(firstStore.zones)){
+            loadedZones = firstStore.zones;
+            loadedOverrides = firstStore.userOverrides || null;
+          }
         }
-        selId=null;
-        render();renderPanel();renderNav();
-        showToast('JSON 불러오기 완료! '+zones.length+'개 구역');
+        // stores 안의 모든 지점 데이터를 Firebase에 일괄 반영
+        if(data.stores && typeof window._firebaseSave === 'function'){
+          Object.keys(data.stores).forEach(code => {
+            const sd = data.stores[code];
+            if(!sd || !sd.zones) return;
+            // storeMap에 없는 지점이면 스킵
+            if(!window.storeMap || !window.storeMap[code]) return;
+            // storeZonesSnapshot, storeUserOverrides 업데이트
+            if(window.storeZonesSnapshot) window.storeZonesSnapshot[code] = sd.zones.map(z=>Object.assign({},z));
+            if(window.storeUserOverrides) window.storeUserOverrides[code] = sd.userOverrides || {};
+          });
+        }
+      }
+      // 형식 5: savedAt 등 메타만 있고 zones 없는 경우 - 키 탐색
+      else {
+        const keys = Object.keys(data);
+        for(const k of keys){
+          if(Array.isArray(data[k]) && data[k].length > 0 && data[k][0].id){
+            loadedZones = data[k];
+            break;
+          }
+        }
+      }
+
+      if(loadedZones && loadedZones.length > 0){
+        // 확인 모달 띄우기
+        _pendingJsonData = { zones: loadedZones, overrides: loadedOverrides, raw: data };
+        const storeName = (window.storeNames && window.storeNames[window.currentStore]) || window.currentStore || '현재 지점';
+        document.getElementById('jsonConfirmStoreName').textContent = storeName;
+        document.getElementById('jsonConfirmZoneCount').textContent = loadedZones.length;
+        document.getElementById('jsonConfirmModal').style.display = 'flex';
+      } else if(data.stores && typeof data.stores === 'object'){
+        // 전체 백업 형식 - 확인 모달
+        _pendingJsonData = { zones: null, overrides: null, raw: data };
+        const codes = Object.keys(data.stores).join(', ');
+        const storeName = (window.storeNames && window.storeNames[window.currentStore]) || window.currentStore || '현재 지점';
+        document.getElementById('jsonConfirmStoreName').textContent = storeName + ' 외 (' + codes + ')';
+        document.getElementById('jsonConfirmZoneCount').textContent = '전체 백업';
+        document.getElementById('jsonConfirmModal').style.display = 'flex';
       } else {
-        showToast('올바른 JSON 형식이 아닙니다');
+        console.error('JSON 형식 확인:', JSON.stringify(data).substring(0, 200));
+        showToast('❌ JSON 형식 오류 - 콘솔(F12)에서 내용 확인');
       }
     } catch(err){
       showToast('JSON 파싱 오류: '+err.message);
@@ -4234,6 +4359,44 @@ function loadJSON(input){
   };/*__UO_END__*/
   reader.readAsText(file);
 }
+function applyPendingJson() {
+  if (!_pendingJsonData) return;
+  const { zones: loadedZones, overrides: loadedOverrides, raw: data } = _pendingJsonData;
+  _pendingJsonData = null;
+  document.getElementById('jsonConfirmModal').style.display = 'none';
+
+  if (loadedZones && loadedZones.length > 0) {
+    zones.length = 0;
+    loadedZones.forEach(z => zones.push(z));
+    if (loadedOverrides) {
+      Object.keys(userOverrides).forEach(k => delete userOverrides[k]);
+      Object.assign(userOverrides, loadedOverrides);
+    }
+    if (typeof window._firebaseSave === 'function') window._firebaseSave(currentStore);
+    selId = null;
+    render(); renderPanel(); renderNav();
+    showToast('✅ JSON 불러오기 완료! ' + zones.length + '개 구역');
+  } else if (data && data.stores && typeof data.stores === 'object') {
+    if (typeof window._firebaseSave === 'function') {
+      Object.keys(data.stores).forEach(code => {
+        const sd = data.stores[code];
+        if (!sd || !sd.zones) return;
+        if (!window.storeMap || !window.storeMap[code]) return;
+        if (window.storeZonesSnapshot) window.storeZonesSnapshot[code] = sd.zones.map(z => Object.assign({}, z));
+        if (window.storeUserOverrides) window.storeUserOverrides[code] = sd.userOverrides || {};
+        window._firebaseSave(code);
+      });
+    }
+    const codes = Object.keys(data.stores).join(', ');
+    showToast('✅ 전체 백업 적용됨 (' + codes + ')');
+  }
+}
+
+function cancelPendingJson() {
+  _pendingJsonData = null;
+  document.getElementById('jsonConfirmModal').style.display = 'none';
+}
+
 function resetLayout(){if(!confirm('초기화할까요?'))return;location.reload();}
 
 // ═══════════ KEYBOARD ═══════════
@@ -4523,6 +4686,178 @@ function parseExcelToZones(workbook, sheetName) {
 }
 
 // 지점 추가 모달
+// ── 지점명 수정 ──
+function openRenameStoreModal() {
+  const name = storeNames[currentStore] || currentStore;
+  document.getElementById('renameStoreCurrentName').textContent = name;
+  document.getElementById('renameStoreInput').value = name;
+  document.getElementById('renameStoreModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('renameStoreInput').select(), 100);
+}
+function closeRenameStoreModal() {
+  document.getElementById('renameStoreModal').style.display = 'none';
+}
+async function doRenameStore() {
+  const newName = document.getElementById('renameStoreInput').value.trim();
+  if (!newName) { showToast('❌ 지점명을 입력하세요'); return; }
+  const code = currentStore;
+  const oldName = storeNames[code];
+
+  // 메모리 업데이트
+  storeNames[code] = newName;
+  if (storeMap[code]) storeMap[code].name = newName;
+
+  // 드롭다운 옵션 업데이트
+  const select = document.getElementById('storeSelect');
+  if (select) {
+    const opt = select.querySelector('option[value="' + code + '"]');
+    if (opt) opt.textContent = newName;
+  }
+  updateSaveDropdown();
+
+  // Firebase 업데이트
+  if (typeof window._updateStoreName === 'function') {
+    window._updateStoreName(code, newName);
+  }
+
+  // Firebase 저장 (현재 지점 전체 재저장)
+  if (typeof window._firebaseSave === 'function') {
+    window._firebaseSave(code);
+  }
+
+  closeRenameStoreModal();
+  showToast('✅ 지점명이 "' + newName + '"으로 변경됨');
+}
+
+// ── 엑셀 내보내기 ──
+function exportCurrentStoreExcel() {
+  if (typeof XLSX === 'undefined') {
+    showToast('❌ 엑셀 라이브러리 로딩 중... 잠시 후 다시 시도하세요');
+    return;
+  }
+  const storeName = storeNames[currentStore] || currentStore;
+  const now = new Date();
+  const ymd = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
+  const wk = WEEKS[curWkIdx];
+  const wkLabel = wk ? wk.id : '';
+  const currentOverrides = userOverrides[wkLabel] || {};
+
+  // ── 색상 코드 → 엑셀 배경색 매핑 ──
+  const colorHex = {
+    cbr3: 'FFF9C4', cb1: 'BBDEFB', cn4: 'C8E6C9', cn6: 'B3E5FC',
+    cgr1: 'DCEDC8', cgr2: 'F5F5DC', cgr3: 'E8F5E9', cg1: 'E0F2F1',
+    cw: 'FAFAFA', cc: 'E3F2FD', cpillar: '424242',
+  };
+  function getHex(colorKey) {
+    if (!colorKey) return 'FFFFFF';
+    if (colorKey.startsWith('custom_')) return colorKey.replace('custom_', '').replace('#','');
+    if (colorKey.startsWith('ent')) return 'A5D6A7';
+    return colorHex[colorKey] || 'F5F5F5';
+  }
+
+  // ── grid 범위 계산 ──
+  const scale = 2; // 1 grid unit = 2 엑셀 셀
+  let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+  zones.forEach(z => {
+    const c = Math.round(z.col * scale);
+    const r = Math.round(z.row * scale);
+    const c2 = Math.round((z.col + (z.cols||1)) * scale);
+    const r2 = Math.round((z.row + (z.rows||1)) * scale);
+    if (c < minC) minC = c; if (r < minR) minR = r;
+    if (c2 > maxC) maxC = c2; if (r2 > maxR) maxR = r2;
+  });
+
+  const COLS = maxC - minC + 2;
+  const ROWS = maxR - minR + 2;
+
+  // ── 빈 시트 데이터 생성 ──
+  const ws = {};
+  const merges = [];
+
+  zones.forEach(z => {
+    const ov = currentOverrides[z.id] || {};
+    const label = ov.prod || z.prod || z.name || '';
+    const c0 = Math.round(z.col * scale) - minC;
+    const r0 = Math.round(z.row * scale) - minR;
+    const cSpan = Math.max(1, Math.round((z.cols||1) * scale));
+    const rSpan = Math.max(1, Math.round((z.rows||1) * scale));
+
+    const bgHex = getHex(z.color);
+    const isDark = bgHex === '424242'; // 기둥
+
+    // 모든 셀에 배경색 지정
+    for (let dr = 0; dr < rSpan; dr++) {
+      for (let dc = 0; dc < cSpan; dc++) {
+        const addr = XLSX.utils.encode_cell({ r: r0 + dr, c: c0 + dc });
+        ws[addr] = {
+          v: '',
+          s: {
+            fill: { patternType: 'solid', fgColor: { rgb: bgHex } },
+            border: {
+              top: { style: 'thin', color: { rgb: 'BDBDBD' } },
+              bottom: { style: 'thin', color: { rgb: 'BDBDBD' } },
+              left: { style: 'thin', color: { rgb: 'BDBDBD' } },
+              right: { style: 'thin', color: { rgb: 'BDBDBD' } },
+            },
+            font: { sz: 7, bold: false, color: { rgb: isDark ? 'FFFFFF' : '212121' } },
+            alignment: { wrapText: true, horizontal: 'center', vertical: 'center' }
+          }
+        };
+      }
+    }
+
+    // 대표 셀에만 텍스트
+    const topAddr = XLSX.utils.encode_cell({ r: r0, c: c0 });
+    ws[topAddr] = {
+      v: label,
+      s: {
+        fill: { patternType: 'solid', fgColor: { rgb: bgHex } },
+        border: {
+          top: { style: 'thin', color: { rgb: 'BDBDBD' } },
+          bottom: { style: 'thin', color: { rgb: 'BDBDBD' } },
+          left: { style: 'thin', color: { rgb: 'BDBDBD' } },
+          right: { style: 'thin', color: { rgb: 'BDBDBD' } },
+        },
+        font: { sz: 7, bold: true, color: { rgb: isDark ? 'FFFFFF' : '212121' } },
+        alignment: { wrapText: true, horizontal: 'center', vertical: 'center' }
+      }
+    };
+
+    // 병합
+    if (cSpan > 1 || rSpan > 1) {
+      merges.push({
+        s: { r: r0, c: c0 },
+        e: { r: r0 + rSpan - 1, c: c0 + cSpan - 1 }
+      });
+    }
+  });
+
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: ROWS, c: COLS } });
+  ws['!merges'] = merges;
+  // 셀 크기 균일하게
+  ws['!cols'] = Array(COLS + 1).fill({ wpx: 28 });
+  ws['!rows'] = Array(ROWS + 1).fill({ hpx: 20 });
+
+  // ── 주차별 배치 시트 ──
+  const wkRows = [['주차', '구역ID', '구역명', '배치상품', '상태', '비고']];
+  Object.keys(userOverrides).sort().forEach(wkId => {
+    const wkOv = userOverrides[wkId];
+    Object.keys(wkOv).forEach(zoneId => {
+      const ov = wkOv[zoneId];
+      const z = zones.find(z => z.id === zoneId) || {};
+      wkRows.push([wkId, zoneId, z.name || zoneId, ov.prod || '', ov.status || '', ov.note || '']);
+    });
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(wkRows);
+  ws2['!cols'] = [8,16,16,20,10,20].map(w => ({wch: w}));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '도면');
+  XLSX.utils.book_append_sheet(wb, ws2, '주차별배치');
+  XLSX.writeFile(wb, '킴스클럽_' + storeName + '_도면_' + ymd + '.xlsx');
+  showToast('✅ ' + storeName + ' 도면 엑셀 저장 완료!');
+}
+
 function openAddStoreModal() {
   document.getElementById('addStoreModal').classList.add('open');
   document.getElementById('newStoreCode').value = '';
