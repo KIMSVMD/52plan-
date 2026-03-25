@@ -617,12 +617,16 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
               zones.length = 0;
               data.zones.forEach(z => zones.push(z));
             }
+            // seasonOverrides 복원 (운영맵 수정 데이터)
+            if (data.seasonOverrides && typeof seasonOverrides !== 'undefined') {
+              Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
+              Object.assign(seasonOverrides, data.seasonOverrides);
+            }
             if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
           }
         }
 
         syncUI('saved', '✅ 연결됨');
-        // 현재 지점 로드 완료 시 앱 렌더 시작
         if (store === (window.currentStore || 'gs') && typeof window._renderOnReady === 'function') {
           window._renderOnReady();
         }
@@ -638,6 +642,11 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
         if (data.zones && Array.isArray(data.zones)) {
           zones.length = 0;
           data.zones.forEach(z => zones.push(z));
+        }
+        // seasonOverrides 복원 (다른 사용자가 운영맵 수정 시)
+        if (data.seasonOverrides && typeof seasonOverrides !== 'undefined') {
+          Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
+          Object.assign(seasonOverrides, data.seasonOverrides);
         }
         render(); renderPanel(); renderNav();
         syncUI('saved', '✅ 동기화됨');
