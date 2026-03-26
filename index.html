@@ -149,6 +149,8 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 
 /* ZONE BLOCK */
 .zb{position:absolute;border-radius:5px;border:2px solid;cursor:grab;user-select:none;z-index:10;display:flex;flex-direction:column;overflow:hidden;transition:box-shadow .15s;}
+.zb.sel{overflow:visible !important;}
+.zb.sel .rh-rot{display:flex;}
 .zb:active{cursor:grabbing;}
 .zb.dragging{opacity:.72;transform:scale(1.03);box-shadow:0 8px 28px rgba(0,0,0,.22);z-index:100;}
 .zb.sel{box-shadow:0 0 0 3px rgba(58,140,58,.6)!important;z-index:50;}
@@ -188,6 +190,41 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 .rh-e{right:2px;top:50%;transform:translateY(-50%);width:5px;height:20px;cursor:e-resize;}
 .rh-s{bottom:2px;left:50%;transform:translateX(-50%);height:5px;width:20px;cursor:s-resize;}
 .rh-se{right:2px;bottom:2px;width:9px;height:9px;cursor:se-resize;border-radius:2px;}
+/* 회전 핸들 */
+.rh-rot{
+  position:absolute;
+  top:-26px;right:-26px;
+  width:20px;height:20px;
+  background:#fff;
+  border:2px solid #6366f1;
+  border-radius:50%;
+  cursor:grab;
+  z-index:30;
+  display:none;align-items:center;justify-content:center;
+  font-size:13px;
+  box-shadow:0 2px 8px rgba(99,102,241,.4);
+  transition:background .1s,transform .1s;
+  user-select:none;
+}
+.rh-rot::after{
+  content:'↻';
+  font-size:13px;
+  line-height:1;
+  color:#6366f1;
+  font-weight:900;
+}
+.rh-rot:hover{background:#6366f1;box-shadow:0 3px 12px rgba(99,102,241,.6);transform:scale(1.15);}
+.rh-rot:hover::after{color:#fff;}
+.rh-rot:active{cursor:grabbing;}
+/* 회전 라인(핸들~블록 연결선) */
+.rh-rot-line{
+  position:absolute;
+  top:-16px;right:-16px;
+  width:14px;height:14px;
+  pointer-events:none;
+  z-index:29;
+}
+.zb.sel .rh-rot, .zb.multi-sel .rh-rot{ display:flex; }
 
 /* COLORS */
 .cn1{background:#fff0f0;border-color:#f87171;}.cn2{background:#fff5e6;border-color:#fb923c;}
@@ -1458,6 +1495,20 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
         <div class="sz-f"><label>세로(행)</label><input class="sz-i" type="number" min="0.5" max="10" step="0.5" id="eRows" onchange="upd('rows',+this.value)"/></div>
       </div>
 
+      <!-- 회전 -->
+      <div class="rpl admin-only">회전 <span style="font-weight:400;color:var(--muted)">도(°)</span></div>
+      <div class="admin-only" style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+        <input class="sz-i" type="number" id="eRotation" step="1" placeholder="0"
+          style="width:68px;"
+          onchange="updRotation(+this.value)"/>
+        <div style="display:flex;gap:3px;">
+          <button class="tbb" onclick="updRotation(0)"        title="초기화"     style="padding:4px 7px;font-size:11px;">0°</button>
+          <button class="tbb" onclick="updRotationRel(-90)"   title="-90° 회전"  style="padding:4px 7px;font-size:11px;">↺90</button>
+          <button class="tbb" onclick="updRotationRel(90)"    title="+90° 회전"  style="padding:4px 7px;font-size:11px;">↻90</button>
+          <button class="tbb" onclick="updRotationRel(180)"   title="180° 뒤집기" style="padding:4px 7px;font-size:11px;">↕180</button>
+        </div>
+      </div>
+
       <!-- ⑨ 글자 크기 & 정렬 — 관리자 전용 -->
       <div class="admin-only">
       <div class="rpl">글자 크기 <span style="font-weight:400;color:var(--muted)">px</span></div>
@@ -2353,6 +2404,13 @@ function render(){
     el.style.top=(py(z.row)+8)+'px';
     el.style.width=(z.cols*CELL+(z.cols-1)*GAP)+'px';
     el.style.height=(z.rows*ROW+(z.rows-1)*GAP)+'px';
+    // 회전 적용
+    if(z.rotation){
+      el.style.transform=`rotate(${z.rotation}deg)`;
+      el.style.transformOrigin='center center';
+    } else {
+      el.style.transform='';
+    }
 
     // 입구 화살표 처리 (ent_up, ent_down, ent_left, ent_right) - 빨간 박스, 큰 화살표
     if(z.color && z.color.startsWith('ent_')){
@@ -2360,11 +2418,11 @@ function render(){
       const arrow = arrowMap[z.color] || '↑';
       el.classList.add('ent-block');
       el.innerHTML=`<div style="font-size:42px;font-weight:900;color:#dc2626;line-height:1;text-shadow:0 2px 4px rgba(220,38,38,.3);">${arrow}</div><div style="font-size:13px;font-weight:800;color:#991b1b;margin-top:2px;">${z.name}</div>${z.note?`<div style="font-size:9px;color:#b91c1c;margin-top:1px;">${z.note}</div>`:''}
-      ${editMode?`<div class="rh rh-e" data-id="${z.id}" data-d="e"></div><div class="rh rh-s" data-id="${z.id}" data-d="s"></div><div class="rh rh-se" data-id="${z.id}" data-d="se"></div>`:''}`;
+      ${editMode?`<div class="rh rh-e" data-id="${z.id}" data-d="e"></div><div class="rh rh-s" data-id="${z.id}" data-d="s"></div><div class="rh rh-se" data-id="${z.id}" data-d="se"></div><div class="rh-rot" data-id="${z.id}" title="회전"></div>`:''}`;
     } else if(z.color==='ent'){
       el.classList.add('ent-block');
       el.innerHTML=`<div style="font-size:42px;font-weight:900;color:#dc2626;line-height:1;text-shadow:0 2px 4px rgba(220,38,38,.3);">↑</div><div style="font-size:13px;font-weight:800;color:#991b1b;">${z.name}</div>${z.note?`<div style="font-size:9px;color:#b91c1c;">${z.note}</div>`:''}
-      ${editMode?`<div class="rh rh-e" data-id="${z.id}" data-d="e"></div><div class="rh rh-s" data-id="${z.id}" data-d="s"></div><div class="rh rh-se" data-id="${z.id}" data-d="se"></div>`:''}`;
+      ${editMode?`<div class="rh rh-e" data-id="${z.id}" data-d="e"></div><div class="rh rh-s" data-id="${z.id}" data-d="s"></div><div class="rh rh-se" data-id="${z.id}" data-d="se"></div><div class="rh-rot" data-id="${z.id}" title="회전"></div>`:''}`;
     } else {
       const ovr = wkOvr[z.id];
       const dispProd = ovr?.prod||z.prod||'';
@@ -2393,7 +2451,7 @@ function render(){
         ${ovr?.note?`<div class="znote">${ovr.note}</div>`:''}
         ${statusHtml}
       </div>
-      ${editMode?`<div class="rh rh-e" data-id="${z.id}" data-d="e"></div><div class="rh rh-s" data-id="${z.id}" data-d="s"></div><div class="rh rh-se" data-id="${z.id}" data-d="se"></div>`:''}`;
+      ${editMode?`<div class="rh rh-e" data-id="${z.id}" data-d="e"></div><div class="rh rh-s" data-id="${z.id}" data-d="s"></div><div class="rh rh-se" data-id="${z.id}" data-d="se"></div><div class="rh-rot" data-id="${z.id}" title="회전"></div>`:''}`;
     }
 
     if(editMode){
@@ -2426,6 +2484,7 @@ function render(){
         selZone(z.id);
       });
       el.querySelectorAll('.rh').forEach(h=>h.addEventListener('mousedown',onRS));
+      el.querySelectorAll('.rh-rot').forEach(h=>h.addEventListener('mousedown',onRotStart));
     } else {
       el.style.cursor='default';
       el.addEventListener('click',e=>{e.stopPropagation();selZone(z.id);});
@@ -3082,6 +3141,9 @@ function renderPanel(){
   document.getElementById('eCols').value=z.cols;
   document.getElementById('eRows').value=z.rows;
   document.getElementById('eId').value=z.id;
+  // 회전 각도
+  const rotInp = document.getElementById('eRotation');
+  if(rotInp) rotInp.value = z.rotation ? Math.round(z.rotation) : '';
 
   // 글자 크기
   document.getElementById('eFontSize').value = z.fontSize||'';
@@ -3670,6 +3732,62 @@ function onRM(e){
   render();
 }
 function onRE(){saveUndoState();resizing=null;document.removeEventListener('mousemove',onRM);document.removeEventListener('mouseup',onRE);renderPanel();}
+
+function updRotation(deg){
+  const z=zones.find(x=>x.id===selId);if(!z)return;
+  z.rotation = deg || 0;
+  const inp=document.getElementById('eRotation');
+  if(inp) inp.value = deg ? Math.round(deg) : '';
+  render();
+}
+function updRotationRel(delta){
+  const z=zones.find(x=>x.id===selId);if(!z)return;
+  z.rotation = ((z.rotation||0)+delta+360)%360;
+  const inp=document.getElementById('eRotation');
+  if(inp) inp.value = Math.round(z.rotation)||'';
+  render();
+}
+
+// ═══════════ ROTATION ═══════════
+let rotating = null; // {id, cx, cy, startAngle, startRot}
+
+function onRotStart(e){
+  e.preventDefault();e.stopPropagation();
+  const id = e.currentTarget.dataset.id;
+  const el = document.getElementById('z-'+id);
+  if(!el) return;
+  const rect = el.getBoundingClientRect();
+  const cx = rect.left + rect.width/2;
+  const cy = rect.top  + rect.height/2;
+  const z  = zones.find(x=>x.id===id);
+  const startAngle = Math.atan2(e.clientY-cy, e.clientX-cx) * 180/Math.PI;
+  rotating = { id, cx, cy, startAngle, startRot: z.rotation||0 };
+  document.addEventListener('mousemove', onRotMove);
+  document.addEventListener('mouseup',   onRotEnd);
+  document.body.style.cursor='grabbing';
+}
+function onRotMove(e){
+  if(!rotating) return;
+  const z = zones.find(x=>x.id===rotating.id);
+  if(!z) return;
+  const angle = Math.atan2(e.clientY-rotating.cy, e.clientX-rotating.cx) * 180/Math.PI;
+  let delta = angle - rotating.startAngle;
+  let newRot = rotating.startRot + delta;
+  // Shift 키 → 15° 스냅
+  if(e.shiftKey) newRot = Math.round(newRot/15)*15;
+  z.rotation = newRot;
+  const el = document.getElementById('z-'+z.id);
+  if(el){ el.style.transform=`rotate(${newRot}deg)`; el.style.transformOrigin='center center'; }
+}
+function onRotEnd(){
+  if(!rotating) return;
+  saveUndoState();
+  document.removeEventListener('mousemove', onRotMove);
+  document.removeEventListener('mouseup',   onRotEnd);
+  document.body.style.cursor='';
+  rotating = null;
+  render();
+}
 
 // ═══════════ TOOLBAR ═══════════
 
