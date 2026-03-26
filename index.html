@@ -1143,6 +1143,11 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
   <div class="tsep"></div>
   <button class="tbb" style="color:var(--red);border-color:#fca5a5" onclick="deleteSel()">삭제</button>
   <div class="tsep"></div>
+  <span class="tbl">복사</span>
+  <button class="tbb" onclick="copyZone()"  title="선택 집기 복사 (Ctrl+C)" id="btnCopy">📋 복사</button>
+  <button class="tbb" onclick="pasteZone()" title="붙여넣기 (Ctrl+V)" id="btnPaste" style="opacity:.45">📌 붙여넣기</button>
+  <button class="tbb" onclick="dupeZone()"  title="바로 복제 (Ctrl+D)">⧉ 복제</button>
+  <div class="tsep"></div>
   <span class="tbl admin-only">합치기/나누기</span>
   <button class="tbb admin-only" onclick="mergeZones()" title="다중 선택한 구역들을 하나로 합칩니다">🔗 합치기</button>
   <button class="tbb admin-only" onclick="splitZoneH()" title="선택한 구역을 좌우로 나눕니다">↔ 좌우나누기</button>
@@ -1263,7 +1268,26 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
         </div>
       </div>
       <button class="multi-edit-btn" onclick="applyMultiEdit()">✓ 선택한 구역에 일괄 적용</button>
-      <button class="multi-clear-btn" onclick="clearMultiSel()">✕ 다중 선택 해제</button>
+
+      <!-- 크기 맞추기 -->
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e9d5ff;">
+        <div class="me-label" style="margin-bottom:6px;">📐 크기 맞추기 <span style="font-weight:400;color:#a78bfa">(첫 번째 선택 기준)</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:4px;">
+          <button class="size-match-btn" onclick="matchSize('both')"   style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">⊞ 가로+세로</button>
+          <button class="size-match-btn" onclick="matchSize('width')"  style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">↔ 가로만</button>
+          <button class="size-match-btn" onclick="matchSize('height')" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">↕ 세로만</button>
+          <button class="size-match-btn" onclick="distributeH()"       style="background:#4f46e5;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">⇔ 간격 균등</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <button class="size-match-btn" onclick="alignEdge('left')"   style="background:#1e40af;color:#fff;border:none;border-radius:5px;padding:5px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">⊢ 왼쪽 정렬</button>
+          <button class="size-match-btn" onclick="alignEdge('right')"  style="background:#1e40af;color:#fff;border:none;border-radius:5px;padding:5px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">⊣ 오른쪽 정렬</button>
+          <button class="size-match-btn" onclick="alignEdge('top')"    style="background:#1e40af;color:#fff;border:none;border-radius:5px;padding:5px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">⊤ 위쪽 정렬</button>
+          <button class="size-match-btn" onclick="alignEdge('bottom')" style="background:#1e40af;color:#fff;border:none;border-radius:5px;padding:5px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">⊥ 아래쪽 정렬</button>
+          <button class="size-match-btn" onclick="alignEdge('centerH')" style="background:#0369a1;color:#fff;border:none;border-radius:5px;padding:5px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">— 수평 중앙</button>
+          <button class="size-match-btn" onclick="alignEdge('centerV')" style="background:#0369a1;color:#fff;border:none;border-radius:5px;padding:5px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">| 수직 중앙</button>
+        </div>
+      </div>
+      <button class="multi-clear-btn" style="margin-top:8px;" onclick="clearMultiSel()">✕ 다중 선택 해제</button>
     </div>
 
     <!-- 오른쪽: 구역 편집 패널 -->
@@ -1505,6 +1529,18 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
         <div class="sz-f"><label>세로(행)</label><input class="sz-i" type="number" min="0.5" max="10" step="0.5" id="eRows" onchange="upd('rows',+this.value)"/></div>
       </div>
 
+      <!-- 이 크기로 맞추기 버튼 (단일 선택) -->
+      <div class="admin-only" style="margin-bottom:8px;">
+        <div class="rpl" style="margin-bottom:5px;">이 집기 기준으로 맞추기</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <button onclick="matchFromSingle('both')"   style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;" title="다른 모든 선택 집기를 이 크기로">⊞ 크기 복사</button>
+          <button onclick="matchFromSingle('width')"  style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">↔ 가로 복사</button>
+          <button onclick="matchFromSingle('height')" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;">↕ 세로 복사</button>
+          <button onclick="matchFromSingle('sameRow')" style="background:#0369a1;color:#fff;border:none;border-radius:5px;padding:6px 4px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;" title="같은 행에 있는 집기들에 적용">↔ 같은 행에</button>
+        </div>
+        <div style="font-size:9px;color:#9ca3af;margin-top:4px;">Ctrl+클릭으로 여러 집기 선택 후 사용</div>
+      </div>
+
       <!-- 위치 (px) -->
       <div class="rpl admin-only">위치 <span style="font-weight:400;color:var(--muted)">(픽셀, 소수 OK)</span></div>
       <div class="admin-only" style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
@@ -1578,6 +1614,10 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
       </div>
 
       <div class="tdiv"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:5px;" class="admin-only">
+        <button class="rpbtn" onclick="copyZone()"  style="background:#f0fdf4;color:#16a34a;border:1.5px solid #86efac;">📋 복사</button>
+        <button class="rpbtn" onclick="dupeZone()"  style="background:#eff6ff;color:#2563eb;border:1.5px solid #93c5fd;">⧉ 복제</button>
+      </div>
       <button class="rpbtn rpbtn-r admin-only" onclick="deleteSel()">이 구역 삭제</button>
     </div>
     </div><!-- /detailPanel -->
@@ -3788,6 +3828,105 @@ function onRE(){
   renderPanel();
 }
 
+
+// ═══════════ 크기 맞추기 / 정렬 ═══════════
+
+/** 다중 선택된 집기들을 첫 번째 선택 기준으로 크기 맞추기 */
+function getMultiSelArray(){
+  // multiSelIds Set + selId 통합
+  const ids = new Set(multiSelIds);
+  if(selId) ids.add(selId);
+  return [...ids].map(id=>zones.find(z=>z.id===id)).filter(Boolean);
+}
+
+function matchSize(mode){
+  const arr = getMultiSelArray();
+  if(arr.length < 2) return showToast('Ctrl+클릭으로 2개 이상 선택 후 사용하세요');
+  const base = arr[0]; // 첫 번째가 기준
+  saveUndoState();
+  arr.slice(1).forEach(z=>{
+    if(mode==='both'||mode==='width')  z.cols = base.cols;
+    if(mode==='both'||mode==='height') z.rows = base.rows;
+  });
+  render(); restoreMultiSel(arr);
+  showToast(`✅ ${arr.length-1}개 집기 크기 맞추기 완료`);
+}
+
+/** 단일 선택 집기를 기준으로 — 다중 선택된 것들에 크기 복사 */
+function matchFromSingle(mode){
+  const base = zones.find(z=>z.id===selId);
+  if(!base) return showToast('먼저 기준 집기를 선택하세요');
+
+  let targets;
+  if(mode==='sameRow'){
+    // 같은 행(row 반올림 일치)에 있는 집기들
+    const baseRow = Math.round(base.row);
+    targets = zones.filter(z=>z.id!==selId && Math.round(z.row)===baseRow);
+    if(targets.length===0) return showToast('같은 행에 다른 집기가 없어요');
+  } else {
+    targets = getMultiSelArray().filter(z=>z.id!==selId);
+    if(targets.length===0) return showToast('Ctrl+클릭으로 적용할 집기들을 선택하세요');
+  }
+
+  saveUndoState();
+  targets.forEach(z=>{
+    if(mode==='both'||mode==='width')  z.cols = base.cols;
+    if(mode==='both'||mode==='height') z.rows = base.rows;
+    if(mode==='sameRow')               z.rows = base.rows;
+  });
+  render(); selZone(selId);
+  showToast(`✅ ${targets.length}개 집기에 크기 적용`);
+}
+
+/** 정렬 — 첫 번째 기준으로 왼쪽/오른쪽/위/아래/중앙 정렬 */
+function alignEdge(dir){
+  const arr = getMultiSelArray();
+  if(arr.length < 2) return showToast('Ctrl+클릭으로 2개 이상 선택 후 사용하세요');
+  const base = arr[0];
+  const bW = base.cols*CELL+(base.cols-1)*GAP;
+  const bH = base.rows*ROW +(base.rows-1)*GAP;
+  saveUndoState();
+  arr.slice(1).forEach(z=>{
+    const zW = z.cols*CELL+(z.cols-1)*GAP;
+    const zH = z.rows*ROW +(z.rows-1)*GAP;
+    if(dir==='left')    z.col = base.col;
+    if(dir==='right')   z.col = base.col + (bW-zW)/(CELL+GAP);
+    if(dir==='top')     z.row = base.row;
+    if(dir==='bottom')  z.row = base.row + (bH-zH)/(ROW+GAP);
+    if(dir==='centerH') z.col = base.col + (bW/2 - zW/2)/(CELL+GAP);
+    if(dir==='centerV') z.row = base.row + (bH/2 - zH/2)/(ROW+GAP);
+  });
+  render(); restoreMultiSel(arr);
+  showToast(`✅ ${arr.length-1}개 집기 정렬 완료`);
+}
+
+/** 가로 간격 균등 배분 */
+function distributeH(){
+  const arr = getMultiSelArray();
+  if(arr.length < 3) return showToast('3개 이상 선택해야 간격 균등 배분이 가능합니다');
+  saveUndoState();
+  // col 기준 정렬
+  arr.sort((a,b)=>a.col-b.col);
+  const first = arr[0], last = arr[arr.length-1];
+  const totalW = arr.reduce((s,z)=>s+(z.cols*CELL+(z.cols-1)*GAP),0);
+  const span = (px(last.col)+8 + last.cols*CELL+(last.cols-1)*GAP) - (px(first.col)+8);
+  const gap  = (span - totalW) / (arr.length-1);
+  let cursor = px(first.col)+8;
+  arr.forEach((z,i)=>{
+    const zW = z.cols*CELL+(z.cols-1)*GAP;
+    z.col = Math.max(0, (cursor-8)/(CELL+GAP));
+    cursor += zW + gap;
+  });
+  render(); restoreMultiSel(arr);
+  showToast(`✅ ${arr.length}개 집기 간격 균등 배분`);
+}
+
+function restoreMultiSel(arr){
+  arr.forEach(z=>{
+    const el=document.getElementById('z-'+z.id);
+    if(el){ el.classList.add('multi-sel'); el.classList.remove('sel'); }
+  });
+}
 function updPosX(v){
   const z=zones.find(x=>x.id===selId);if(!z)return;
   z.col=Math.max(0,v); render(); renderPanel();
@@ -4743,12 +4882,113 @@ function cancelPendingJson() {
 
 function resetLayout(){if(!confirm('초기화할까요?'))return;location.reload();}
 
+
+// ═══════════ 복사 / 붙여넣기 / 복제 ═══════════
+let clipboard = null;   // 복사된 zone 데이터 (배열, 다중 선택 지원)
+let pasteOffset = 0;    // 여러 번 붙여넣을 때마다 살짝 오프셋
+
+function copyZone() {
+  // 단일 or 다중 선택 모두 지원
+  const ids = multiSelIds.size > 0 ? [...multiSelIds] : (selId ? [selId] : []);
+  if (ids.length === 0) return showToast('복사할 집기를 먼저 선택하세요');
+
+  clipboard = ids.map(id => {
+    const z = zones.find(x => x.id === id);
+    return z ? JSON.parse(JSON.stringify(z)) : null;
+  }).filter(Boolean);
+
+  pasteOffset = 1;
+
+  // 버튼 활성화
+  const btn = document.getElementById('btnPaste');
+  if (btn) btn.style.opacity = '1';
+
+  showToast(`📋 ${clipboard.length}개 집기 복사됨 — Ctrl+V로 붙여넣기`);
+}
+
+function pasteZone() {
+  if (!clipboard || clipboard.length === 0) return showToast('먼저 집기를 복사하세요 (Ctrl+C)');
+  saveUndoState();
+
+  const newIds = [];
+  clipboard.forEach(src => {
+    const newId = 'z' + Date.now() + Math.floor(Math.random() * 9999);
+    const clone = Object.assign({}, JSON.parse(JSON.stringify(src)), {
+      id: newId,
+      col: src.col + pasteOffset,
+      row: src.row + pasteOffset,
+    });
+    zones.push(clone);
+    newIds.push(newId);
+  });
+
+  pasteOffset += 1;
+
+  // 붙여넣은 것들 선택
+  multiSelIds.clear();
+  if (newIds.length === 1) {
+    selZone(newIds[0]);
+  } else {
+    newIds.forEach(id => multiSelIds.add(id));
+    selId = null;
+  }
+
+  render();
+  if (newIds.length > 1) {
+    newIds.forEach(id => {
+      const el = document.getElementById('z-' + id);
+      if (el) { el.classList.add('multi-sel'); el.classList.remove('sel'); }
+    });
+  }
+  showToast(`📌 ${newIds.length}개 집기 붙여넣기 완료`);
+}
+
+function dupeZone() {
+  // 바로 복사+붙여넣기 (오프셋 1칸)
+  const ids = multiSelIds.size > 0 ? [...multiSelIds] : (selId ? [selId] : []);
+  if (ids.length === 0) return showToast('복제할 집기를 먼저 선택하세요');
+  saveUndoState();
+
+  const newIds = [];
+  ids.forEach(id => {
+    const src = zones.find(x => x.id === id);
+    if (!src) return;
+    const newId = 'z' + Date.now() + Math.floor(Math.random() * 9999);
+    zones.push(Object.assign({}, JSON.parse(JSON.stringify(src)), {
+      id: newId,
+      col: src.col + 1,
+      row: src.row + 1,
+    }));
+    newIds.push(newId);
+  });
+
+  multiSelIds.clear();
+  if (newIds.length === 1) {
+    selZone(newIds[0]);
+  } else {
+    newIds.forEach(id => multiSelIds.add(id));
+    selId = null;
+  }
+
+  render();
+  if (newIds.length > 1) {
+    newIds.forEach(id => {
+      const el = document.getElementById('z-' + id);
+      if (el) { el.classList.add('multi-sel'); el.classList.remove('sel'); }
+    });
+  }
+  showToast(`⧉ ${newIds.length}개 집기 복제 완료`);
+}
 // ═══════════ KEYBOARD ═══════════
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
   if(e.key==='ArrowLeft'&&e.altKey){e.preventDefault();prevWeek();return;}
   if(e.key==='ArrowRight'&&e.altKey){e.preventDefault();nextWeek();return;}
-  if(!selId)return;
+  // 복사 / 붙여넣기 / 복제 단축키 (selId 없어도 동작)
+  if((e.ctrlKey||e.metaKey)&&e.key==='c'){e.preventDefault();copyZone();return;}
+  if((e.ctrlKey||e.metaKey)&&e.key==='v'){e.preventDefault();pasteZone();return;}
+  if((e.ctrlKey||e.metaKey)&&e.key==='d'){e.preventDefault();dupeZone();return;}
+  if(!selId&&multiSelIds.size===0)return;
   if(e.key==='ArrowLeft'){e.preventDefault();moveSel(-1,0);}
   if(e.key==='ArrowRight'){e.preventDefault();moveSel(1,0);}
   if(e.key==='ArrowUp'){e.preventDefault();moveSel(0,-1);}
