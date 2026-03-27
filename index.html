@@ -95,8 +95,9 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 .main-wrap{display:flex;flex:1;overflow:hidden;}
 
 /* CANVAS */
-.canvas-area{flex:1;overflow:auto;padding:0;background:var(--bg);position:relative;}
-.gc-scaler{position:absolute;top:10px;left:10px;transform-origin:top left;transition:transform .15s;}
+.canvas-area{flex:1;overflow:auto;padding:20px;background:var(--bg);display:flex;align-items:flex-start;justify-content:center;box-sizing:border-box;}
+.gc-scaler{position:absolute;transform-origin:top left;transition:transform .15s;}
+.canvas-area{position:relative;}
 .gc{position:relative;background:#fff;border:2px solid #333;border-radius:6px;padding:8px;}
 .zoom-ctrl{position:sticky;top:14px;float:right;margin-right:14px;z-index:200;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.95);border:1.5px solid #e5e7eb;border-radius:10px;padding:6px 10px;box-shadow:0 2px 12px rgba(0,0,0,.12);}
 .zoom-btn{width:28px;height:28px;border:1.5px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;color:#374151;transition:all .1s;}
@@ -185,11 +186,16 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 .zi{padding:6px 7px 5px;flex:1;display:flex;flex-direction:column;gap:2px;position:relative;overflow:hidden;}
 .znum{position:absolute;top:2px;right:5px;font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;font-size:15px;font-weight:900;opacity:.09;}
 .zpri{position:absolute;top:4px;left:5px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;color:white;}
-.cat-tag{position:absolute;top:0;left:0;width:0;height:0;border-style:solid;border-width:18px 18px 0 0;pointer-events:none;z-index:20;}
+/* cat-tag: display:none — gradient 방식으로 대체 */
+.cat-tag{display:none!important;}
+
+/* 텍스트 자동 줄바꿈 */
+.zname{font-size:10px;font-weight:900;line-height:1.2;word-break:keep-all;overflow-wrap:break-word;white-space:normal;}
+.zprod{font-size:10px;font-weight:700;color:var(--green);margin-top:2px;line-height:1.3;word-break:keep-all;overflow-wrap:break-word;white-space:normal;}
 .p1{background:var(--green);}.p2{background:var(--orange);}.pe{background:var(--red);}.pf{background:#92400e;}
 .ztype{font-size:8px;color:#bbb;margin-top:12px;}
-.zname{font-size:10px;font-weight:900;line-height:1.2;}
-.zprod{font-size:10px;font-weight:700;color:var(--green);margin-top:2px;line-height:1.3;}
+
+
 .zi{display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden;justify-content:flex-start;align-items:flex-start;}
 .zprod.changed{color:var(--orange);}
 .zprod.isnew{color:#d97706;}
@@ -405,8 +411,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 
 .zb.view .zi {
   justify-content: center;
+  align-items: center;
   gap: 3px;
+  overflow: visible;
 }
+.zb.view { overflow: visible !important; }
 
 .zb.view .zprod {
   font-size: 12px !important;
@@ -416,12 +425,10 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
   line-height: 1.35;
   word-break: keep-all;
   overflow-wrap: break-word;
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: normal;
   letter-spacing: -0.4px;
   margin-top: 0 !important;
+  width: 100%;
 }
 
 .zb.view .zpri { display: none !important; }
@@ -1143,43 +1150,41 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
   </div>
 
   <div class="draw-sep"></div>
-  <div class="draw-section" style="align-items:center;gap:8px;">
-    <span class="draw-label">🖊 벽</span>
-    <div style="display:flex;flex-direction:column;gap:2px;">
-      <span style="font-size:9px;color:#94a3b8;font-weight:700;">두께</span>
-      <div style="display:flex;align-items:center;gap:5px;">
-        <input type="range" id="wallWidthSlider" min="1" max="30" value="4" step="1"
-          style="width:72px;accent-color:#4f8ef7;cursor:pointer;"
-          oninput="onWallWidthChange(+this.value)">
-        <span id="wallWidthVal" style="font-size:10px;font-weight:800;color:#e2e8f0;min-width:24px;">4px</span>
-      </div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:2px;">
-      <span style="font-size:9px;color:#94a3b8;font-weight:700;">색상</span>
-      <div style="display:flex;gap:4px;align-items:center;">
-        <div id="wallColorPalette" style="display:flex;gap:3px;"></div>
-        <input type="color" id="wallColorCustom" value="#1e293b"
-          style="width:22px;height:22px;border:none;border-radius:4px;cursor:pointer;padding:0;"
-          oninput="onWallColorChange(this.value)">
-      </div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:2px;">
-      <span style="font-size:9px;color:#94a3b8;font-weight:700;">미리보기</span>
-      <canvas id="wallPreviewCanvas" width="80" height="22"
-        style="border-radius:4px;background:#1e293b;border:1px solid #475569;display:block;"></canvas>
-    </div>
-    <div class="draw-sep" style="height:28px;"></div>
-    <button class="draw-btn" id="wallDrawBtn"
-      style="background:#374151;color:#f9fafb;border-color:#6b7280;font-size:12px;"
-      onclick="startWallMode()">🖊 벽 그리기</button>
-    <button class="draw-btn" id="wallUndoBtn"
-      style="background:#1e293b;color:#94a3b8;border-color:#475569;font-size:11px;display:none;"
-      onclick="wallUndoLast()">↩ 되돌리기</button>
-    <button class="draw-btn" id="wallDoneBtn"
-      style="background:#0f766e;color:#fff;border-color:#0d9488;font-size:11px;display:none;"
-      onclick="wallFinish()">✓ 완성</button>
+  <!-- 도면 회전 -->
+  <div class="draw-section" style="gap:4px;">
+    <span class="draw-label">🔄 도면회전</span>
+    <button class="draw-btn" onclick="canvasRotate(-90)"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 9px;font-size:14px;" title="반시계 90°">↺</button>
+    <span id="canvasRotBadge" onclick="canvasRotate(0,'reset')"
+      style="font-size:11px;font-weight:800;color:#e2e8f0;min-width:34px;text-align:center;cursor:pointer;padding:0 2px;" title="초기화">0°</span>
+    <button class="draw-btn" onclick="canvasRotate(90)"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 9px;font-size:14px;" title="시계 90°">↻</button>
   </div>
   <div class="draw-sep"></div>
+  <!-- 카테고리 위치 -->
+  <div class="draw-section" style="gap:4px;">
+    <span class="draw-label">🏷 카테고리위치</span>
+    <button id="catBtn_tl" class="draw-btn" onclick="setCatPos('tl')"
+      style="background:rgba(255,255,255,.25);color:#fff;border-color:#94a3b8;padding:5px 8px;font-size:13px;" title="좌상단">↖</button>
+    <button id="catBtn_tr" class="draw-btn" onclick="setCatPos('tr')"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 8px;font-size:13px;" title="우상단">↗</button>
+    <button id="catBtn_bl" class="draw-btn" onclick="setCatPos('bl')"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 8px;font-size:13px;" title="좌하단">↙</button>
+    <button id="catBtn_br" class="draw-btn" onclick="setCatPos('br')"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 8px;font-size:13px;" title="우하단">↘</button>
+  </div>
+  <div class="draw-sep"></div>
+  <!-- 전체 글자 회전 -->
+  <div class="draw-section" style="gap:4px;">
+    <span class="draw-label">🔤 글자회전</span>
+    <button class="draw-btn" onclick="rotateAllText(-90)"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 9px;font-size:13px;" title="글자 -90°">↺</button>
+    <span id="textRotBadge"
+      style="font-size:11px;font-weight:800;color:#e2e8f0;min-width:34px;text-align:center;cursor:pointer;padding:0 2px;"
+      onclick="rotateAllText(0,'reset')" title="글자 회전 초기화">0°</span>
+    <button class="draw-btn" onclick="rotateAllText(90)"
+      style="background:#334155;color:#e2e8f0;border-color:#475569;padding:5px 9px;font-size:13px;" title="글자 +90°">↻</button>
+  </div>
   <span class="draw-info" id="drawInfo">도면 위에서 클릭 → 드래그로 구역 그리기</span>
   <button class="draw-btn draw-cancel" onclick="cancelDrawMode()">✕ 그리기 취소</button>
 </div>
@@ -1253,7 +1258,7 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
   <!-- RIGHT PANEL -->
   <div class="rpanel" style="display:flex;flex-direction:row;overflow:hidden;">
     <!-- 왼쪽: 주차 배치 요약 -->
-    <div style="width:240px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;">
+    <div id="wkSummaryWrap" style="width:240px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;">
       <div id="wkSummaryCard" style="flex:1;overflow-y:auto;"></div>
     </div>
     <!-- 세로 리사이즈 핸들 -->
@@ -2059,7 +2064,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 const CELL=72,ROW=46,GAP=3;
-let canvasExtraR=0, canvasExtraC=0; // 도면 확장 여백
+let canvasExtraR=0, canvasExtraC=0;
 const px=c=>c*(CELL+GAP);
 const py=r=>r*(ROW+GAP);
 
@@ -2113,42 +2118,46 @@ function getSeasonBadge(zoneId, prod){
 
 
 // 카테고리 삼각형 태그
-function getCategoryTag(z) {
-  // 수동 설정 우선
-  const CAT_COLORS = {
-    fruit: '#f97316', veg: '#16a34a', fish: '#2563eb',
-    meat: '#dc2626',  food: '#6b7280', none: null
-  };
-  if (z.category && CAT_COLORS.hasOwnProperty(z.category)) {
-    const c = CAT_COLORS[z.category];
-    if (!c) return ''; // none
-    return '<div class="cat-tag" style="border-color:' + c + ' transparent transparent transparent;"></div>';
-  }
-  const name = (z.name || '').toLowerCase();
-  const prod = (z.prod || '').toLowerCase();
-  const text = name + ' ' + prod;
+// 카테고리 위치: 'tl'(좌상) 'tr'(우상) 'bl'(좌하) 'br'(우하)
+let catTagPos = 'tl';
 
-  // 과일 — 주황
-  if (/과일|딸기|사과|배[^추]|포도|수박|참외|복숭아|감귤|오렌지|만감|블루베리|키위|바나나|망고|체리|레몬|자몽|메론|토마토|방울|스테비아|샤인|핵심상품/.test(text)) {
-    return '<div class="cat-tag" style="border-color:#f97316 transparent transparent transparent;" title="과일"></div>';
+function getCatColor(z){
+  const CAT_COLORS = {fruit:'#f97316',veg:'#16a34a',fish:'#2563eb',meat:'#dc2626',food:'#6b7280',none:null};
+  if(z.category && CAT_COLORS.hasOwnProperty(z.category)) return CAT_COLORS[z.category]||null;
+  const t = ((z.name||'')+' '+(z.prod||'')).toLowerCase();
+  if(/과일|딸기|사과|포도|수박|참외|복숭아|감귤|오렌지|만감|블루베리|키위|바나나|망고|체리|레몬|자몽|메론|토마토|방울|스테비아|샤인|핵심상품/.test(t)) return '#f97316';
+  if(/채소|야채|나물|버섯|시금치|양파|마늘|고추|오이|애호박|상추|배추|무우|대파|쌈|브로콜리|고구마|감자|당근|로컬|화훼|봄동|냉이|달래|우엉|연근/.test(t)) return '#16a34a';
+  if(/수산|생선|굴|꼬막|대구|명태|갈치|고등어|전복|장어|꽃게|조개|오징어|주꾸미|도다리|병어|광어|연어|새우/.test(t)) return '#2563eb';
+  if(/축산|소고기|돼지|닭|오리|한우|갈비|삼겹|목살|불고기|스테이크|육류|계란|두부|콩나물|풀무원|씨제이|청정원/.test(t)) return '#dc2626';
+  if(/공산|잡곡|양곡|쌀|견과|건어물|건식|냉동|음료|과자|소스|선물|제수|김치|절임|양념/.test(t)) return '#6b7280';
+  return null;
+}
+
+// cat-tag는 이제 DOM 아닌 background-image gradient로 표시
+function getCategoryTag(z){ return ''; } // 미사용 (gradient 방식)
+
+/*
+  _setZbBg(el, baseBg, catColor)
+  집기 배경에 카테고리 삼각형을 linear-gradient로 합성
+  catTagPos에 따라 방향 결정
+  gradient 방식 → 집기 자체 배경이므로 도면 회전해도 항상 같은 코너에 고정
+*/
+function _setZbBg(el, baseBg, catColor){
+  if(!baseBg) baseBg = '#fff';
+  if(!catColor){
+    el.style.background = baseBg;
+    return;
   }
-  // 채소 — 초록
-  if (/채소|야채|나물|버섯|시금치|양파|마늘|고추|오이|애호박|상추|배추|무우|대파|쌈|브로콜리|콜라비|고구마|감자|당근|로컬|화훼|제주채소|제주무|봄동|냉이|달래|우엉|연근|도라지|고사리/.test(text)) {
-    return '<div class="cat-tag" style="border-color:#16a34a transparent transparent transparent;" title="채소"></div>';
-  }
-  // 수산 — 파랑
-  if (/수산|생선|굴|꼬막|대구|명태|갈치|고등어|전복|장어|꽃게|조개|오징어|주꾸미|도다리|병어|광어|연어|새우/.test(text)) {
-    return '<div class="cat-tag" style="border-color:#2563eb transparent transparent transparent;" title="수산"></div>';
-  }
-  // 축산 — 빨강
-  if (/축산|소고기|돼지|닭|오리|한우|갈비|삼겹|목살|불고기|스테이크|육류|계란|두부|콩나물|풀무원|씨제이|청정원/.test(text)) {
-    return '<div class="cat-tag" style="border-color:#dc2626 transparent transparent transparent;" title="축산"></div>';
-  }
-  // 공산품 — 회색
-  if (/공산|잡곡|양곡|쌀|견과|건어물|건식|냉동|음료|과자|소스|선물|제수|김치|절임|양념/.test(text)) {
-    return '<div class="cat-tag" style="border-color:#6b7280 transparent transparent transparent;" title="공산품"></div>';
-  }
-  return '';
+  const S = 16; // 삼각형 크기 px
+  // catTagPos 별 gradient 방향
+  const gradMap = {
+    tl: `linear-gradient(135deg, ${catColor} ${S}px, transparent ${S}px)`,
+    tr: `linear-gradient(225deg, ${catColor} ${S}px, transparent ${S}px)`,
+    bl: `linear-gradient(45deg,  ${catColor} ${S}px, transparent ${S}px)`,
+    br: `linear-gradient(315deg, ${catColor} ${S}px, transparent ${S}px)`,
+  };
+  const grad = gradMap[catTagPos] || gradMap.tl;
+  el.style.background = `${grad}, ${baseBg}`;
 }
 
 function priLbl(p,z){
@@ -2490,15 +2499,16 @@ function render(){
     el.className='zb'+(z.id===selId?' sel':multiSelIds.has(z.id)?' multi-sel':'')+(editMode?'':' view')+(isChanged?' variable':'');
     if(z.color==='ent') el.classList.add('ent-block');
     const col=COLORS.find(c=>c.key===z.color);
-    if(col){el.style.background=col.bg;el.style.borderColor=col.bc;}
+    if(col){el.style.borderColor=col.bc;_setZbBg(el,col.bg,getCatColor(z));}
     else if(z.color&&z.color.startsWith('custom_')){
       const hex='#'+z.color.slice(7);
-      el.style.background=hexToRgba(hex,0.18);
+      const bg=hexToRgba(hex,0.18);
       el.style.borderColor=hex;
+      _setZbBg(el,bg,getCatColor(z));
     }
     // 변경된 구역 강조: 배경 오버레이 + 진한 테두리
     if(isChanged){
-      el.style.background   = 'rgba(255,245,150,0.95)';
+      _setZbBg(el,'rgba(255,245,150,0.95)',getCatColor(z));
       el.style.borderColor  = '#eab308';
       el.style.borderWidth  = '3px';
       el.style.boxShadow    = '0 0 0 3px rgba(234,179,8,0.4), inset 0 0 0 1px rgba(234,179,8,0.2)';
@@ -2601,25 +2611,31 @@ function render(){
   }
   
   requestAnimationFrame(autoScale);
-  // 벽 렌더링
-  renderWalls();
   // 바운딩박스 + 핸들 위치 갱신
   requestAnimationFrame(updateBoundingBox);
+  if(typeof globalTextRot !== "undefined" && globalTextRot) requestAnimationFrame(_applyGlobalTextRot);
 }
 
 function autoScale(){
-  const area = document.getElementById('canvasArea');
-  const scaler = document.getElementById('gcScaler');
-  const gc = document.getElementById('gc');
+  const area  = document.getElementById('canvasArea');
+  const scaler= document.getElementById('gcScaler');
+  const gc    = document.getElementById('gc');
   if(!area||!scaler||!gc) return;
-  if(userZoomed) { applyScale(); return; }  // 수동 줌 설정 후엔 autoScale이 덮어쓰지 않음
-  const aw = area.clientWidth  - 24;
-  const ah = area.clientHeight - 24;
+  if(userZoomed){ applyScale(); return; }
+  const PAD = 32; // 상하좌우 동일 여백
+  const aw = area.clientWidth  - PAD * 2;
+  const ah = area.clientHeight - PAD * 2;
   const gw = gc.offsetWidth;
   const gh = gc.offsetHeight;
   if(!gw||!gh) return;
-  const scale = Math.min(aw/gw, ah/gh, 1);
-  curScale = scale;
+
+  const rot = (storeRotations[currentStore]||0) * Math.PI / 180;
+  const cos = Math.abs(Math.cos(rot)), sin = Math.abs(Math.sin(rot));
+  const bw  = gw*cos + gh*sin;  // 회전 후 bbox 가로
+  const bh  = gw*sin + gh*cos;  // 회전 후 bbox 세로
+
+  // 가로 사이즈에 딱 맞게 (세로는 스크롤)
+  curScale = aw / bw;
   applyScale();
 }
 
@@ -2628,12 +2644,44 @@ let userZoomed = false;  // 사용자가 수동으로 줌을 조절했는지 여
 
 function applyScale(){
   const scaler = document.getElementById('gcScaler');
-  const gc = document.getElementById('gc');
-  if(!scaler||!gc) return;
+  const gc     = document.getElementById('gc');
+  const area   = document.getElementById('canvasArea');
+  if(!scaler||!gc||!area) return;
+
+  const rot = storeRotations[currentStore]||0;
+  const rad = rot * Math.PI / 180;
+  const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+  const gw  = gc.offsetWidth, gh = gc.offsetHeight;
+
+  // 회전 bbox 크기
+  const bw = gw*cos + gh*sin;
+  const bh = gw*sin + gh*cos;
+
+  // ── 회전 포함 bbox 기준으로 중앙 배치 ──
+  const scaledBW = bw * curScale;
+  const areaW = area.clientWidth;
+  const PAD_TOP  = 12;
+  const PAD_SIDE = 16;
+
+  const left = Math.max(PAD_SIDE, (areaW - scaledBW) / 2);
+  const top  = PAD_TOP;
+
+  scaler.style.left      = left + 'px';
+  scaler.style.top       = top  + 'px';
   scaler.style.transform = `scale(${curScale})`;
-  scaler.style.width  = (gc.offsetWidth  * curScale) + 'px';
-  scaler.style.height = (gc.offsetHeight * curScale) + 'px';
+  scaler.style.width     = bw + 'px';
+  scaler.style.height    = bh + 'px';
+
+  // ── gc: scaler 안에서 bbox 중앙에 rotate ──
+  gc.style.position        = 'absolute';
+  gc.style.top             = ((bh - gh) / 2) + 'px';
+  gc.style.left            = ((bw - gw) / 2) + 'px';
+  gc.style.transformOrigin = 'center center';
+  gc.style.transform       = rot ? `rotate(${rot}deg)` : '';
+
   document.getElementById('zoomPct').textContent = Math.round(curScale*100)+'%';
+  const b = document.getElementById('canvasRotBadge');
+  if(b) b.textContent = rot + '°';
 }
 
 function zoomStep(delta){
@@ -4369,429 +4417,6 @@ function cancelDrawMode() {
 //  벽 그리기 — 일러스트레이터 펜 도구 스타일
 // ══════════════════════════════════════════════════════════════
 
-// 벽 데이터
-let walls = [];
-
-// 벽 선 두께/색상 (슬라이더로 실시간 변경)
-let wallColor = '#1e293b';
-let wallWidth = 4;
-
-const WALL_PALETTE = [
-  '#1e293b','#374151','#6b7280',
-  '#dc2626','#ea580c','#d97706',
-  '#16a34a','#0284c7','#7c3aed',
-  '#fff',
-];
-
-document.addEventListener('DOMContentLoaded', () => {
-  const palette = document.getElementById('wallColorPalette'); if(!palette) return;
-  WALL_PALETTE.forEach(c => {
-    const sw = document.createElement('div');
-    sw.style.cssText = [
-      `background:${c}`,'width:18px','height:18px','border-radius:3px','cursor:pointer',
-      c==='#fff'?'border:1.5px solid #475569':'border:1.5px solid transparent',
-    ].join(';');
-    sw.title = c;
-    sw.addEventListener('click', () => onWallColorChange(c));
-    palette.appendChild(sw);
-  });
-  _wallUpdatePreview();
-});
-
-function onWallWidthChange(v){
-  wallWidth = v;
-  const lbl = document.getElementById('wallWidthVal');
-  if(lbl) lbl.textContent = v + 'px';
-  _wallUpdatePreview();
-  if(wallMode) _wallRedraw();
-}
-
-function onWallColorChange(c){
-  wallColor = c;
-  const palette = document.getElementById('wallColorPalette');
-  if(palette) palette.querySelectorAll('div').forEach(sw => {
-    sw.style.outline = sw.title===c ? '2px solid #4f8ef7' : 'none';
-  });
-  const cp = document.getElementById('wallColorCustom');
-  if(cp) cp.value = c.startsWith('#') && c.length===7 ? c : '#1e293b';
-  _wallUpdatePreview();
-  if(wallMode) _wallRedraw();
-}
-
-function _wallUpdatePreview(){
-  const canvas = document.getElementById('wallPreviewCanvas'); if(!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0,0,w,h);
-  ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,w,h);
-  ctx.beginPath();
-  ctx.moveTo(6, h*0.7); ctx.lineTo(w*0.35, h*0.3);
-  ctx.lineTo(w*0.65, h*0.7); ctx.lineTo(w-6, h*0.3);
-  ctx.strokeStyle = wallColor;
-  ctx.lineWidth = Math.min(wallWidth, h-4);
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
-  [[6,h*0.7],[w*0.35,h*0.3],[w*0.65,h*0.7],[w-6,h*0.3]].forEach(([x,y])=>{
-    ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2);
-    ctx.fillStyle='#0f766e'; ctx.fill();
-    ctx.strokeStyle='#fff'; ctx.lineWidth=1; ctx.stroke();
-  });
-}
-
-// ── 벽 그리기 모드 ──
-let wallMode   = false;
-let wallPoints = [];
-let wallSvg    = null;
-
-function startWallMode(){
-  if(wallMode) return;
-  drawMode = null; // 집기 그리기 모드 끄기
-  wallMode = true;
-  wallPoints = [];
-  document.getElementById('wallDrawBtn').style.background = '#0f766e';
-  document.getElementById('wallDrawBtn').textContent = '🖊 그리는 중...';
-  document.getElementById('wallUndoBtn').style.display = '';
-  document.getElementById('wallDoneBtn').style.display = '';
-  document.getElementById('drawInfo').textContent = '클릭으로 점 추가 · Shift=직각 · Enter/✓ 완성 · Esc 취소';
-
-  const gc = document.getElementById('gc'); if(!gc) return;
-  wallSvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  wallSvg.id = 'wallDrawSvg';
-  wallSvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9800;overflow:visible;';
-  gc.appendChild(wallSvg);
-  gc.addEventListener('click',     _wallClick);
-  gc.addEventListener('mousemove', _wallMouseMove);
-  gc.style.cursor = 'crosshair';
-  document.addEventListener('keydown', _wallKeyDown);
-}
-
-function _wallClick(e){
-  if(!wallMode) return;
-  if(e.target.closest('.zb,.rh,.rh-rot')) return;
-  const gc = document.getElementById('gc');
-  const rect = gc.getBoundingClientRect();
-  let x = (e.clientX - rect.left) / curScale;
-  let y = (e.clientY - rect.top)  / curScale;
-  if(e.shiftKey && wallPoints.length > 0){
-    const last = wallPoints[wallPoints.length-1];
-    const dx = Math.abs(x-last.x), dy = Math.abs(y-last.y);
-    if(dx >= dy) y = last.y; else x = last.x;
-  }
-  wallPoints.push({x, y});
-  _wallRedraw();
-}
-
-function _wallMouseMove(e){
-  if(!wallMode || wallPoints.length === 0) return;
-  const gc = document.getElementById('gc');
-  const rect = gc.getBoundingClientRect();
-  let x = (e.clientX - rect.left) / curScale;
-  let y = (e.clientY - rect.top)  / curScale;
-  if(e.shiftKey && wallPoints.length > 0){
-    const last = wallPoints[wallPoints.length-1];
-    const dx = Math.abs(x-last.x), dy = Math.abs(y-last.y);
-    if(dx >= dy) y = last.y; else x = last.x;
-  }
-  _wallRedraw(x, y);
-}
-
-function _wallRedraw(curX, curY){
-  if(!wallSvg) return;
-  wallSvg.innerHTML = '';
-  if(wallPoints.length >= 2){
-    const pl = document.createElementNS('http://www.w3.org/2000/svg','polyline');
-    pl.setAttribute('points', wallPoints.map(p=>`${p.x},${p.y}`).join(' '));
-    pl.setAttribute('stroke', wallColor);
-    pl.setAttribute('stroke-width', wallWidth / curScale);
-    pl.setAttribute('fill','none');
-    pl.setAttribute('stroke-linecap','round');
-    pl.setAttribute('stroke-linejoin','round');
-    wallSvg.appendChild(pl);
-  }
-  wallPoints.forEach((p, i) => {
-    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
-    c.setAttribute('r', 5 / curScale);
-    c.setAttribute('fill', i===0 ? '#0f766e' : '#fff');
-    c.setAttribute('stroke','#0f766e');
-    c.setAttribute('stroke-width', 2 / curScale);
-    wallSvg.appendChild(c);
-  });
-  if(curX !== undefined && wallPoints.length > 0){
-    const last = wallPoints[wallPoints.length-1];
-    const rubber = document.createElementNS('http://www.w3.org/2000/svg','line');
-    rubber.setAttribute('x1', last.x); rubber.setAttribute('y1', last.y);
-    rubber.setAttribute('x2', curX);   rubber.setAttribute('y2', curY);
-    rubber.setAttribute('stroke', wallColor);
-    rubber.setAttribute('stroke-width', wallWidth / curScale);
-    rubber.setAttribute('stroke-dasharray', `${8/curScale},${4/curScale}`);
-    rubber.setAttribute('opacity','0.5');
-    wallSvg.appendChild(rubber);
-    const cur = document.createElementNS('http://www.w3.org/2000/svg','circle');
-    cur.setAttribute('cx', curX); cur.setAttribute('cy', curY);
-    cur.setAttribute('r', 5 / curScale);
-    cur.setAttribute('fill','#fff'); cur.setAttribute('stroke','#1b72e8');
-    cur.setAttribute('stroke-width', 2/curScale);
-    wallSvg.appendChild(cur);
-  }
-}
-
-function wallUndoLast(){
-  if(!wallMode) return;
-  wallPoints.pop();
-  _wallRedraw();
-  if(wallPoints.length === 0) showToast('점이 없습니다');
-}
-
-function wallFinish(){
-  if(!wallMode) return;
-  if(wallPoints.length < 2){ showToast('점을 2개 이상 찍어주세요'); return; }
-  saveUndoState();
-  walls.push({ id:'w'+Date.now(), points:[...wallPoints], color:wallColor, width:wallWidth });
-  _wallCleanup();
-  renderWalls();
-  showToast('✅ 벽 완성!');
-}
-
-function _wallCleanup(){
-  wallMode = false; wallPoints = [];
-  if(wallSvg){ wallSvg.remove(); wallSvg = null; }
-  const gc = document.getElementById('gc');
-  if(gc){
-    gc.removeEventListener('click',     _wallClick);
-    gc.removeEventListener('mousemove', _wallMouseMove);
-    gc.style.cursor = '';
-  }
-  document.removeEventListener('keydown', _wallKeyDown);
-  const btn = document.getElementById('wallDrawBtn');
-  if(btn){ btn.style.background='#374151'; btn.textContent='🖊 벽 그리기'; }
-  const u = document.getElementById('wallUndoBtn'); if(u) u.style.display='none';
-  const d = document.getElementById('wallDoneBtn'); if(d) d.style.display='none';
-  const di = document.getElementById('drawInfo');
-  if(di) di.textContent='도면 위에서 클릭 → 드래그로 구역 그리기';
-}
-
-function cancelWallMode(){ _wallCleanup(); }
-
-function _wallKeyDown(e){
-  if(e.key==='Enter'){ e.preventDefault(); wallFinish(); }
-  if(e.key==='Escape'){ e.preventDefault(); _wallCleanup(); }
-  if((e.key==='z'||e.key==='Z')&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); wallUndoLast(); }
-}
-
-// ── 완성된 벽 렌더링 + 선택/이동 ──
-let selWallId = null;
-let wallDrag  = null;
-
-function renderWalls(){
-  const gc = document.getElementById('gc'); if(!gc) return;
-  let wsvg = document.getElementById('wallsSvg');
-  if(wsvg) wsvg.remove();
-  if(walls.length === 0) return;
-
-  wsvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  wsvg.id = 'wallsSvg';
-  wsvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:visible;';
-
-  walls.forEach(w => {
-    if(w.points.length < 2) return;
-    const isSel = w.id === selWallId;
-
-    if(isSel){
-      const halo = document.createElementNS('http://www.w3.org/2000/svg','polyline');
-      halo.setAttribute('points', w.points.map(p=>`${p.x},${p.y}`).join(' '));
-      halo.setAttribute('stroke','#4f8ef7');
-      halo.setAttribute('stroke-width', (w.width||4)+8);
-      halo.setAttribute('fill','none');
-      halo.setAttribute('stroke-linecap','round');
-      halo.setAttribute('stroke-linejoin','round');
-      halo.setAttribute('opacity','0.35');
-      halo.dataset.haloId = w.id;
-      wsvg.appendChild(halo);
-    }
-
-    const pl = document.createElementNS('http://www.w3.org/2000/svg','polyline');
-    pl.setAttribute('points', w.points.map(p=>`${p.x},${p.y}`).join(' '));
-    pl.setAttribute('stroke', isSel ? '#4f8ef7' : (w.color||'#1e293b'));
-    pl.setAttribute('stroke-width', w.width||4);
-    pl.setAttribute('fill','none');
-    pl.setAttribute('stroke-linecap','round');
-    pl.setAttribute('stroke-linejoin','round');
-    pl.dataset.wallId = w.id;
-
-    if(editMode && !wallMode){
-      pl.style.pointerEvents = 'stroke';
-      pl.style.cursor = 'grab';
-      pl.addEventListener('click',     ev => { ev.stopPropagation(); selectWall(w.id); });
-      pl.addEventListener('mousedown', ev => {
-        if(ev.button!==0) return;
-        ev.stopPropagation(); ev.preventDefault();
-        selectWall(w.id);
-        _wallDragStart(ev, w.id);
-      });
-    }
-    wsvg.appendChild(pl);
-
-    if(isSel && editMode){
-      w.points.forEach((p, i) => {
-        const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        c.setAttribute('cx', p.x); c.setAttribute('cy', p.y);
-        c.setAttribute('r', 6);
-        c.setAttribute('fill','#fff'); c.setAttribute('stroke','#4f8ef7');
-        c.setAttribute('stroke-width', 2);
-        c.style.pointerEvents = 'all'; c.style.cursor = 'move';
-        c.addEventListener('mousedown', ev => { ev.stopPropagation(); ev.preventDefault(); _wallPointDragStart(ev, w.id, i); });
-        wsvg.appendChild(c);
-      });
-      // floating 패널 표시
-      const mid = w.points[Math.floor(w.points.length/2)];
-      _showWallPanel(w, mid);
-    }
-  });
-
-  gc.appendChild(wsvg);
-}
-
-function _showWallPanel(w, svgMidPt){
-  _hideWallPanel();
-  const gcScaler = document.getElementById('gcScaler');
-  const canvasArea = document.getElementById('canvasArea');
-  if(!gcScaler||!canvasArea) return;
-  const scalerRect = gcScaler.getBoundingClientRect();
-  const areaRect   = canvasArea.getBoundingClientRect();
-  const screenX = scalerRect.left - areaRect.left + svgMidPt.x * curScale;
-  const screenY = scalerRect.top  - areaRect.top  + svgMidPt.y * curScale;
-
-  const panel = document.createElement('div');
-  panel.id = 'wallEditPanel';
-  panel.style.cssText = [
-    'position:absolute',
-    `left:${screenX+12}px`,
-    `top:${Math.max(4,screenY-54)}px`,
-    'z-index:9999','background:#1e293b',
-    'border:1.5px solid #4f8ef7','border-radius:10px',
-    'padding:8px 12px','display:flex','align-items:center','gap:10px',
-    'box-shadow:0 4px 20px rgba(0,0,0,.5)',
-    'user-select:none','pointer-events:all',
-    'font-family:Pretendard,sans-serif','white-space:nowrap',
-  ].join(';');
-
-  const lbl = document.createElement('span');
-  lbl.style.cssText = 'font-size:10px;font-weight:800;color:#94a3b8;';
-  lbl.textContent = '두께';
-  panel.appendChild(lbl);
-
-  const slider = document.createElement('input');
-  slider.type='range'; slider.min=1; slider.max=30; slider.step=1;
-  slider.value = w.width||4;
-  slider.style.cssText = 'width:80px;accent-color:#4f8ef7;cursor:pointer;vertical-align:middle;';
-
-  const valLbl = document.createElement('span');
-  valLbl.style.cssText = 'font-size:11px;font-weight:800;color:#e2e8f0;min-width:30px;';
-  valLbl.textContent = (w.width||4)+'px';
-
-  slider.addEventListener('input', () => {
-    const val = +slider.value;
-    valLbl.textContent = val+'px';
-    const ww = walls.find(x=>x.id===w.id); if(!ww) return;
-    ww.width = val;
-    const wsvg = document.getElementById('wallsSvg'); if(!wsvg) return;
-    wsvg.querySelectorAll('polyline[data-wall-id]').forEach(pl => {
-      if(pl.dataset.wallId===w.id) pl.setAttribute('stroke-width', val);
-    });
-    wsvg.querySelectorAll('polyline[data-halo-id]').forEach(pl => {
-      if(pl.dataset.haloId===w.id) pl.setAttribute('stroke-width', val+8);
-    });
-  });
-  slider.addEventListener('change', () => saveUndoState());
-
-  panel.appendChild(slider);
-  panel.appendChild(valLbl);
-
-  const sep = document.createElement('div');
-  sep.style.cssText = 'width:1px;height:20px;background:#334155;flex-shrink:0;';
-  panel.appendChild(sep);
-
-  const delBtn = document.createElement('button');
-  delBtn.innerHTML = '🗑 삭제';
-  delBtn.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;';
-  delBtn.addEventListener('click', () => {
-    saveUndoState();
-    walls = walls.filter(x=>x.id!==w.id);
-    selWallId = null; _hideWallPanel(); renderWalls();
-    showToast('벽 삭제됨');
-  });
-  panel.appendChild(delBtn);
-  canvasArea.appendChild(panel);
-}
-
-function _hideWallPanel(){
-  const p = document.getElementById('wallEditPanel'); if(p) p.remove();
-}
-
-function selectWall(id){
-  if(selWallId===id){ selWallId=null; _hideWallPanel(); renderWalls(); }
-  else { selWallId=id; renderWalls(); }
-}
-
-function _wallDragStart(e, wallId){
-  const w = walls.find(x=>x.id===wallId); if(!w) return;
-  wallDrag = { wallId, startX:e.clientX, startY:e.clientY, origPoints:w.points.map(p=>({...p})), type:'wall' };
-  document.body.style.cursor='grabbing';
-  document.addEventListener('mousemove', _wallDragMove);
-  document.addEventListener('mouseup',   _wallDragEnd);
-}
-
-function _wallDragMove(e){
-  if(!wallDrag||wallDrag.type!=='wall') return;
-  const dx=(e.clientX-wallDrag.startX)/curScale;
-  const dy=(e.clientY-wallDrag.startY)/curScale;
-  const w=walls.find(x=>x.id===wallDrag.wallId); if(!w) return;
-  w.points=wallDrag.origPoints.map(p=>({x:p.x+dx,y:p.y+dy}));
-  _hideWallPanel(); renderWalls();
-}
-
-function _wallDragEnd(){
-  if(!wallDrag) return;
-  document.removeEventListener('mousemove', _wallDragMove);
-  document.removeEventListener('mouseup',   _wallDragEnd);
-  document.body.style.cursor='';
-  if(wallDrag.type==='wall'||wallDrag.type==='point') saveUndoState();
-  wallDrag=null;
-  if(selWallId) renderWalls();
-}
-
-function _wallPointDragStart(e, wallId, ptIdx){
-  const w=walls.find(x=>x.id===wallId); if(!w) return;
-  wallDrag={ wallId, ptIdx, startX:e.clientX, startY:e.clientY, origPt:{...w.points[ptIdx]}, type:'point' };
-  document.body.style.cursor='move';
-  document.addEventListener('mousemove', _wallPointDragMove);
-  document.addEventListener('mouseup',   _wallDragEnd);
-}
-
-function _wallPointDragMove(e){
-  if(!wallDrag||wallDrag.type!=='point') return;
-  const dx=(e.clientX-wallDrag.startX)/curScale;
-  const dy=(e.clientY-wallDrag.startY)/curScale;
-  let fx=wallDrag.origPt.x+dx, fy=wallDrag.origPt.y+dy;
-  if(e.shiftKey){ if(Math.abs(dx)>=Math.abs(dy)) fy=wallDrag.origPt.y; else fx=wallDrag.origPt.x; }
-  const w=walls.find(x=>x.id===wallDrag.wallId); if(!w) return;
-  w.points[wallDrag.ptIdx]={x:fx,y:fy};
-  renderWalls();
-}
-
-document.addEventListener('keydown', e => {
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
-  if((e.key==='Delete'||e.key==='Backspace')&&selWallId&&!selId&&multiSelIds.size===0){
-    e.stopImmediatePropagation();
-    saveUndoState();
-    walls=walls.filter(x=>x.id!==selWallId);
-    selWallId=null; _hideWallPanel(); renderWalls();
-    showToast('벽 삭제됨');
-  }
-  if(e.key==='Escape'&&selWallId&&!wallMode){ selWallId=null; _hideWallPanel(); renderWalls(); }
-});
-
-
 // 드래그 선택 박스 변수
 let selectBoxStart = null;
 let selectBox = null;
@@ -5163,6 +4788,10 @@ function toggleMode(){
   document.getElementById('modeTag').textContent=editMode?'편집 모드':'열람 모드';
   document.getElementById('modeTag').className='badge '+(editMode?'b-edit':'b-view');
   document.getElementById('toolbar').style.display=editMode?'flex':'none';
+  const wkWrap = document.getElementById('wkSummaryWrap');
+  if(wkWrap) wkWrap.style.display = editMode ? 'none' : 'flex';
+  const resizeH = document.getElementById('summaryResizeHandle');
+  if(resizeH) resizeH.style.display = editMode ? 'none' : 'flex';
   render();
 }
 
@@ -6253,7 +5882,80 @@ function switchStore(store) {
   if (select) select.value = store;
   selId = null;
   render(); applyScale(); renderPanel(); renderNav();
+  const _b = document.getElementById('canvasRotBadge');
+  if(_b) _b.textContent=(storeRotations[currentStore]||0)+'°';
   showToast(s.name + ' 로드');
+}
+
+/* ══════════════════════════════════════════════════
+   도면 회전 + 카테고리 위치 시스템
+══════════════════════════════════════════════════ */
+const storeRotations = {};
+
+function setCatPos(pos){
+  catTagPos = pos;
+  ['tl','tr','bl','br'].forEach(p=>{
+    const b=document.getElementById('catBtn_'+p);
+    if(b) b.style.background = p===pos?'rgba(255,255,255,.35)':'';
+  });
+  render();
+  showToast('카테고리 위치: '+{tl:'좌상단',tr:'우상단',bl:'좌하단',br:'우하단'}[pos]);
+}
+
+function canvasRotate(delta, mode){
+  const cur  = storeRotations[currentStore]||0;
+  const next = mode==='reset' ? 0 : ((cur+delta+360)%360);
+  storeRotations[currentStore] = next;
+  userZoomed = false;
+  render();
+  autoScale();
+  const b=document.getElementById('canvasRotBadge');
+  if(b) b.textContent=next+'°';
+  showToast('도면 '+next+'° 회전');
+}
+
+// ── 전체 글자 회전 ──────────────────────────────────────
+let globalTextRot = 0; // 현재 글자 회전 각도
+
+function rotateAllText(delta, mode){
+  globalTextRot = mode==='reset' ? 0 : ((globalTextRot + delta + 360) % 360);
+  _applyGlobalTextRot();
+  const b = document.getElementById('textRotBadge');
+  if(b) b.textContent = globalTextRot + '°';
+  showToast('글자 ' + globalTextRot + '° 회전');
+}
+
+function _applyGlobalTextRot(){
+  const deg = globalTextRot;
+  document.querySelectorAll('.zb').forEach(zb => {
+    const zi = zb.querySelector('.zi');
+    if(!zi) return;
+    if(deg){
+      const w = zb.offsetWidth, h = zb.offsetHeight;
+      // 90°/270° 회전 시 가로세로가 바뀌므로 zi 크기를 min(w,h) 정사각형으로
+      // → 어떤 각도로 돌려도 zb(overflow:hidden) 안에 완전히 들어옴
+      const s = Math.min(w, h);
+      zi.style.position        = 'absolute';
+      zi.style.top             = ((h - s) / 2) + 'px';
+      zi.style.left            = ((w - s) / 2) + 'px';
+      zi.style.width           = s + 'px';
+      zi.style.height          = s + 'px';
+      zi.style.transform       = `rotate(${deg}deg)`;
+      zi.style.transformOrigin = 'center center';
+      zi.style.boxSizing       = 'border-box';
+      zi.style.overflow        = 'hidden';
+    } else {
+      zi.style.position  = '';
+      zi.style.top       = '';
+      zi.style.left      = '';
+      zi.style.width     = '';
+      zi.style.height    = '';
+      zi.style.transform = '';
+      zi.style.boxSizing = '';
+      zi.style.overflow  = '';
+    }
+    zb.style.overflow = 'hidden';
+  });
 }
 
 curWkIdx = getTodayWkIdx();
@@ -6270,6 +5972,11 @@ window._renderOnReady = function() {
   render();
   renderWkSummary();
   initRpSections();
+  // 편집 모드 시작 시 요약 패널 숨김
+  if(editMode){
+    const w=document.getElementById('wkSummaryWrap'); if(w) w.style.display='none';
+    const r=document.getElementById('summaryResizeHandle'); if(r) r.style.display='none';
+  }
 };
 // Firebase 응답이 3초 내에 없으면 하드코딩 데이터로 강제 렌더
 setTimeout(function() {
