@@ -811,6 +811,8 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
     }
     // 현재 지점이면 즉시 화면에 반영
     if (typeof currentStore !== 'undefined' && store === currentStore) {
+      // render() 먼저 호출해야 새 회전값이 도면에 반영됨
+      if (typeof render === 'function') render();
       if (window.storeRotations && typeof applyScale === 'function') applyScale();
       if (window.storeTextRot && typeof _applyGlobalTextRot === 'function') _applyGlobalTextRot();
       if (window.storeCatTagPos) {
@@ -2375,7 +2377,7 @@ let catTagPos = 'tl'; // 현재 지점 캐시 (편의용)
 const storeCatTagPos = {}; // 지점별 카테고리 위치
 window.storeCatTagPos = storeCatTagPos;
 function getCatTagPos(){ return storeCatTagPos[currentStore] || 'tl'; }
-function _setCatTagPos(pos){ storeCatTagPos[currentStore] = pos; catTagPos = pos; }
+function _setCatTagPos(pos){ storeCatTagPos[currentStore] = pos; catTagPos = pos; if(window.storeCatTagPos) window.storeCatTagPos[currentStore] = pos; }
 
 function getCatColor(z){
   const CAT_COLORS = {fruit:'#f97316',veg:'#16a34a',fish:'#2563eb',meat:'#dc2626',food:'#6b7280',none:null};
@@ -4586,7 +4588,7 @@ function moveSel(dc,dr){const z=zones.find(x=>x.id===selId);if(!z)return showToa
 function deleteSel(){ saveUndoState();
   if(!selId)return showToast('먼저 구역 선택');
   if(!confirm(`'${zones.find(z=>z.id===selId)?.name}' 삭제?`))return;
-  zones=zones.filter(z=>z.id!==selId);selId=null;render();
+  const _di=zones.findIndex(z=>z.id===selId);if(_di>=0)zones.splice(_di,1);selId=null;render();
   document.getElementById('rpEmp').style.display='';document.getElementById('rpEdit').style.display='none';
   showToast('삭제 완료');
 }
@@ -4617,7 +4619,8 @@ function mergeZones() {
 
   // 나머지 구역 삭제
   const removeIds = new Set(ids.slice(1));
-  zones = zones.filter(z => !removeIds.has(z.id));
+  // splice로 재할당 없이 제거 (window.zones 참조 유지)
+  for(let _i=zones.length-1;_i>=0;_i--){if(removeIds.has(zones[_i].id))zones.splice(_i,1);}
 
   multiSelIds.clear();
   selId = base.id;
@@ -5157,9 +5160,15 @@ function toggleMode(){
 // ── Firebase 실시간 동기화 저장 ──
 function syncToFirebase(){
   if(typeof window._firebaseSave === 'function'){
-    // 현재 점포 저장
+    // 현재 점포 저장 — 모든 상태를 window.* 에 확실히 반영
     storeUserOverrides[currentStore] = JSON.parse(JSON.stringify(userOverrides));
     storeZonesSnapshot[currentStore] = zones.map(z => Object.assign({}, z));
+    if(window.storeUserOverrides) window.storeUserOverrides[currentStore] = storeUserOverrides[currentStore];
+    if(window.storeZonesSnapshot) window.storeZonesSnapshot[currentStore] = storeZonesSnapshot[currentStore];
+    if(window.catRegions && typeof catRegions !== 'undefined') window.catRegions[currentStore] = catRegions[currentStore] || [];
+    // window.zones는 zones와 같은 참조 — 동기화 불필요 (splice 방식으로 참조 유지됨)
+    if(window.userOverrides && typeof userOverrides !== 'undefined'){ Object.keys(window.userOverrides).forEach(k=>delete window.userOverrides[k]); Object.assign(window.userOverrides, userOverrides); }
+    if(window.seasonOverrides && typeof seasonOverrides !== 'undefined'){ Object.keys(window.seasonOverrides).forEach(k=>delete window.seasonOverrides[k]); Object.assign(window.seasonOverrides, seasonOverrides); }
     window._firebaseSave(currentStore);
     showToast('🔄 서버에 동기화 중...');
   } else {
@@ -5717,13 +5726,9 @@ window.storeNames = storeNames;
 window.storeUserOverrides = storeUserOverrides;
 window.storeZonesSnapshot = storeZonesSnapshot;
 // catRegions / zones / userOverrides / seasonOverrides — module 스코프 외부 접근용
-// (선언은 각각 다른 위치에 있어 직접 참조 불가 → 지연 노출)
-setTimeout(function() {
-  if (typeof catRegions    !== 'undefined') window.catRegions    = catRegions;
-  if (typeof zones         !== 'undefined') window.zones         = zones;
-  if (typeof userOverrides !== 'undefined') window.userOverrides = userOverrides;
-  if (typeof seasonOverrides !== 'undefined') window.seasonOverrides = seasonOverrides;
-}, 0);
+if (typeof zones         !== 'undefined') window.zones         = zones;
+if (typeof userOverrides !== 'undefined') window.userOverrides = userOverrides;
+if (typeof seasonOverrides !== 'undefined') window.seasonOverrides = seasonOverrides;
 // 지점별 seasonOverrides 별도 보관 (비현재 지점 데이터 손실 방지)
 const storeSeasonOverrides = { gs:{}, bd:{}, gn:{}, sp:{}, pc:{}, rdw:{} };
 window.storeSeasonOverrides = storeSeasonOverrides;
@@ -6345,6 +6350,8 @@ function canvasRotate(delta, mode){
   const cur  = storeRotations[currentStore]||0;
   const next = mode==='reset' ? 0 : ((cur+delta+360)%360);
   storeRotations[currentStore] = next;
+  // window 참조도 명시적으로 갱신 (Firebase module에서 읽음)
+  if(window.storeRotations) window.storeRotations[currentStore] = next;
   userZoomed = false;
   render();
   autoScale();
@@ -6358,7 +6365,7 @@ let globalTextRot = 0; // 현재 지점 캐시 (편의용)
 const storeTextRot = {}; // 지점별 전체 글자 회전
 window.storeTextRot = storeTextRot;
 function getGlobalTextRot(){ return storeTextRot[currentStore] || 0; }
-function _setGlobalTextRot(v){ storeTextRot[currentStore] = v; globalTextRot = v; }
+function _setGlobalTextRot(v){ storeTextRot[currentStore] = v; globalTextRot = v; if(window.storeTextRot) window.storeTextRot[currentStore] = v; }
 
 function rotateAllText(delta, mode){
   // 선택된 구역이 있으면 해당 구역만, 없으면 현재 지점 전체 적용
@@ -6928,6 +6935,7 @@ function switchView(view) {
 // ── 데이터 ──────────────────────────────────────────
 // catRegions: { [storeCode]: [ {id, category, zoneIds:[...]} ] }
 const catRegions = {};
+window.catRegions = catRegions; // Firebase module 접근용
 
 const CAT_DEF = [
   { key: '농산', label: '🥬 농산', color: '#16a34a' },
