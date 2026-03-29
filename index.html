@@ -829,6 +829,10 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
               Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
               Object.assign(seasonOverrides, data.seasonOverrides);
             }
+            // storeSeasonOverrides 갱신 (지점 전환·비현재 지점 저장 시 참조)
+            if (data.seasonOverrides && window.storeSeasonOverrides) {
+              window.storeSeasonOverrides[store] = JSON.parse(JSON.stringify(data.seasonOverrides));
+            }
             // catRegions 복원
             if (data.catRegions && Array.isArray(data.catRegions)) {
               catRegions[store] = JSON.parse(JSON.stringify(data.catRegions));
@@ -858,6 +862,10 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
         if (data.seasonOverrides && typeof seasonOverrides !== 'undefined') {
           Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
           Object.assign(seasonOverrides, data.seasonOverrides);
+        }
+        // storeSeasonOverrides 갱신
+        if (data.seasonOverrides && window.storeSeasonOverrides) {
+          window.storeSeasonOverrides[store] = JSON.parse(JSON.stringify(data.seasonOverrides));
         }
         // catRegions 복원
         if (data.catRegions && Array.isArray(data.catRegions)) {
@@ -890,7 +898,9 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
         name: allNames[store] || store,
         zones: (store === currentStore) ? zones : (storeZonesSnapshot?.[store] || []),
         userOverrides: (store === currentStore) ? userOverrides : (storeUserOverrides[store] || {}),
-        seasonOverrides: (store === currentStore) ? JSON.parse(JSON.stringify(seasonOverrides)) : {},
+        seasonOverrides: (store === currentStore)
+          ? JSON.parse(JSON.stringify(seasonOverrides))
+          : JSON.parse(JSON.stringify((window.storeSeasonOverrides && window.storeSeasonOverrides[store]) || {})),
         catRegions: (catRegions[store] || []).map(r=>Object.assign({},r)),
         savedAt: Date.now()
       };
@@ -1054,13 +1064,14 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
       // 새 지점의 실제 데이터 불러오기 + 실시간 감시
       const storeDataRef = ref(db, 'plan2026/' + code);
       onValue(storeDataRef, dataSnap => {
+        if (_suppressNext.has(code)) { _suppressNext.delete(code); return; }
         const storeData = dataSnap.val();
         if (!storeData) return;
 
         // zones 데이터 업데이트
         if (storeData.zones && Array.isArray(storeData.zones)) {
           newZones.length = 0;
-          storeData.zones.forEach(z => newZones.push(z));
+          storeData.zones.forEach(z => newZones.push(Object.assign({}, z)));
           if (window.storeZonesSnapshot) {
             window.storeZonesSnapshot[code] = storeData.zones.map(z => Object.assign({}, z));
           }
@@ -1087,6 +1098,10 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
           if (storeData.seasonOverrides && typeof seasonOverrides !== 'undefined') {
             Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
             Object.assign(seasonOverrides, storeData.seasonOverrides);
+          }
+          // storeSeasonOverrides 갱신
+          if (storeData.seasonOverrides && window.storeSeasonOverrides) {
+            window.storeSeasonOverrides[code] = JSON.parse(JSON.stringify(storeData.seasonOverrides));
           }
           // catRegions 복원
           if (storeData.catRegions && Array.isArray(storeData.catRegions)) {
@@ -5599,6 +5614,9 @@ window.storeMap = storeMap;
 window.storeNames = storeNames;
 window.storeUserOverrides = storeUserOverrides;
 window.storeZonesSnapshot = storeZonesSnapshot;
+// 지점별 seasonOverrides 별도 보관 (비현재 지점 데이터 손실 방지)
+const storeSeasonOverrides = { gs:{}, bd:{}, gn:{}, sp:{}, pc:{}, rdw:{} };
+window.storeSeasonOverrides = storeSeasonOverrides;
 window.updateSaveDropdown = function() { if (typeof updateSaveDropdown === 'function') updateSaveDropdown(); };
 // currentStore는 let이라 window에 자동 노출 안 됨 → 명시적으로 연결
 Object.defineProperty(window, 'currentStore', {
@@ -6127,6 +6145,10 @@ function switchStore(store) {
   // 현재 점포 수정 내용 전부 저장 (userOverrides + zones 편집본)
   storeUserOverrides[currentStore] = JSON.parse(JSON.stringify(userOverrides));
   storeZonesSnapshot[currentStore] = zones.map(z => Object.assign({}, z));
+  // 현재 지점 seasonOverrides도 백업
+  if (typeof seasonOverrides !== 'undefined' && window.storeSeasonOverrides) {
+    window.storeSeasonOverrides[currentStore] = JSON.parse(JSON.stringify(seasonOverrides));
+  }
   currentStore = store;
   const s = storeMap[store];
   zones.length = 0;
@@ -6139,6 +6161,12 @@ function switchStore(store) {
   }
   // userOverrides: base + 세션 수정분 합치기
   Object.keys(userOverrides).forEach(k => delete userOverrides[k]);
+  // 지점 전환 시 seasonOverrides도 해당 지점 데이터로 교체
+  if (typeof seasonOverrides !== 'undefined') {
+    Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
+    const _nextSo = (window.storeSeasonOverrides && window.storeSeasonOverrides[store]) || {};
+    Object.assign(seasonOverrides, JSON.parse(JSON.stringify(_nextSo)));
+  }
   const base = JSON.parse(JSON.stringify(s.overrides()));
   const saved = storeUserOverrides[store] || {};
   const merged = {};
