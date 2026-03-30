@@ -859,6 +859,12 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
             if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
             if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
           }
+          // 모든 지점 catRegions 항상 저장 (currentStore 여부 무관)
+          if (data.catRegions && Array.isArray(data.catRegions)) {
+            const _cr2 = JSON.parse(JSON.stringify(data.catRegions));
+            if (typeof catRegions !== 'undefined') catRegions[store] = _cr2;
+            if (window.catRegions) window.catRegions[store] = _cr2;
+          }
           // 모든 지점 rotation 항상 저장 (현재 지점 여부 무관)
           _restoreRotation(store, data);
           // _rotData → storeRotations 즉시 반영 (currentStore 여부 무관)
@@ -6416,8 +6422,6 @@ function canvasRotate(delta, mode){
   const b=document.getElementById('canvasRotBadge');
   if(b) b.textContent=next+'°';
   showToast('도면 '+next+'° 회전');
-  // 회전 즉시 Firebase에 자동 저장
-  if(typeof window._firebaseSave === 'function') window._firebaseSave(currentStore);
 }
 
 // ── 전체 글자 회전 ──────────────────────────────────────
@@ -7344,7 +7348,6 @@ function applyZoneCategory(){
   renderCatFocusBar();
   showToast(def.label + ' 카테고리 적용 ✓ (' + _selectedZoneIds.size + '개 구역)');
   _selectedZoneIds.clear();
-  if(typeof window._firebaseSave==='function') window._firebaseSave(currentStore);
 }
 
 // 선택된 zone들의 카테고리 해제
@@ -7362,7 +7365,6 @@ function clearCatForZones(){
   _renderCatZoneBorders();
   renderCatFocusBar();
   showToast('카테고리 해제 완료');
-  if(typeof window._firebaseSave==='function') window._firebaseSave(currentStore);
 }
 
 // 현재 선택 초기화
@@ -7381,7 +7383,6 @@ function clearAllCatRegions(){
   _renderCatZoneBorders();
   renderCatFocusBar();
   showToast('카테고리 전체 삭제');
-  if(typeof window._firebaseSave==='function') window._firebaseSave(currentStore);
 }
 
 // zone 블록에 카테고리 컬러 테두리 렌더 (관리자 모드)
