@@ -804,11 +804,11 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
 
   function _restoreRotation(store, data) {
     if (!data) return;
-    // 값을 캐시에 저장
+    // 값을 캐시에 저장 (0도 유효한 값이므로 undefined 체크)
     _pendingRotations[store] = {
-      canvasRotation: data.canvasRotation !== undefined ? (data.canvasRotation || 0) : undefined,
-      textRotation:   data.textRotation   !== undefined ? (data.textRotation   || 0) : undefined,
-      catTagPos:      data.catTagPos      !== undefined ? (data.catTagPos      || 'tl') : undefined,
+      canvasRotation: data.canvasRotation !== undefined ? Number(data.canvasRotation) : undefined,
+      textRotation:   data.textRotation   !== undefined ? Number(data.textRotation)   : undefined,
+      catTagPos:      data.catTagPos      !== undefined ? String(data.catTagPos)      : undefined,
     };
     // window.* 에 즉시 반영 시도
     _applyPendingRotation(store);
@@ -817,17 +817,30 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
   function _applyPendingRotation(store) {
     const p = _pendingRotations[store];
     if (!p) return;
-    if (p.canvasRotation !== undefined && window.storeRotations) {
-      window.storeRotations[store] = p.canvasRotation;
+    const isCur = (store === (window.currentStore || 'gs'));
+
+    // canvasRotation: window.* + 일반 변수 모두 갱신
+    if (p.canvasRotation !== undefined) {
+      const v = Number(p.canvasRotation);
+      if (window.storeRotations) window.storeRotations[store] = v;
+      // storeRotations는 window.storeRotations와 같은 참조이지만 명시적으로 갱신
     }
-    if (p.textRotation !== undefined && window.storeTextRot) {
-      window.storeTextRot[store] = p.textRotation;
+    // textRotation: window.* + globalTextRot(현재 지점) 갱신
+    if (p.textRotation !== undefined) {
+      const v = Number(p.textRotation);
+      if (window.storeTextRot) window.storeTextRot[store] = v;
+      if (isCur && typeof globalTextRot !== 'undefined') globalTextRot = v;
     }
-    if (p.catTagPos !== undefined && window.storeCatTagPos) {
-      window.storeCatTagPos[store] = p.catTagPos;
+    // catTagPos: window.* + catTagPos(일반 변수) 갱신
+    if (p.catTagPos !== undefined) {
+      const v = String(p.catTagPos);
+      if (window.storeCatTagPos) window.storeCatTagPos[store] = v;
+      if (isCur && typeof catTagPos !== 'undefined') catTagPos = v;
     }
+
     // 현재 지점이면 화면에 반영
-    if (store === (window.currentStore || 'gs')) {
+    if (isCur) {
+      if (typeof render === 'function') render();
       if (typeof applyScale === 'function') applyScale();
       if (typeof _applyGlobalTextRot === 'function') _applyGlobalTextRot();
       const badge = document.getElementById('canvasRotBadge');
@@ -844,16 +857,10 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
     }
   }
 
-  // _renderOnReady 후 pending rotation 재적용 (window.* 노출 타이밍 보장)
-  const _origRenderOnReady = window._renderOnReady;
-  window._renderOnReady = function() {
-    if (_origRenderOnReady) _origRenderOnReady();
-    // 모든 지점 pending rotation 적용
-    Object.keys(_pendingRotations).forEach(_applyPendingRotation);
-    // 현재 지점 화면 갱신
-    if (typeof render === 'function') render();
-    if (typeof applyScale === 'function') applyScale();
-  };
+  // _pendingRotations는 listenStore onValue 수신 후 채워짐
+  // 일반 스크립트의 window._renderOnReady에서 적용하도록 전역 노출
+  window._pendingRotations = _pendingRotations;
+  window._applyPendingRotation = _applyPendingRotation;
   function listenStore(store) {
     const r = ref(db, 'plan2026/' + store);
     onValue(r, snap => {
@@ -985,9 +992,9 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
           ? JSON.parse(JSON.stringify(_seasonOvr))
           : JSON.parse(JSON.stringify(_storeSeasons[store] || {})),
         catRegions: JSON.parse(JSON.stringify(_catRegions[store] || [])),
-        canvasRotation: _rotations[store]  || 0,
-        textRotation:   _textRots[store]   || 0,
-        catTagPos:      _catTagPoses[store] || 'tl',
+        canvasRotation: (_rotations[store]  !== undefined) ? _rotations[store]  : 0,
+        textRotation:   (_textRots[store]   !== undefined) ? _textRots[store]   : 0,
+        catTagPos:      (_catTagPoses[store] !== undefined) ? _catTagPoses[store] : 'tl',
         savedAt: Date.now()
       };
       await set(ref(db, 'plan2026/' + store), payload);
@@ -5192,9 +5199,12 @@ function syncToFirebase(){
     if(window.storeUserOverrides) window.storeUserOverrides[currentStore] = storeUserOverrides[currentStore];
     if(window.storeZonesSnapshot) window.storeZonesSnapshot[currentStore] = storeZonesSnapshot[currentStore];
     if(window.catRegions && typeof catRegions !== 'undefined') window.catRegions[currentStore] = catRegions[currentStore] || [];
-    // window.zones는 zones와 같은 참조 — 동기화 불필요 (splice 방식으로 참조 유지됨)
     if(window.userOverrides && typeof userOverrides !== 'undefined'){ Object.keys(window.userOverrides).forEach(k=>delete window.userOverrides[k]); Object.assign(window.userOverrides, userOverrides); }
     if(window.seasonOverrides && typeof seasonOverrides !== 'undefined'){ Object.keys(window.seasonOverrides).forEach(k=>delete window.seasonOverrides[k]); Object.assign(window.seasonOverrides, seasonOverrides); }
+    // rotation 값 명시적 갱신 (module 스코프 분리 대응)
+    if(window.storeRotations)  window.storeRotations[currentStore]  = storeRotations[currentStore]  || 0;
+    if(window.storeTextRot)    window.storeTextRot[currentStore]    = storeTextRot[currentStore]    || 0;
+    if(window.storeCatTagPos)  window.storeCatTagPos[currentStore]  = storeCatTagPos[currentStore]  || 'tl';
     window._firebaseSave(currentStore);
     showToast('🔄 서버에 동기화 중...');
   } else {
@@ -6497,7 +6507,15 @@ window._renderOnReady = function() {
   // Firebase 로딩 오버레이 제거
   const overlay = document.getElementById('fbLoadingOverlay');
   if (overlay) overlay.style.display = 'none';
+  // pending rotation 적용 (Firebase module 타이밍 문제 해결)
+  if (window._pendingRotations && window._applyPendingRotation) {
+    Object.keys(window._pendingRotations).forEach(window._applyPendingRotation);
+  }
   render();
+  // rotation은 render() 이후 applyScale()에서 반영됨
+  applyScale();
+  // 카테고리 영역 색상 버튼 표시 (새로고침 시)
+  if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
   renderWkSummary();
   initRpSections();
   // 편집 모드 시작 시 요약 패널 숨김
