@@ -798,69 +798,18 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
 
 
   // ── rotation 복원 헬퍼 ──
-  // window.storeRotations 등이 일반 스크립트보다 늦게 선언될 수 있으므로
-  // 값을 직접 저장해두고, 화면 반영은 _renderOnReady 이후 시점에 수행
-  const _pendingRotations = {}; // { store: {canvasRotation, textRotation, catTagPos} }
+  // Firebase에서 받은 rotation 데이터를 window._rotData에 저장
+  // (일반 스크립트의 _renderOnReady에서 storeRotations에 적용)
+  window._rotData = {};
 
   function _restoreRotation(store, data) {
     if (!data) return;
-    // 값을 캐시에 저장 (0도 유효한 값이므로 undefined 체크)
-    _pendingRotations[store] = {
-      canvasRotation: data.canvasRotation !== undefined ? Number(data.canvasRotation) : undefined,
-      textRotation:   data.textRotation   !== undefined ? Number(data.textRotation)   : undefined,
-      catTagPos:      data.catTagPos      !== undefined ? String(data.catTagPos)      : undefined,
+    window._rotData[store] = {
+      canvasRotation: data.canvasRotation !== undefined ? Number(data.canvasRotation) : 0,
+      textRotation:   data.textRotation   !== undefined ? Number(data.textRotation)   : 0,
+      catTagPos:      data.catTagPos      !== undefined ? String(data.catTagPos)      : 'tl',
     };
-    // window.* 에 즉시 반영 시도
-    _applyPendingRotation(store);
   }
-
-  function _applyPendingRotation(store) {
-    const p = _pendingRotations[store];
-    if (!p) return;
-    const isCur = (store === (window.currentStore || 'gs'));
-
-    // canvasRotation: window.* + 일반 변수 모두 갱신
-    if (p.canvasRotation !== undefined) {
-      const v = Number(p.canvasRotation);
-      if (window.storeRotations) window.storeRotations[store] = v;
-      // storeRotations는 window.storeRotations와 같은 참조이지만 명시적으로 갱신
-    }
-    // textRotation: window.* + globalTextRot(현재 지점) 갱신
-    if (p.textRotation !== undefined) {
-      const v = Number(p.textRotation);
-      if (window.storeTextRot) window.storeTextRot[store] = v;
-      if (isCur && typeof globalTextRot !== 'undefined') globalTextRot = v;
-    }
-    // catTagPos: window.* + catTagPos(일반 변수) 갱신
-    if (p.catTagPos !== undefined) {
-      const v = String(p.catTagPos);
-      if (window.storeCatTagPos) window.storeCatTagPos[store] = v;
-      if (isCur && typeof catTagPos !== 'undefined') catTagPos = v;
-    }
-
-    // 현재 지점이면 화면에 반영
-    if (isCur) {
-      if (typeof render === 'function') render();
-      if (typeof applyScale === 'function') applyScale();
-      if (typeof _applyGlobalTextRot === 'function') _applyGlobalTextRot();
-      const badge = document.getElementById('canvasRotBadge');
-      if (badge && window.storeRotations) badge.textContent = (window.storeRotations[store] || 0) + '°';
-      const tbadge = document.getElementById('textRotBadge');
-      if (tbadge && window.storeTextRot) tbadge.textContent = (window.storeTextRot[store] || 0) + '°';
-      if (window.storeCatTagPos) {
-        const pos = window.storeCatTagPos[store] || 'tl';
-        ['tl','tr','bl','br'].forEach(function(pp) {
-          const btn = document.getElementById('catBtn_'+pp);
-          if (btn) btn.style.background = pp === pos ? 'rgba(255,255,255,.35)' : '';
-        });
-      }
-    }
-  }
-
-  // _pendingRotations는 listenStore onValue 수신 후 채워짐
-  // 일반 스크립트의 window._renderOnReady에서 적용하도록 전역 노출
-  window._pendingRotations = _pendingRotations;
-  window._applyPendingRotation = _applyPendingRotation;
   function listenStore(store) {
     const r = ref(db, 'plan2026/' + store);
     onValue(r, snap => {
@@ -942,8 +891,18 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
           catRegions[store] = _cr;
           if (window.catRegions) window.catRegions[store] = _cr;
         }
-        // 회전 복원
+        // 회전 복원: _rotData에 저장 후 즉시 직접 적용 (실시간 수신)
         _restoreRotation(store, data);
+        const _d = window._rotData && window._rotData[store];
+        if (_d) {
+          storeRotations[store]  = _d.canvasRotation;
+          storeTextRot[store]    = _d.textRotation;
+          storeCatTagPos[store]  = _d.catTagPos;
+          if (store === (window.currentStore || 'gs')) {
+            globalTextRot = _d.textRotation || 0;
+            catTagPos     = _d.catTagPos    || 'tl';
+          }
+        }
         render(); renderPanel(); renderNav();
         if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
         syncUI('saved', '✅ 동기화됨');
@@ -1202,8 +1161,18 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
             catRegions[code] = _cr;
             if (window.catRegions) window.catRegions[code] = _cr;
           }
-          // 회전 복원
+          // 회전 복원: _rotData에 저장 후 즉시 직접 적용
           _restoreRotation(code, storeData);
+          const _dd = window._rotData && window._rotData[code];
+          if (_dd) {
+            storeRotations[code]  = _dd.canvasRotation;
+            storeTextRot[code]    = _dd.textRotation;
+            storeCatTagPos[code]  = _dd.catTagPos;
+            if (code === (window.currentStore || 'gs')) {
+              globalTextRot = _dd.textRotation || 0;
+              catTagPos     = _dd.catTagPos    || 'tl';
+            }
+          }
           if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
           if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
           if (typeof showToast === 'function') showToast('🔄 데이터 동기화됨');
@@ -6504,24 +6473,45 @@ window._appReady = false;
 window._renderOnReady = function() {
   if (window._appReady) return;
   window._appReady = true;
+
   // Firebase 로딩 오버레이 제거
   const overlay = document.getElementById('fbLoadingOverlay');
   if (overlay) overlay.style.display = 'none';
-  // pending rotation 적용 (Firebase module 타이밍 문제 해결)
-  if (window._pendingRotations && window._applyPendingRotation) {
-    Object.keys(window._pendingRotations).forEach(window._applyPendingRotation);
+
+  // ── rotation 복원: Firebase에서 받은 값을 실제 변수에 적용 ──
+  // 이 시점엔 storeRotations 등 모든 변수가 준비되어 있음
+  const _rd = window._rotData || {};
+  Object.keys(_rd).forEach(function(store) {
+    const d = _rd[store];
+    if (!d) return;
+    storeRotations[store]  = d.canvasRotation;
+    storeTextRot[store]    = d.textRotation;
+    storeCatTagPos[store]  = d.catTagPos;
+    // window.* 도 명시적으로 동기화
+    if (window.storeRotations)  window.storeRotations[store]  = d.canvasRotation;
+    if (window.storeTextRot)    window.storeTextRot[store]    = d.textRotation;
+    if (window.storeCatTagPos)  window.storeCatTagPos[store]  = d.catTagPos;
+  });
+
+  // 현재 지점의 로컬 캐시 변수도 갱신
+  if (_rd[currentStore]) {
+    globalTextRot = _rd[currentStore].textRotation || 0;
+    catTagPos     = _rd[currentStore].catTagPos    || 'tl';
   }
+
+  // 화면 렌더링
   render();
-  // rotation은 render() 이후 applyScale()에서 반영됨
   applyScale();
-  // 카테고리 영역 색상 버튼 표시 (새로고침 시)
   if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
   renderWkSummary();
   initRpSections();
+
   // 편집 모드 시작 시 요약 패널 숨김
-  if(editMode){
-    const w=document.getElementById('wkSummaryWrap'); if(w) w.style.display='none';
-    const r=document.getElementById('summaryResizeHandle'); if(r) r.style.display='none';
+  if (editMode) {
+    const w = document.getElementById('wkSummaryWrap');
+    const r = document.getElementById('summaryResizeHandle');
+    if (w) w.style.display = 'none';
+    if (r) r.style.display = 'none';
   }
 };
 // Firebase 응답이 3초 내에 없으면 하드코딩 데이터로 강제 렌더
