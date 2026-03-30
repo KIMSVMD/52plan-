@@ -6399,6 +6399,8 @@ function canvasRotate(delta, mode){
   const b=document.getElementById('canvasRotBadge');
   if(b) b.textContent=next+'°';
   showToast('도면 '+next+'° 회전');
+  // 회전 즉시 Firebase에 자동 저장
+  if(typeof window._firebaseSave === 'function') window._firebaseSave(currentStore);
 }
 
 // ── 전체 글자 회전 ──────────────────────────────────────
