@@ -864,8 +864,14 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
         }
 
         syncUI('saved', '✅ 연결됨');
-        if (store === (window.currentStore || 'gs') && typeof window._renderOnReady === 'function') {
-          window._renderOnReady();
+        if (store === (window.currentStore || 'gs')) {
+          if (window._appReady && data) {
+            // 타임아웃 오발로 하드코딩 데이터가 먼저 렌더된 경우 → Firebase 데이터로 강제 재렌더
+            if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
+            if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
+          } else if (typeof window._renderOnReady === 'function') {
+            window._renderOnReady();
+          }
         }
         return;
       }
@@ -6516,7 +6522,9 @@ renderNav();
 // render()는 Firebase 데이터 로드 후 실행 (window._appReady로 제어)
 window._appReady = false;
 window._renderOnReady = function() {
-  if (window._appReady) return;
+  // Firebase 데이터가 이미 로드된 후에는 항상 재렌더 허용
+  // (3초 타임아웃 오발로 하드코딩 데이터가 잠기는 문제 방지)
+  const isFirebaseLoad = !window._appReady;
   window._appReady = true;
 
   // Firebase 로딩 오버레이 제거
@@ -6564,13 +6572,13 @@ window._renderOnReady = function() {
     if (r) r.style.display = 'none';
   }
 };
-// Firebase 응답이 3초 내에 없으면 하드코딩 데이터로 강제 렌더
+// Firebase 응답이 8초 내에 없으면 하드코딩 데이터로 강제 렌더 (3초는 너무 짧아 race condition 발생)
 setTimeout(function() {
   if (!window._appReady) {
-    console.warn('Firebase 응답 없음 - 로컬 데이터로 렌더');
+    console.warn('Firebase 응답 없음(8s) - 로컬 데이터로 렌더');
     window._renderOnReady();
   }
-}, 3000);
+}, 8000);
 
 // ══════════════════════════════════════════
 //  도면 / 운영맵 탭 전환
