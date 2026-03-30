@@ -208,7 +208,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 .zs-conf{background:var(--glight);color:var(--green);}
 .zs-plan{background:#fff3e0;color:var(--orange);}
 .zs-tbd{background:#f3f4f6;color:#9ca3af;}
-.ent-block{background:linear-gradient(135deg,#fef2f2,#fee2e2)!important;border:3px solid #ef4444!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;font-size:14px;font-weight:900;color:#dc2626;gap:2px;box-shadow:0 0 0 2px rgba(239,68,68,.3),inset 0 0 12px rgba(239,68,68,.15)!important;}
+.ent-block{background:transparent!important;border:none!important;box-shadow:none!important;display:flex!important;align-items:center!important;justify-content:center!important;}
 .ent-sub{font-size:10px;font-weight:400;}
 /* ── 일러스트레이터 스타일 핸들 ── */
 /* 선택 시 바운딩박스 오버레이 — .zb 바깥에 그려짐 */
@@ -1346,12 +1346,22 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
   <div class="hdr-r">
     <div class="store-dropdown-wrap">
       <select id="storeSelect" class="store-select" onchange="switchStore(this.value)">
-        <option value="gs">강서점</option>
-        <option value="bd">분당점</option>
-        <option value="gn">강남점</option>
-        <option value="sp">송파점</option>
-        <option value="pc">평촌점</option>
-        <option value="rdw">구의점</option>
+        <optgroup label="모델점">
+          <option value="gs">강서점</option>
+        </optgroup>
+        <optgroup label="대형점">
+          <option value="gn">강남점</option>
+          <option value="yt">야탑점</option>
+          <option value="bg">불광점</option>
+          <option value="sp">송파점</option>
+          <option value="bc">부천점</option>
+          <option value="pc">평촌점</option>
+          <option value="bd">분당점</option>
+          <option value="trfw">신구로점</option>
+        </optgroup>
+        <optgroup label="중형점">
+          <option value="rdw">구의점</option>
+        </optgroup>
       </select>
       <button class="btn btn-gh" onclick="openAddStoreModal()" title="새 지점 추가">＋</button>
       <button class="btn btn-gh" onclick="openRenameStoreModal()" title="지점명 수정">✏️</button>
@@ -2874,16 +2884,23 @@ function render(){
       el.classList.remove('rotated');
     }
 
-    // 입구 화살표 처리 (ent_up, ent_down, ent_left, ent_right) - 빨간 박스, 큰 화살표
+    // 입구 화살표 처리 (ent_up, ent_down, ent_left, ent_right) - 빨간 채움 화살표
+    const _entArrowSVG = (dir) => {
+      const arrows = {
+        ent_up:    '<polygon points="50,5 95,60 72,60 72,95 28,95 28,60 5,60" fill="#dc2626"/>',
+        ent_down:  '<polygon points="50,95 95,40 72,40 72,5 28,5 28,40 5,40" fill="#dc2626"/>',
+        ent_left:  '<polygon points="5,50 60,5 60,28 95,28 95,72 60,72 60,95" fill="#dc2626"/>',
+        ent_right: '<polygon points="95,50 40,5 40,28 5,28 5,72 40,72 40,95" fill="#dc2626"/>',
+      };
+      return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="width:90%;height:90%;">${arrows[dir]||arrows.ent_up}</svg>`;
+    };
     if(z.color && z.color.startsWith('ent_')){
-      const arrowMap = {ent_up:'↑', ent_down:'↓', ent_left:'←', ent_right:'→'};
-      const arrow = arrowMap[z.color] || '↑';
       el.classList.add('ent-block');
-      el.innerHTML=`<div style="font-size:42px;font-weight:900;color:#dc2626;line-height:1;text-shadow:0 2px 4px rgba(220,38,38,.3);">${arrow}</div><div style="font-size:13px;font-weight:800;color:#991b1b;margin-top:2px;">${z.name}</div>${z.note?`<div style="font-size:9px;color:#b91c1c;margin-top:1px;">${z.note}</div>`:''}
+      el.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${_entArrowSVG(z.color)}</div>
       ${editMode?`${makeHandles(z.id)}`:''}`;
     } else if(z.color==='ent'){
       el.classList.add('ent-block');
-      el.innerHTML=`<div style="font-size:42px;font-weight:900;color:#dc2626;line-height:1;text-shadow:0 2px 4px rgba(220,38,38,.3);">↑</div><div style="font-size:13px;font-weight:800;color:#991b1b;">${z.name}</div>${z.note?`<div style="font-size:9px;color:#b91c1c;">${z.note}</div>`:''}
+      el.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${_entArrowSVG('ent_up')}</div>
       ${editMode?`${makeHandles(z.id)}`:''}`;
     } else {
       const ovr = wkOvr[z.id];
@@ -4790,7 +4807,6 @@ function toggleDrawToolbar() {
 }
 
 function setDrawMode(type, color) {
-  if(wallMode){ cancelWallMode(); }
   document.querySelectorAll('.draw-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
   drawMode = { type, color };
@@ -4805,7 +4821,6 @@ function cancelDrawMode() {
   document.querySelectorAll('.draw-btn').forEach(b => b.classList.remove('active'));
   const di = document.getElementById('drawInfo');
   if(di) di.textContent = '도면 위에서 클릭 → 드래그로 구역 그리기';
-  if(wallMode) cancelWallMode();
 }
 
 // ══════════════════════════════════════════════════════════════
