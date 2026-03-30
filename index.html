@@ -865,6 +865,15 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
             if (typeof catRegions !== 'undefined') catRegions[store] = _cr2;
             if (window.catRegions) window.catRegions[store] = _cr2;
           }
+          // 모든 지점 seasonOverrides 항상 저장 (currentStore 여부 무관)
+          if (data.seasonOverrides) {
+            if (window.storeSeasonOverrides) window.storeSeasonOverrides[store] = JSON.parse(JSON.stringify(data.seasonOverrides));
+            // 현재 지점이면 활성 seasonOverrides에도 반영
+            if (store === (window.currentStore || 'gs') && typeof seasonOverrides !== 'undefined') {
+              Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
+              Object.assign(seasonOverrides, data.seasonOverrides);
+            }
+          }
           // 모든 지점 rotation 항상 저장 (현재 지점 여부 무관)
           _restoreRotation(store, data);
           // _rotData → storeRotations 즉시 반영 (currentStore 여부 무관)
