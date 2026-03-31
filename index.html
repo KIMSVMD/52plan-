@@ -102,8 +102,30 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 /* CANVAS */
 .canvas-area{flex:1;overflow:auto;padding:20px;background:var(--bg);display:flex;align-items:flex-start;justify-content:center;box-sizing:border-box;}
 .gc-scaler{position:absolute;transform-origin:top left;transition:transform .15s;}
+
+/* ── 메인구역 깃발 오버레이 ── */
+.mz-overlay{position:absolute;pointer-events:none;z-index:60;left:0;top:0;}
+.mz-box{
+  position:absolute;border-radius:12px;border-width:5px;border-style:solid;
+  pointer-events:none;box-sizing:border-box;
+}
+.mz-tab{
+  position:absolute;top:-36px;left:-4px;
+  height:36px;padding:0 20px;border-radius:10px 10px 0 0;
+  display:flex;align-items:center;
+  font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;
+  font-size:17px;font-weight:900;color:#fff;white-space:nowrap;letter-spacing:0.5px;
+  pointer-events:none;
+}
+.mz1 .mz-box{border-color:#EA580C;background:rgba(234,88,12,0.05);}
+.mz1 .mz-tab{background:#EA580C;}
+.mz2 .mz-box{border-color:#2563EB;background:rgba(37,99,235,0.05);}
+.mz2 .mz-tab{background:#2563EB;}
+.mz3 .mz-box{border-color:#16A34A;background:rgba(22,163,74,0.05);}
+.mz3 .mz-tab{background:#16A34A;}
 .canvas-area{position:relative;}
-.gc{position:relative;background:#fff;border:2px solid #333;border-radius:6px;padding:8px;}
+.gc{position:relative;background:#fff;border:2px solid #333;border-radius:6px;padding:8px;overflow:visible;}
+
 .zoom-ctrl{position:fixed;z-index:500;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.96);border:1.5px solid #e5e7eb;border-radius:10px;padding:6px 10px;box-shadow:0 2px 12px rgba(0,0,0,.15);}
 .zoom-btn{width:28px;height:28px;border:1.5px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;color:#374151;transition:all .1s;}
 .zoom-btn:hover{background:#f3f4f6;border-color:#9ca3af;}
@@ -1976,6 +1998,24 @@ window.onerror = function(msg, src, line, col, err) {
         </div>
       </div>
 
+      <!-- ★ 메인구역 지정 섹션 -->
+      <div class="rp-section open admin-only" data-sec="mainzone">
+        <div class="rp-section-hd" onclick="toggleRpSection(this.parentElement)">
+          <span class="rp-section-drag" onmousedown="rpDragHandleDown(event)">⠿</span>
+          <span class="rp-section-title">메인구역 지정</span>
+          <span class="rp-section-arrow">▼</span>
+        </div>
+        <div class="rp-section-body">
+          <div class="rpl" style="margin-top:0">메인구역 순위 <span style="font-weight:400;color:var(--muted)">(도면에 깃발 표시)</span></div>
+          <select class="rps" id="eMainRank" style="width:100%" onchange="upd('mainRank', this.value ? +this.value : null); renderMainZoneOverlay();">
+            <option value="">없음</option>
+            <option value="1">🔴 메인 1 (1순위)</option>
+            <option value="2">🔵 메인 2 (2순위)</option>
+            <option value="3">🟢 메인 3 (3순위)</option>
+          </select>
+        </div>
+      </div><!-- /메인구역 -->
+
       <!-- ③④ 기본상품+우선순위 섹션 -->
       <div class="rp-section open admin-only" data-sec="prod-pri">
         <div class="rp-section-hd" onclick="toggleRpSection(this.parentElement)">
@@ -3177,6 +3217,8 @@ function render(){
   requestAnimationFrame(()=>{
     if(typeof _renderCatRegionBoxes === 'function') _renderCatRegionBoxes();
   });
+  // ★ 메인구역 깃발 오버레이
+  requestAnimationFrame(renderMainZoneOverlay);
 }
 
 function autoScale(){
@@ -3821,6 +3863,10 @@ function renderPanel(){
   }
 
   document.getElementById('eNo').value=z.note||'';
+
+  // ★ 메인구역 순위 반영
+  const eMainRank = document.getElementById('eMainRank');
+  if(eMainRank) eMainRank.value = z.mainRank != null ? String(z.mainRank) : '';
 
   // 강서 연동 UI
   const gsLinkEditor = document.getElementById('gsLinkEditor');
@@ -8179,6 +8225,54 @@ if(document.readyState !== 'loading'){
     };
   }
 })();
+
+// ══════════════════════════════════════════
+// ══════════════════════════════════════════
+// ★ 메인구역 깃발 오버레이 렌더
+// ══════════════════════════════════════════
+function renderMainZoneOverlay(){
+  const gc = document.getElementById('gc');
+  if(!gc) return;
+
+  // 기존 오버레이 모두 제거
+  gc.querySelectorAll('.mz-overlay').forEach(e => e.remove());
+
+  const RANK_LABEL = {1:'메인 1', 2:'메인 2', 3:'메인 3'};
+  const PAD = 14;     // 구역 묶음 바깥 여백(px)
+  const GPAD = 8;     // gc 내부 padding (CSS와 동일하게 맞춤)
+
+  [1, 2, 3].forEach(rank => {
+    const group = zones.filter(z => z.mainRank === rank);
+    if(!group.length) return;
+
+    // 그룹 전체 bounding box (col/row 단위)
+    const minC = Math.min(...group.map(z => z.col));
+    const minR = Math.min(...group.map(z => z.row));
+    const maxC = Math.max(...group.map(z => z.col + z.cols));
+    const maxR = Math.max(...group.map(z => z.row + z.rows));
+
+    // px 변환: zb 셀의 left = px(col)+GPAD 와 동일한 기준
+    const x = px(minC) + GPAD - PAD;
+    const y = py(minR) + GPAD - PAD;
+    const w = px(maxC - minC) - GAP + PAD * 2;
+    const h = py(maxR - minR) - GAP + PAD * 2;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'mz-overlay mz' + rank;
+
+    const box = document.createElement('div');
+    box.className = 'mz-box';
+    box.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
+
+    const tab = document.createElement('div');
+    tab.className = 'mz-tab';
+    tab.textContent = RANK_LABEL[rank];
+
+    box.appendChild(tab);
+    wrap.appendChild(box);
+    gc.appendChild(wrap);
+  });
+}
 
 </script>
 </body>
