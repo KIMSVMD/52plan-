@@ -5,6 +5,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<link rel="icon" href="https://jingyeongv1-rgb.github.io/52plan-/favicon.png">
+<link rel="apple-touch-icon" href="https://jingyeongv1-rgb.github.io/52plan-/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>52주 AI 표준화</title>
 
@@ -424,7 +426,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 /* ── 변경 로그 모달 ── */
 #logViewModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:8500;align-items:center;justify-content:center;}
 #logViewModal.open{display:flex;}
-.lvm-box{background:#fff;border-radius:14px;width:640px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);}
+.lvm-box{background:#fff;border-radius:14px;width:640px;max-width:95vw;height:82vh;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.35);}
 .lvm-head{background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
 .lvm-title{font-size:15px;font-weight:900;color:#fff;letter-spacing:-.3px;}
 .lvm-close{background:rgba(255,255,255,.12);border:none;color:#fff;font-size:16px;width:30px;height:30px;border-radius:6px;cursor:pointer;font-family:'Pretendard',sans-serif;}
@@ -1061,25 +1063,56 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
     }
   };
 
-  // ── 변경 로그 Firebase 저장 ──
+  // ── 변경 로그 Firebase 저장 + 2주 지난 로그 자동 삭제 ──
   window._firebaseSaveLog = async function(logEntry) {
     try {
       const logKey = 'log_' + Date.now() + '_' + Math.floor(Math.random()*9999);
       await set(ref(db, 'plan2026/_logs/' + logKey), logEntry);
+
+      // 2주(14일) 이상 지난 로그 자동 삭제
+      const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
+      const cutoff = Date.now() - TWO_WEEKS;
+      const logsSnap = await get(ref(db, 'plan2026/_logs'));
+      const allLogs = logsSnap.val();
+      if (allLogs) {
+        const deletePromises = [];
+        Object.entries(allLogs).forEach(([key, entry]) => {
+          if (entry && entry.savedAt && entry.savedAt < cutoff) {
+            deletePromises.push(set(ref(db, 'plan2026/_logs/' + key), null));
+          }
+        });
+        if (deletePromises.length) {
+          await Promise.all(deletePromises);
+          console.log('[LOG] 오래된 로그 ' + deletePromises.length + '건 자동 삭제');
+        }
+      }
     } catch(e) {
       console.error('Log save error:', e);
     }
   };
 
-  // ── 변경 로그 불러오기 ──
+  // ── 변경 로그 불러오기 (key 포함) ──
   window._firebaseLoadLogs = function(callback) {
     const logsRef = ref(db, 'plan2026/_logs');
     get(logsRef).then(snap => {
       const data = snap.val();
       if (!data) { callback([]); return; }
-      const arr = Object.values(data).sort((a,b) => b.savedAt - a.savedAt);
+      const arr = Object.entries(data)
+        .map(([key, val]) => Object.assign({ _key: key }, val))
+        .sort((a, b) => b.savedAt - a.savedAt);
       callback(arr);
     }).catch(e => { console.error('Load logs error:', e); callback([]); });
+  };
+
+  // ── 로그 전체 삭제 ──
+  window._firebaseClearLogs = async function(callback) {
+    try {
+      await set(ref(db, 'plan2026/_logs'), null);
+      callback(true);
+    } catch(e) {
+      console.error('Clear logs error:', e);
+      callback(false);
+    }
   };
 
   // ── 새 지점 Firebase에 저장 ──
@@ -1464,7 +1497,10 @@ window.onerror = function(msg, src, line, col, err) {
   <div class="lvm-box">
     <div class="lvm-head">
       <div class="lvm-title">📋 변경 로그 조회</div>
-      <button class="lvm-close" onclick="closeLogViewModal()">✕</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button onclick="clearAllLogs()" style="font-family:Pretendard,sans-serif;font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:1.5px solid #ef4444;background:rgba(239,68,68,.1);color:#ef4444;cursor:pointer;">전체 삭제</button>
+        <button class="lvm-close" onclick="closeLogViewModal()">✕</button>
+      </div>
     </div>
     <div class="lvm-filters">
       <span class="lvm-filter-lbl">필터:</span>
@@ -1475,6 +1511,7 @@ window.onerror = function(msg, src, line, col, err) {
         <option value="">전체 저장자</option>
       </select>
       <span id="logTotalCount" style="font-size:11px;color:#9ca3af;margin-left:auto;"></span>
+      <span style="font-size:10px;color:#d1d5db;padding:3px 8px;background:#1e293b;border-radius:10px;">🗑 2주 지난 로그 자동삭제</span>
     </div>
     <div class="lvm-body" id="logViewBody">
       <div class="lvm-loading">로딩 중...</div>
@@ -5850,6 +5887,23 @@ function renderLogEntries() {
       '<div class="lvm-entry-changes">' + changesHtml + '</div>' +
     '</div>';
   }).join('');
+}
+
+// ── 로그 전체 삭제 ──
+function clearAllLogs() {
+  if (!isAdmin) { showToast('관리자만 삭제 가능합니다'); return; }
+  if (!confirm('변경 로그를 전체 삭제할까요?\n이 작업은 되돌릴 수 없습니다.')) return;
+  if (typeof window._firebaseClearLogs === 'function') {
+    window._firebaseClearLogs(function(ok) {
+      if (ok) {
+        _logAllEntries = [];
+        renderLogEntries();
+        showToast('✅ 로그 전체 삭제 완료');
+      } else {
+        showToast('❌ 삭제 실패');
+      }
+    });
+  }
 }
 
 // ── Firebase onValue에서 서버 스냅샷 갱신 hook ──
