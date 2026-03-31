@@ -2603,8 +2603,10 @@ const COLORS=[
 // ═══════════════════════════════════════════
 // Undo 히스토리 (Ctrl+Z)
 // ═══════════════════════════════════════════
-const UNDO_MAX = 10;
+const UNDO_MAX = 20;
+const REDO_MAX = 10;
 let undoHistory = [];
+let redoHistory = [];
 
 function saveUndoState() {
   // 현재 상태를 히스토리에 저장
@@ -2613,7 +2615,8 @@ function saveUndoState() {
   if (undoHistory.length > 0 && undoHistory[undoHistory.length - 1] === snapshot) return;
   undoHistory.push(snapshot);
   if (undoHistory.length > UNDO_MAX) undoHistory.shift();
-  console.log('Undo 상태 저장됨, 히스토리:', undoHistory.length);
+  // 새 변경사항이 생기면 redo 스택 초기화
+  redoHistory = [];
 }
 
 function undo() {
@@ -2621,6 +2624,11 @@ function undo() {
     showToast('⚠️ 되돌릴 내용이 없습니다');
     return;
   }
+  // 현재 상태를 redo 스택에 저장
+  const current = JSON.stringify(zones);
+  redoHistory.push(current);
+  if (redoHistory.length > REDO_MAX) redoHistory.shift();
+
   const prevState = undoHistory.pop();
   const restored = JSON.parse(prevState);
   zones.length = 0;
@@ -2631,11 +2639,35 @@ function undo() {
   showToast('↩️ 이전 상태로 복원됨 (' + undoHistory.length + '단계 남음)');
 }
 
-// Ctrl+Z 키보드 이벤트
+function redo() {
+  if (redoHistory.length === 0) {
+    showToast('⚠️ 다시 실행할 내용이 없습니다');
+    return;
+  }
+  // 현재 상태를 undo 스택에 저장
+  const current = JSON.stringify(zones);
+  undoHistory.push(current);
+  if (undoHistory.length > UNDO_MAX) undoHistory.shift();
+
+  const nextState = redoHistory.pop();
+  const restored = JSON.parse(nextState);
+  zones.length = 0;
+  restored.forEach(z => zones.push(z));
+  multiSelIds.clear();
+  selId = null;
+  render();
+  showToast('↪️ 다시 실행됨 (' + redoHistory.length + '단계 남음)');
+}
+
+// Ctrl+Z / Ctrl+Y 키보드 이벤트
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault();
     undo();
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+    e.preventDefault();
+    redo();
   }
 });
 
@@ -2895,7 +2927,7 @@ function renderSeasonSummary(w){
     (veg ? pill('🥦 채소:',  veg,  '#f0fdf4','#86efac','#166534') : '') +
     (fish? pill('🐟 수산:',  fish, '#f0fdfa','#5eead4','#0f766e') : '') +
     (meat? pill('🥩 축산:',  meat, '#fff1f2','#fda4af','#be123c') : '') +
-    (mkt ? `<span style="font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap">🎯 ${mkt}${life?' · '+life:''}</span>` : '');
+    (mkt ? `<span style="font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap">🎯 ${mkt}</span>` : '');
 }
 
 /* ─────────────────────────────────────────────
@@ -8237,54 +8269,94 @@ function renderMainZoneOverlay(){
 
   const RANK_LABEL = {1:'메인 1', 2:'메인 2', 3:'메인 3'};
   const RANK_COLOR = {1:'#EA580C', 2:'#2563EB', 3:'#16A34A'};
-  const GPAD = 8;  // gc padding
-  const PAD  = 4;  // 셀 바깥 여백
+  const GPAD = 8;
+  const PAD  = 4;
+  const TOL  = (typeof GAP !== 'undefined' ? GAP : 3) + PAD * 2 + 2; // 인접 허용 오차
 
   const gcW = gc.offsetWidth  || 1200;
   const gcH = gc.offsetHeight || 800;
+
+  // ── 좌표 스냅: TOL 이내 좌표를 동일값으로 정규화 ──
+  function makeSnap() {
+    const cache = [];
+    return v => {
+      for(const c of cache) if(Math.abs(c - v) <= TOL) return c;
+      cache.push(v);
+      return v;
+    };
+  }
+
+  // ── 선분 빼기: 선분 A에서 겹치는 구간 B를 제거하고 남은 조각 반환 ──
+  // 수평선: y 같고 x 범위로 처리 / 수직선: x 같고 y 범위로 처리
+  function subtractSeg(a, b) {
+    // a,b 모두 {ax,ay,bx,by} 정규화된(작은값 앞) 형태
+    const aH = a.ay === a.by; // 수평
+    const bH = b.ay === b.by;
+    if(aH !== bH) return [a]; // 방향 다르면 겹침 없음
+
+    if(aH) {
+      // 수평: y가 다르면 겹침 없음
+      if(Math.abs(a.ay - b.ay) > TOL) return [a];
+      const lo = Math.max(a.ax, b.ax), hi = Math.min(a.bx, b.bx);
+      if(lo >= hi) return [a]; // 겹침 없음
+      const res = [];
+      if(a.ax < lo - TOL) res.push({ax:a.ax,ay:a.ay,bx:lo,by:a.by});
+      if(hi < a.bx - TOL) res.push({ax:hi,ay:a.ay,bx:a.bx,by:a.by});
+      return res;
+    } else {
+      // 수직: x가 다르면 겹침 없음
+      if(Math.abs(a.ax - b.ax) > TOL) return [a];
+      const lo = Math.max(a.ay, b.ay), hi = Math.min(a.by, b.by);
+      if(lo >= hi) return [a];
+      const res = [];
+      if(a.ay < lo - TOL) res.push({ax:a.ax,ay:a.ay,bx:a.bx,by:lo});
+      if(hi < a.by - TOL) res.push({ax:a.ax,ay:hi,bx:a.bx,by:a.by});
+      return res;
+    }
+  }
+
+  // 선분 정규화: 항상 작은 좌표가 앞
+  function normSeg(ax,ay,bx,by) {
+    if(ax > bx || (ax===bx && ay > by)) return {ax:bx,ay:by,bx:ax,by:ay};
+    return {ax,ay,bx,by};
+  }
 
   [1, 2, 3].forEach(rank => {
     const group = zones.filter(z => z.mainRank === rank);
     if(!group.length) return;
 
     const color = RANK_COLOR[rank];
+    const snap = makeSnap();
 
-    // ── 각 셀의 픽셀 rect (PAD 포함) ──
+    // ── 각 셀의 픽셀 rect ──
     const rects = group.map(z => ({
-      x1: px(z.col) + GPAD - PAD,
-      y1: py(z.row) + GPAD - PAD,
-      x2: px(z.col) + GPAD + z.cols*CELL + (z.cols-1)*GAP + PAD,
-      y2: py(z.row) + GPAD + z.rows*ROW  + (z.rows-1)*GAP + PAD,
+      x1: snap(px(z.col) + GPAD - PAD),
+      y1: snap(py(z.row) + GPAD - PAD),
+      x2: snap(px(z.col) + GPAD + z.cols*CELL + (z.cols-1)*GAP + PAD),
+      y2: snap(py(z.row) + GPAD + z.rows*ROW  + (z.rows-1)*GAP + PAD),
     }));
 
-    // ── 외곽선 세그먼트 수집 (공유 엣지 제거) ──
-    // 각 rect의 4변을 세그먼트로 분해, 중복(공유) 세그먼트 제거
-    const segKey = (ax,ay,bx,by) => {
-      // 정규화: 작은 좌표가 앞
-      if(ax > bx || (ax===bx && ay > by)) return `${bx},${by}-${ax},${ay}`;
-      return `${ax},${ay}-${bx},${by}`;
-    };
-    const segCount = {};
-    const segDir   = {}; // key -> {ax,ay,bx,by}
-
-    rects.forEach(r => {
-      const edges = [
-        [r.x1,r.y1, r.x2,r.y1], // top
-        [r.x2,r.y1, r.x2,r.y2], // right
-        [r.x2,r.y2, r.x1,r.y2], // bottom
-        [r.x1,r.y2, r.x1,r.y1], // left
-      ];
-      edges.forEach(([ax,ay,bx,by]) => {
-        const k = segKey(ax,ay,bx,by);
-        segCount[k] = (segCount[k]||0) + 1;
-        segDir[k] = {ax,ay,bx,by};
-      });
+    // ── 각 rect의 4변을 수집 ──
+    // 내부 경계: 다른 rect와 겹치는 구간을 선분 빼기로 제거
+    const allEdges = []; // {seg, rectIdx}
+    rects.forEach((r, i) => {
+      allEdges.push({seg: normSeg(r.x1,r.y1, r.x2,r.y1), ri: i}); // top
+      allEdges.push({seg: normSeg(r.x2,r.y1, r.x2,r.y2), ri: i}); // right
+      allEdges.push({seg: normSeg(r.x1,r.y2, r.x2,r.y2), ri: i}); // bottom
+      allEdges.push({seg: normSeg(r.x1,r.y1, r.x1,r.y2), ri: i}); // left
     });
 
-    // 공유되지 않은 세그먼트(외곽)만 추출
-    const outerSegs = Object.entries(segCount)
-      .filter(([,cnt]) => cnt === 1)
-      .map(([k]) => segDir[k]);
+    // 각 선분에서 다른 rect의 변들과 겹치는 구간을 제거
+    const outerSegs = [];
+    allEdges.forEach(({seg, ri}) => {
+      let pieces = [seg];
+      // 다른 rect들의 변과 겹침 제거
+      allEdges.forEach(({seg: other, ri: rj}) => {
+        if(ri === rj) return; // 자기 자신 제외
+        pieces = pieces.flatMap(p => subtractSeg(p, other));
+      });
+      outerSegs.push(...pieces);
+    });
 
     // ── 탭 위치: 가장 위쪽-왼쪽 셀 ──
     const topZ = group.reduce((a,b) => {
@@ -8306,7 +8378,6 @@ function renderMainZoneOverlay(){
     svg.setAttribute('height', gcH);
     svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;';
 
-    // 외곽선 세그먼트들
     outerSegs.forEach(({ax,ay,bx,by}) => {
       const line = document.createElementNS(ns, 'line');
       line.setAttribute('x1', ax); line.setAttribute('y1', ay);
@@ -8317,7 +8388,7 @@ function renderMainZoneOverlay(){
       svg.appendChild(line);
     });
 
-    // 탭 레이블 (foreignObject로 HTML 탭 삽입)
+    // 탭 레이블
     const TAB_H = 30;
     const fo = document.createElementNS(ns, 'foreignObject');
     fo.setAttribute('x', tabX);
