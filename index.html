@@ -221,6 +221,12 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
 .zprod{font-size:10px;font-weight:700;color:var(--green);margin-top:2px;line-height:1.3;word-break:keep-all;overflow-wrap:break-word;white-space:normal;}
 .p1{background:var(--green);}.p2{background:var(--orange);}.pe{background:var(--red);}.pf{background:#92400e;}
 .ztype{font-size:8px;color:#bbb;margin-top:12px;}
+/* 편집모드에서 설비유형 숨김 */
+.zb:not(.view) .ztype{display:none!important;}
+/* 편집모드에서 구역제목 숨김 */
+.zb:not(.view) .zname{display:none!important;}
+/* 편집모드에서 우선순위 숨김 */
+.zb:not(.view) .zpri{display:none!important;}
 
 
 .zi{display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden;justify-content:flex-start;align-items:flex-start;}
