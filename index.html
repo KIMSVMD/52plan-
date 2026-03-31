@@ -117,11 +117,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD G
   font-size:17px;font-weight:900;color:#fff;white-space:nowrap;letter-spacing:0.5px;
   pointer-events:none;
 }
-.mz1 .mz-box{border-color:#EA580C;background:rgba(234,88,12,0.05);}
+.mz1 .mz-box{border-color:#EA580C;background:transparent;}
 .mz1 .mz-tab{background:#EA580C;}
-.mz2 .mz-box{border-color:#2563EB;background:rgba(37,99,235,0.05);}
+.mz2 .mz-box{border-color:#2563EB;background:transparent;}
 .mz2 .mz-tab{background:#2563EB;}
-.mz3 .mz-box{border-color:#16A34A;background:rgba(22,163,74,0.05);}
+.mz3 .mz-box{border-color:#16A34A;background:transparent;}
 .mz3 .mz-tab{background:#16A34A;}
 .canvas-area{position:relative;}
 .gc{position:relative;background:#fff;border:2px solid #333;border-radius:6px;padding:8px;overflow:visible;}
@@ -8227,52 +8227,116 @@ if(document.readyState !== 'loading'){
 })();
 
 // ══════════════════════════════════════════
-// ══════════════════════════════════════════
-// ★ 메인구역 깃발 오버레이 렌더
+// ★ 메인구역 깃발 오버레이 렌더 (집기형 외곽선)
 // ══════════════════════════════════════════
 function renderMainZoneOverlay(){
   const gc = document.getElementById('gc');
   if(!gc) return;
 
-  // 기존 오버레이 모두 제거
   gc.querySelectorAll('.mz-overlay').forEach(e => e.remove());
 
   const RANK_LABEL = {1:'메인 1', 2:'메인 2', 3:'메인 3'};
-  const PAD = 14;     // 구역 묶음 바깥 여백(px)
-  const GPAD = 8;     // gc 내부 padding (CSS와 동일하게 맞춤)
+  const RANK_COLOR = {1:'#EA580C', 2:'#2563EB', 3:'#16A34A'};
+  const GPAD = 8;  // gc padding
+  const PAD  = 4;  // 셀 바깥 여백
+
+  const gcW = gc.offsetWidth  || 1200;
+  const gcH = gc.offsetHeight || 800;
 
   [1, 2, 3].forEach(rank => {
     const group = zones.filter(z => z.mainRank === rank);
     if(!group.length) return;
 
-    // 그룹 전체 bounding box (col/row 단위)
-    const minC = Math.min(...group.map(z => z.col));
-    const minR = Math.min(...group.map(z => z.row));
-    const maxC = Math.max(...group.map(z => z.col + z.cols));
-    const maxR = Math.max(...group.map(z => z.row + z.rows));
+    const color = RANK_COLOR[rank];
 
-    // px 변환: zb 셀의 left = px(col)+GPAD 와 동일한 기준
-    const x = px(minC) + GPAD - PAD;
-    const y = py(minR) + GPAD - PAD;
-    const w = px(maxC - minC) - GAP + PAD * 2;
-    const h = py(maxR - minR) - GAP + PAD * 2;
+    // ── 각 셀의 픽셀 rect (PAD 포함) ──
+    const rects = group.map(z => ({
+      x1: px(z.col) + GPAD - PAD,
+      y1: py(z.row) + GPAD - PAD,
+      x2: px(z.col) + GPAD + z.cols*CELL + (z.cols-1)*GAP + PAD,
+      y2: py(z.row) + GPAD + z.rows*ROW  + (z.rows-1)*GAP + PAD,
+    }));
 
+    // ── 외곽선 세그먼트 수집 (공유 엣지 제거) ──
+    // 각 rect의 4변을 세그먼트로 분해, 중복(공유) 세그먼트 제거
+    const segKey = (ax,ay,bx,by) => {
+      // 정규화: 작은 좌표가 앞
+      if(ax > bx || (ax===bx && ay > by)) return `${bx},${by}-${ax},${ay}`;
+      return `${ax},${ay}-${bx},${by}`;
+    };
+    const segCount = {};
+    const segDir   = {}; // key -> {ax,ay,bx,by}
+
+    rects.forEach(r => {
+      const edges = [
+        [r.x1,r.y1, r.x2,r.y1], // top
+        [r.x2,r.y1, r.x2,r.y2], // right
+        [r.x2,r.y2, r.x1,r.y2], // bottom
+        [r.x1,r.y2, r.x1,r.y1], // left
+      ];
+      edges.forEach(([ax,ay,bx,by]) => {
+        const k = segKey(ax,ay,bx,by);
+        segCount[k] = (segCount[k]||0) + 1;
+        segDir[k] = {ax,ay,bx,by};
+      });
+    });
+
+    // 공유되지 않은 세그먼트(외곽)만 추출
+    const outerSegs = Object.entries(segCount)
+      .filter(([,cnt]) => cnt === 1)
+      .map(([k]) => segDir[k]);
+
+    // ── 탭 위치: 가장 위쪽-왼쪽 셀 ──
+    const topZ = group.reduce((a,b) => {
+      if(b.row < a.row) return b;
+      if(b.row === a.row && b.col < a.col) return b;
+      return a;
+    });
+    const tabX = px(topZ.col) + GPAD - PAD;
+    const tabY = py(topZ.row) + GPAD - PAD;
+
+    // ── SVG 오버레이 생성 ──
     const wrap = document.createElement('div');
-    wrap.className = 'mz-overlay mz' + rank;
+    wrap.className = 'mz-overlay';
+    wrap.style.cssText = `left:0;top:0;width:${gcW}px;height:${gcH}px;pointer-events:none;position:absolute;z-index:60;`;
 
-    const box = document.createElement('div');
-    box.className = 'mz-box';
-    box.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px;`;
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', gcW);
+    svg.setAttribute('height', gcH);
+    svg.style.cssText = 'position:absolute;left:0;top:0;overflow:visible;';
 
-    const tab = document.createElement('div');
-    tab.className = 'mz-tab';
-    tab.textContent = RANK_LABEL[rank];
+    // 외곽선 세그먼트들
+    outerSegs.forEach(({ax,ay,bx,by}) => {
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', ax); line.setAttribute('y1', ay);
+      line.setAttribute('x2', bx); line.setAttribute('y2', by);
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', '4');
+      line.setAttribute('stroke-linecap', 'square');
+      svg.appendChild(line);
+    });
 
-    box.appendChild(tab);
-    wrap.appendChild(box);
+    // 탭 레이블 (foreignObject로 HTML 탭 삽입)
+    const TAB_H = 30;
+    const fo = document.createElementNS(ns, 'foreignObject');
+    fo.setAttribute('x', tabX);
+    fo.setAttribute('y', tabY - TAB_H);
+    fo.setAttribute('width', '120');
+    fo.setAttribute('height', TAB_H);
+    fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml"
+      style="background:${color};height:${TAB_H}px;padding:0 14px;border-radius:8px 8px 0 0;
+      display:flex;align-items:center;font-family:'Pretendard',sans-serif;
+      font-size:14px;font-weight:900;color:#fff;white-space:nowrap;width:fit-content;">
+      ${RANK_LABEL[rank]}
+    </div>`;
+    svg.appendChild(fo);
+
+    wrap.appendChild(svg);
     gc.appendChild(wrap);
   });
 }
+
 
 </script>
 </body>
