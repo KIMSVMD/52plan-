@@ -3185,7 +3185,7 @@ function autoScale(){
   const gc    = document.getElementById('gc');
   if(!area||!scaler||!gc) return;
   if(userZoomed){ applyScale(); return; }
-  if(true){ curScale = 0.50; userZoomed = true; applyScale(); return; } // 전 점포 초기 50%
+  if(true){ curScale = 0.60; userZoomed = true; applyScale(); return; } // 전 점포 초기 60%
   const PAD = 32; // 상하좌우 동일 여백
   const aw = area.clientWidth  - PAD * 2;
   const ah = area.clientHeight - PAD * 2;
@@ -7046,7 +7046,7 @@ function switchStore(store) {
   if (select) select.value = store;
   selId = null;
   // 점포별 초기 줌 비율 설정
-  curScale = 0.50; // 전 점포 초기 50%
+  curScale = 0.60; // 전 점포 초기 60%
   userZoomed = true;
   render(); applyScale(); renderPanel(); renderNav();
   setTimeout(_panToEntrance, 80);
@@ -7259,7 +7259,7 @@ window._renderOnReady = function() {
   }
 
   // 화면 렌더링
-  curScale = 0.50; // 전 점포 초기 50%
+  curScale = 0.60; // 전 점포 초기 60%
   userZoomed = true;
   render();
   // rotation이 복원된 후 applyScale을 즉시 + 다음 프레임에 한 번 더 호출
