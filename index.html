@@ -8266,7 +8266,7 @@ function renderSalesView() {
       <button id="salSortSales" onclick="setSalesSort('sales')"
         style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #475569;background:transparent;color:#94a3b8;cursor:pointer;">매출액</button>
     </div>
-    ${isAdmin ? '<button onclick="openSalesDataModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #3a8c3a;background:transparent;color:#7dcd7d;cursor:pointer;">✏️ 데이터 입력</button><button onclick="openExcelUploadModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #2563eb;background:transparent;color:#60a5fa;cursor:pointer;">📥 엑셀 업로드</button><button onclick="toggleSalesGroupEdit()" id="salGroupEditBtn" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #6366f1;background:transparent;color:#a5b4fc;cursor:pointer;">🗂 구역 그룹</button>' : '<span style="font-size:9px;color:#475569;padding:4px 10px;">👁 열람 모드</span>'}
+    ${isAdmin ? '<button onclick="openSalesDataModal()" class="admin-only" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #3a8c3a;background:transparent;color:#7dcd7d;cursor:pointer;">✏️ 데이터 입력</button><button onclick="openExcelUploadModal()" class="admin-only" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #2563eb;background:transparent;color:#60a5fa;cursor:pointer;">📥 엑셀 업로드</button><button onclick="toggleSalesGroupEdit()" id="salGroupEditBtn" class="admin-only" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #6366f1;background:transparent;color:#a5b4fc;cursor:pointer;">🗂 구역 그룹</button>' : ''}
   `;
   wrap.appendChild(toolbar);
 
@@ -8620,7 +8620,7 @@ function renderSalesMap(container, metrics, maxPerSales) {
         zEl.style.outline      = '';
 
         if (zi) {
-          const perSalesText = m.perSales > 0 ? Math.round(m.perSales).toLocaleString() : '-';
+          const perSalesText = m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-';
           const numDiv = document.createElement('div');
           numDiv.style.cssText = 'font-size:12px;font-weight:900;color:#fff;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center;width:100%;';
           numDiv.textContent = perSalesText;
@@ -8731,7 +8731,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
     var gMetrics = zids.map(zid => metricMap[zid]).filter(Boolean);
     var tSales = gMetrics.reduce((s,m)=>s+m.sales,0);
     var tArea  = gMetrics.reduce((s,m)=>s+m.area, 0);
-    var tPS    = tArea > 0 ? Math.round(tSales / tArea) : 0;
+    var tPS    = tArea > 0 ? Math.floor(tSales / tArea) : 0;
     var avgGrade =
       gMetrics.filter(m=>m.grade==='A').length > gMetrics.length/2 ? 'A' :
       gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
@@ -9050,7 +9050,7 @@ function showSalesZoneCard(m, zEl) {
     '<div>' +
       '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">평당매출</div>' +
       '<div style="font-size:22px;font-weight:900;color:#f97316;letter-spacing:-.5px;">' +
-        Math.round(m.perSales).toLocaleString() + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">만/평</span>' +
+        Math.floor(m.perSales).toLocaleString() + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">만/평</span>' +
       '</div>' +
     '</div>' +
     '<div style="text-align:right;">' +
@@ -9070,7 +9070,7 @@ function showSalesZoneCard(m, zEl) {
       '<div style="font-size:12px;font-weight:900;color:' + color + ';">' + val + '</div>';
     return d;
   }
-  grid3.appendChild(mc('실매출(하루)', m.sales.toLocaleString()+'만', '#111827', true));
+  grid3.appendChild(mc('실매출(하루)', Math.round(m.sales).toLocaleString()+'만', '#111827', true));
   grid3.appendChild(mc('공간효율', fmtEff(impr.spaceEff), spC, true));
   grid3.appendChild(mc('1H 평당효율', sep+'%', seC, false));
   card.appendChild(grid3);
@@ -9354,7 +9354,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
         '<span style="font-size:13px;flex-shrink:0;">✅</span>'+
         (r.color?'<div style="width:10px;height:10px;border-radius:2px;background:'+r.color+';flex-shrink:0;"></div>':'')+
         '<span style="font-size:12px;font-weight:700;color:#14532d;flex:1;">'+r.name+
-          ' <span style="font-weight:500;color:#16a34a;">— 평당 '+Math.round(r.perSales).toLocaleString()+'만 ('+Math.round(r.area)+'평)</span>'+
+          ' <span style="font-weight:500;color:#16a34a;">— 평당 '+Math.floor(r.perSales).toLocaleString()+'만 ('+Math.round(r.area)+'평)</span>'+
         '</span>';
       card.appendChild(row);
     });
@@ -9399,7 +9399,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
 
     const ps=document.createElement('div');
     ps.style.cssText='font-size:14px;font-weight:900;color:'+(i===0?'#16a34a':i<3?'#2563eb':'#374151')+';flex-shrink:0;';
-    ps.textContent=Math.round(r.perSales).toLocaleString()+'만/평';
+    ps.textContent=Math.floor(r.perSales).toLocaleString()+'만/평';
 
     row.appendChild(rb);row.appendChild(info);row.appendChild(ps);
     rankCard.appendChild(row);
@@ -9425,7 +9425,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
             '<div style="font-size:9px;color:#9ca3af;">'+Math.round(r.area)+'평</div>'+
           '</div>'+
         '</div>'+
-        '<span style="font-size:12px;font-weight:900;color:#dc2626;">'+Math.round(r.perSales).toLocaleString()+'만/평</span>';
+        '<span style="font-size:12px;font-weight:900;color:#dc2626;">'+Math.floor(r.perSales).toLocaleString()+'만/평</span>';
       rankCard.appendChild(row);
     });
   }
@@ -9535,7 +9535,7 @@ function renderImproveTab(container, metrics, avgPerSales) {
         d.innerHTML='<div style="font-size:8px;color:#9ca3af;margin-bottom:3px;">'+l+'</div><div style="font-size:12px;font-weight:900;color:'+c+';">'+v+'</div>';
         return d;
       }
-      mg.appendChild(mc('평당매출',Math.round(r.perSales).toLocaleString()+'만','#f97316',true));
+      mg.appendChild(mc('평당매출',Math.floor(r.perSales).toLocaleString()+'만','#f97316',true));
       mg.appendChild(mc('공간효율',fmtEff(r.spaceEff),spC,true));
       mg.appendChild(mc('평당효율',sep+'%',seC,false));
       card.appendChild(mg);
@@ -9616,7 +9616,7 @@ function renderListTab(container, metrics, maxPerSales) {
       '<span style="font-size:8px;color:#9ca3af;flex-shrink:0;">'+Math.round(r.area)+'평</span>';
 
     const ps=document.createElement('div');ps.style.cssText='display:flex;align-items:center;justify-content:flex-end;gap:3px;';
-    ps.innerHTML='<div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(r.perSales,maxPS)+';flex-shrink:0;"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.round(r.perSales).toLocaleString()+'</span>';
+    ps.innerHTML='<div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(r.perSales,maxPS)+';flex-shrink:0;"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(r.perSales).toLocaleString()+'</span>';
     const sp=document.createElement('div');sp.style.cssText='font-size:10px;font-weight:700;color:'+spC+';text-align:right;';sp.textContent=fmtEff(r.spaceEff);
     const se=document.createElement('div');se.style.cssText='font-size:10px;font-weight:700;color:'+seC+';text-align:right;';se.textContent=sep+'%';
     const gr=document.createElement('div');gr.style.cssText='text-align:center;';
@@ -9664,7 +9664,7 @@ function renderGroupTab(container, metrics) {
       mr.onmouseover=()=>{mr.style.background='#f0f9ff';highlightSalesMapZone(m.z.id,true);};
       mr.onmouseout= ()=>{mr.style.background='';highlightSalesMapZone(m.z.id,false);};
       const bw=Math.max(2,Math.round((m.perSales/maxGPS)*50));
-      mr.innerHTML='<span style="font-size:9px;color:#9ca3af;font-weight:700;width:16px;text-align:right;">'+(i+1)+'</span><span style="font-size:10px;font-weight:700;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+m.z.name+'</span><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(m.perSales,maxGPS)+';"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.round(m.perSales).toLocaleString()+'만</span></div>';
+      mr.innerHTML='<span style="font-size:9px;color:#9ca3af;font-weight:700;width:16px;text-align:right;">'+(i+1)+'</span><span style="font-size:10px;font-weight:700;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+m.z.name+'</span><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(m.perSales,maxGPS)+';"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(m.perSales).toLocaleString()+'만</span></div>';
       ml.appendChild(mr);
     });
     card.appendChild(ml);container.appendChild(card);
