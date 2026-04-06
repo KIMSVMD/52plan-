@@ -960,6 +960,7 @@ body.viewer-mode #salBtnDataInput,
 body.viewer-mode #salBtnExcel,
 body.viewer-mode #salGroupEditBtn,
 body.viewer-mode #salBtnResetLabel { display: none !important; }
+body.viewer-mode #salBtnDeleteMonth { display: none !important; }
 body.viewer-mode .sal-tab-edit-only { display: none !important; }
 body.viewer-mode #salesGroupSidePanel { display: none !important; width: 0 !important; }
 body.viewer-mode .gdsi-cat-sel { pointer-events: none !important; opacity: 0.6 !important; }
@@ -9530,9 +9531,11 @@ function renderSalesView() {
  style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #ddd6fe;background:#f5f3ff;color:#6d28d9;cursor:pointer;"> 구역 그룹</button>
  <button id="salBtnResetLabel" onclick="resetSalesLabelOffsets()" title="레이블 위치 초기화"
  style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #e5e7eb;background:#f9fafb;color:#6b7280;cursor:pointer;">↺ 레이블 초기화</button>
+ <button id="salBtnDeleteMonth" onclick="deleteSalesMonthData()" title="현재 월 데이터 삭제"
+ style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;cursor:pointer;">이 달 데이터 삭제</button>
  `;
  // 권한에 따라 버튼 표시 제어 (isAdmin 조건을 innerHTML 조건문 대신 런타임 display로 처리)
- const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'];
+ const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel','salBtnDeleteMonth'];
  _adminOnlyBtns.forEach(function(id) {
  const el = toolbar.querySelector('#' + id);
  if (el) el.style.display = isAdmin ? '' : 'none';
@@ -12336,6 +12339,38 @@ function resetSalesLabelOffsets() {
  if (typeof switchSalesMonth === 'function') {
  switchSalesMonth(window.currentSalesMonth);
  }
+}
+
+function deleteSalesMonthData() {
+ if (!isAdmin || isViewer) { showToast('관리자만 삭제할 수 있습니다'); return; }
+ const mo = window.currentSalesMonth;
+ if (mo === null || mo === undefined) {
+   showToast('월을 먼저 선택해주세요');
+   return;
+ }
+ const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+ const mName = monthNames[mo] || (mo + '월');
+ if (!confirm(mName + ' 평당매출 데이터를 삭제할까요?\n(매출금액 + 구역 그룹 모두 삭제됩니다)')) return;
+
+ const store = currentStore;
+ const key = 'm' + mo;
+ if (!window.monthlySalesStore) window.monthlySalesStore = {};
+ if (!window.monthlySalesStore[store]) window.monthlySalesStore[store] = {};
+ window.monthlySalesStore[store][key] = { salesData:{}, areaData:{}, salesGroups:{}, salesGroupData:{} };
+
+ // 현재 활성 데이터도 초기화
+ window.salesData = {};
+ window.areaData = {};
+ window.salesGroups = {};
+ window.salesGroupData = {};
+ window.storeSalesDataMap[store] = {};
+ window.storeSalesGroupsMap[store] = {};
+ window.storeSalesGroupDataMap[store] = {};
+
+ saveSalesMonthData(mo);
+ syncToFirebase();
+ if (typeof switchSalesMonth === 'function') switchSalesMonth(mo);
+ showToast(mName + ' 데이터 삭제 완료');
 }
 
 function updateSalesTableGroupBadges() {
