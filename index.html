@@ -723,6 +723,7 @@ body { font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-s
 .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .sync-dot.pulse { animation: syncpulse 1s infinite; }
 @keyframes syncpulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
 
 /* ═══════════════════════════════════════
    카테고리 확대보기 시스템
@@ -903,6 +904,7 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
 
   // Firebase 연결 상태 전역 노출
   const _initialLoadDone = {};
+  const _listenedStores = {}; // ★ 중복 listenStore 방지
 
 
   // ── rotation 복원 헬퍼 ──
@@ -920,6 +922,8 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
     };
   }
   function listenStore(store) {
+    if (_listenedStores[store]) return; // ★ 이미 등록된 지점이면 중복 등록 방지
+    _listenedStores[store] = true;
     const r = ref(db, 'plan2026/' + store);
     onValue(r, snap => {
       const data = snap.val();
@@ -964,7 +968,7 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
               catRegions[store] = _cr;
               if (window.catRegions) window.catRegions[store] = _cr;
             }
-            if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
+            if (typeof render === 'function' && !window._isSwitchingStore) { render(); renderPanel(); renderNav(); }
             if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
           }
           // 모든 지점 catRegions 항상 저장 (currentStore 여부 무관)
@@ -1038,7 +1042,7 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
         if (store === (window.currentStore || 'gs')) {
           if (window._appReady && data) {
             // 타임아웃 오발로 하드코딩 데이터가 먼저 렌더된 경우 → Firebase 데이터로 강제 재렌더
-            if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
+            if (typeof render === 'function' && !window._isSwitchingStore) { render(); renderPanel(); renderNav(); }
             if (typeof applyScale === 'function') { applyScale(); requestAnimationFrame(function(){ applyScale(); }); }
             if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
           } else if (typeof window._renderOnReady === 'function') {
@@ -1089,10 +1093,12 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
             catTagPos     = _d.catTagPos    || 'tl';
           }
         }
+        // ★ 지점 전환 중이면 렌더 스킵 (switchStore가 전환 완료 후 직접 render() 호출)
+        if (window._isSwitchingStore) { syncUI('saved', '✅ 동기화됨'); return; }
         render(); renderPanel(); renderNav();
         if (typeof applyScale === 'function') { applyScale(); requestAnimationFrame(function(){ applyScale(); }); }
         if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
-        // 운영맵이 열려있으면 운영맵도 갱신
+        // ★ 운영맵이 열려있으면 운영맵도 갱신 (중복 호출은 renderOmap 내 innerHTML='' 초기화로 안전)
         if (typeof omapLoaded !== 'undefined' && omapLoaded && typeof renderOmap === 'function') {
           renderOmap();
         }
@@ -1368,75 +1374,7 @@ body:not(.viewer-mode) #gc.cat-zone-select .zb { cursor: pointer !important; }
       };
       setTimeout(addDropdown, 200);
 
-      // 새 지점의 실제 데이터 불러오기 + 실시간 감시
-      const storeDataRef = ref(db, 'plan2026/' + code);
-      onValue(storeDataRef, dataSnap => {
-        const storeData = dataSnap.val();
-        if (storeData && _myLastSavedAt[code] && storeData.savedAt === _myLastSavedAt[code]) {
-          return;
-        }
-        if (!storeData) return;
-
-        // zones 데이터 업데이트
-        if (storeData.zones && Array.isArray(storeData.zones)) {
-          newZones.length = 0;
-          storeData.zones.forEach(z => newZones.push(Object.assign({}, z)));
-          if (window.storeZonesSnapshot) {
-            window.storeZonesSnapshot[code] = storeData.zones.map(z => Object.assign({}, z));
-          }
-        }
-
-        // overrides 데이터 업데이트
-        if (storeData.userOverrides) {
-          Object.keys(newOverrides).forEach(k => delete newOverrides[k]);
-          Object.assign(newOverrides, storeData.userOverrides);
-          if (window.storeUserOverrides) window.storeUserOverrides[code] = storeData.userOverrides;
-        }
-
-        // 현재 보고 있는 지점이면 화면 갱신
-        if (window.currentStore === code) {
-          if (window.zones) {
-            window.zones.length = 0;
-            newZones.forEach(z => window.zones.push(Object.assign({}, z)));
-          }
-          if (storeData.userOverrides && window.userOverrides) {
-            Object.keys(window.userOverrides).forEach(k => delete window.userOverrides[k]);
-            Object.assign(window.userOverrides, storeData.userOverrides);
-          }
-          // seasonOverrides 복원
-          if (storeData.seasonOverrides && typeof seasonOverrides !== 'undefined') {
-            Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
-            Object.assign(seasonOverrides, storeData.seasonOverrides);
-          }
-          // storeSeasonOverrides 갱신
-          if (storeData.seasonOverrides && window.storeSeasonOverrides) {
-            window.storeSeasonOverrides[code] = JSON.parse(JSON.stringify(storeData.seasonOverrides));
-          }
-          // catRegions 복원
-          if (storeData.catRegions && Array.isArray(storeData.catRegions)) {
-            const _cr = JSON.parse(JSON.stringify(storeData.catRegions));
-            catRegions[code] = _cr;
-            if (window.catRegions) window.catRegions[code] = _cr;
-          }
-          // 회전 복원: _rotData에 저장 후 즉시 직접 적용
-          _restoreRotation(code, storeData);
-          const _dd = window._rotData && window._rotData[code];
-          if (_dd) {
-            storeRotations[code]  = _dd.canvasRotation;
-            storeTextRot[code]    = _dd.textRotation;
-            storeCatTagPos[code]  = _dd.catTagPos;
-            if (code === (window.currentStore || 'gs')) {
-              globalTextRot = _dd.textRotation || 0;
-              catTagPos     = _dd.catTagPos    || 'tl';
-            }
-          }
-          if (typeof render === 'function') { render(); renderPanel(); renderNav(); }
-          if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
-          if (typeof showToast === 'function') showToast('🔄 데이터 동기화됨');
-        }
-
-        syncUI('saved', '✅ 동기화됨');
-      });
+      // ★ 새 지점의 실시간 감시는 listenStore(code)가 이미 처리 — 중복 onValue 등록 제거
     });
   });
 
@@ -3453,17 +3391,16 @@ function render(){
     });
   }
   
-  requestAnimationFrame(autoScale);
-  // 바운딩박스 + 핸들 위치 갱신
-  requestAnimationFrame(updateBoundingBox);
-  // 개별 textRot + globalTextRot 모두 반영
-  requestAnimationFrame(_applyGlobalTextRot);
-  // 카테고리 영역 박스 재렌더 (편집모드 or 열람모드)
-  requestAnimationFrame(()=>{
+  // ★ 여러 RAF를 하나로 통합하여 중복 예약 방지
+  if(render._postRaf){ cancelAnimationFrame(render._postRaf); }
+  render._postRaf = requestAnimationFrame(function(){
+    render._postRaf = null;
+    autoScale();
+    updateBoundingBox();
+    _applyGlobalTextRot();
     if(typeof _renderCatRegionBoxes === 'function') _renderCatRegionBoxes();
+    renderMainZoneOverlay();
   });
-  // ★ 메인구역 깃발 오버레이
-  requestAnimationFrame(renderMainZoneOverlay);
 }
 
 function autoScale(){
@@ -5749,6 +5686,11 @@ function tryLogin(){
     if(_sh) _sh.style.display='none';
     // Presence 등록 (현재 지점)
     if (typeof window._presenceEnter === 'function') window._presenceEnter(currentStore);
+    // ★ 평당매출 탭 버튼 즉시 표시 (로그인 전에 탭을 열었을 경우 대비)
+    ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.style.display = '';
+    });
     showToast('관리자 로그인');
   } else {
     document.getElementById('lockErr').textContent='비밀번호가 올바르지 않습니다';
@@ -5765,6 +5707,10 @@ function enterViewer(){
   }
   isViewer=true; isAdmin=false;
   document.body.classList.add('viewer-mode');
+  // ★ 평당매출 탭 버튼 즉시 숨김
+  ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
   document.getElementById('lockOverlay').style.display='none';
   const _hdrV = document.getElementById('hdrR');
   if (_hdrV) { _hdrV.style.visibility='visible'; _hdrV.style.opacity='1'; }
@@ -5791,6 +5737,12 @@ function enterViewer(){
   const _sh2 = document.getElementById('summaryResizeHandle');
   if(_sw2) _sw2.style.display='flex';
   if(_sh2) _sh2.style.display='flex';
+  // ★ 구역 그룹 편집 패널 강제 숨김 (관리자 전용)
+  salesGroupEditMode = false;
+  salesGroupActiveId = null;
+  const _sgp = document.getElementById('salesGroupPanel');
+  if (_sgp) _sgp.style.display = 'none';
+  removeSalesGroupClickListeners();
   renderNav(); render();
   showToast('열람 모드');
 }
@@ -5820,6 +5772,16 @@ function backToHome(){
   document.getElementById('lockErr').textContent='';
   document.getElementById('lockHint').style.color='';
   document.getElementById('lockHint').textContent='열람 모드는 공개된 월만 확인 가능합니다';
+  // ★ 구역 그룹 편집 패널 강제 숨김
+  salesGroupEditMode = false;
+  salesGroupActiveId = null;
+  const _sgpB = document.getElementById('salesGroupPanel');
+  if (_sgpB) _sgpB.style.display = 'none';
+  removeSalesGroupClickListeners();
+  // ★ 평당매출 탭 버튼 즉시 숨김
+  ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
   lockTab('view');
 }
 
@@ -7470,6 +7432,7 @@ function updateSaveDropdown() {
 
 function switchStore(store) {
   if (currentStore === store) return;
+  window._isSwitchingStore = true; // ★ 지점 전환 중 플래그 — Firebase onValue 렌더 억제용
   // 현재 점포 수정 내용 전부 저장 (userOverrides + zones 편집본)
   storeUserOverrides[currentStore] = JSON.parse(JSON.stringify(userOverrides));
   storeZonesSnapshot[currentStore] = zones.map(z => Object.assign({}, z));
@@ -7550,6 +7513,7 @@ function switchStore(store) {
   window._savedPlanScrollRatioX = undefined;
   window._savedPlanScrollRatioY = undefined;
   render(); applyScale(); renderPanel(); renderNav();
+  window._isSwitchingStore = false; // ★ 전환 완료 — Firebase 렌더 재허용
   setTimeout(_panToEntrance, 80);
   const _b = document.getElementById('canvasRotBadge');
   if(_b) _b.textContent=(storeRotations[currentStore]||0)+'°';
@@ -7567,8 +7531,7 @@ function switchStore(store) {
   if(typeof renderCatFocusBar === 'function') renderCatFocusBar();
   if(typeof _clearCatFocus === 'function') _clearCatFocus();
   if(typeof _renderCatZoneBorders === 'function') _renderCatZoneBorders();
-  // zone 클릭 리스너 재등록
-  setTimeout(()=>{ if(typeof _attachCatZoneListeners==='function') _attachCatZoneListeners(); }, 100);
+  // ★ zone 클릭 리스너 재등록은 render() 래퍼에서 자동 처리 — 중복 호출 제거
   showToast(s.name + ' 로드');
 
   // ── 새 지점 평당매출 데이터 복원 ──
@@ -8342,6 +8305,14 @@ function switchView(view) {
     window._pendingPlanRatioX = window._savedPlanScrollRatioX;
     window._pendingPlanRatioY = window._savedPlanScrollRatioY;
     renderSalesView();
+    // ★ 탭 진입마다 관리자 버튼 display 재적용 (renderSalesView 이후 isAdmin 반영)
+    (function() {
+      var _btns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'];
+      _btns.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = isAdmin ? '' : 'none';
+      });
+    })();
     // ── 평당매출 스크롤 복원 ──
     if (!window._salesPanToEntrance) {
       // 복원할 비율: 도면에서 저장한 비율 사용 (salesMapCol scroll로 덮어써진 0이 아님)
@@ -8448,17 +8419,37 @@ function guessCategoryChar(z) {
   const name = (z.name     || '').toLowerCase();
   const all  = cat + ' ' + type + ' ' + prod + ' ' + name;
 
-  if (/농산|과일|청과|딸기|수박|참외|포도|사과|배[^추]|복숭아|망고|키위|레몬|오렌지|체리|감귤|한라봉/.test(all)) return { key:'농산', label:'🍎 농산·과일', color:'#16a34a', icon:'🍎' };
-  if (/채소|야채|버섯|나물|시금치|고구마|감자|무|배추|양파|마늘|대파|오이|호박|브로콜|당근|고추/.test(all)) return { key:'채소', label:'🥬 채소', color:'#22c55e', icon:'🥬' };
-  if (/수산|생선|해산|갈치|고등어|오징어|전복|새우|꽃게|바지락|장어|도다리|주꾸미|굴|명태|꼬막/.test(all)) return { key:'수산', label:'🐟 수산', color:'#2563eb', icon:'🐟' };
-  if (/축산|정육|고기|삼겹|갈비|불고기|닭|오리|한우|돼지|소고기|스테이크|목살/.test(all)) return { key:'축산', label:'🥩 축산', color:'#dc2626', icon:'🥩' };
-  if (/공산|간편|즉석|라면|음료|과자|스낵|냉동|가공|선물|세트|통조림|양념|소스|김치|건어|견과|양곡|쌀/.test(all)) return { key:'공산', label:'🛒 공산', color:'#d97706', icon:'🛒' };
-  if (/일용|생활|세제|청소|욕실|주방|위생|마스크|화장지|휴지|샴푸|비누/.test(all)) return { key:'일용', label:'🧴 일용', color:'#7c3aed', icon:'🧴' };
-  if (/델리|즉석조리|도시락|반찬|초밥|샐러드|컷팅|컵과일|스시/.test(all)) return { key:'델리', label:'🍱 델리', color:'#0891b2', icon:'🍱' };
-  if (/시즌|이벤트|행사|특가|기획|메인|핵심/.test(all)) return { key:'시즌', label:'⭐ 시즌', color:'#ea580c', icon:'⭐' };
-  if (/로컬|지역|친환경|유기농|무농약/.test(all)) return { key:'로컬', label:'🌿 로컬', color:'#15803d', icon:'🌿' };
-  return { key:'기타', label:'📦 기타', color:'#64748b', icon:'📦' };
+  // ── 영어 category 코드 직접 처리 (meat/fish/veg/fruit/food/none) ──
+  const _engCat = (z.category || '').toLowerCase();
+  if (_engCat === 'meat')  return { key:'축산', label:'축산', color:'#dc2626', icon:'축산' };
+  if (_engCat === 'fish')  return { key:'수산', label:'수산', color:'#2563eb', icon:'수산' };
+  if (_engCat === 'veg')   return { key:'채소', label:'채소', color:'#22c55e', icon:'채소' };
+  if (_engCat === 'fruit') return { key:'농산', label:'농산·과일', color:'#16a34a', icon:'농산' };
+  if (_engCat === 'food')  return { key:'공산', label:'공산', color:'#d97706', icon:'공산' };
+
+
+  // ── 농산·과일 ──
+  if (/농산|과일|청과|딸기|수박|참외|포도|사과|배[^추]|복숭아|망고|키위|레몬|오렌지|체리|감귤|한라봉|바나나|블루베리|아보카도|파인애플|멜론|방울토마토|스테비아|대주방울|납작복숭아|황도|백도|청포도|블랙포도|샤인머스켓|카라카라|발렌시아/.test(all)) return { key:'농산', label:'농산·과일', color:'#16a34a', icon:'농산' };
+  // ── 채소 ──
+  if (/채소|야채|버섯|나물|시금치|고구마|감자|무[^시]|배추|양파|마늘|대파|오이|호박|브로콜|당근|고추|쌈채소|새싹|콩나물|숙주|부추|미나리|깻잎|참나물|취나물|냉이|쑥갓|토마토|맛타리|표고|팽이|새송이|양송이|느타리|애호박|가지|연근|우엉/.test(all)) return { key:'채소', label:'채소', color:'#22c55e', icon:'채소' };
+  // ── 수산 ──
+  if (/수산|생선|해산|해물|갈치|고등어|오징어|전복|새우|꽃게|바지락|장어|도다리|주꾸미|굴|명태|꼬막|삼치|참돔|연어|참치|홍합|가리비|낙지|문어|멍게|미역|다시마|김[^치]|건식|건어|반건조|조기|민어|병어|임연수/.test(all)) return { key:'수산', label:'수산', color:'#2563eb', icon:'수산' };
+  // ── 축산 ── (돈육/우육/계란 등 실무 표현 포함)
+  if (/축산|정육|고기|삼겹|갈비|불고기|닭|오리|한우|돼지|소고기|스테이크|목살|항정|등심|안심|앞다리|뒷다리|차돌|우삼겹|꽃등심|육우|프리미엄.*육|돈육|우육|계란|달걀|동물복지|계육|오리.*육|양고기|양념육|조각육|수육|족발|보쌈/.test(all)) return { key:'축산', label:'축산', color:'#dc2626', icon:'축산' };
+  // ── 델리·즉석조리 ──
+  if (/델리|즉석조리|도시락|반찬|초밥|샐러드|컷팅|컵과일|스시|편의|즉석식품|핫바|튀김|로스트치킨|그릴|훈제|조리.*즉석|포케|떡볶이|만두|간편조리/.test(all)) return { key:'델리', label:'델리', color:'#0891b2', icon:'델리' };
+  // ── 공산·가공 ──
+  if (/공산|간편식|즉석밥|라면|음료|과자|스낵|냉동|가공|선물|세트|통조림|양념|소스|김치|건어물|견과|양곡|쌀|두부|콩나물|기름|식용유|밀가루|설탕|소금|조미료|액젓|된장|고추장|간장|국수|파스타|시리얼|분유|이유식|올리브|와인|맥주|주류/.test(all)) return { key:'공산', label:'공산', color:'#d97706', icon:'공산' };
+  // ── 일용·생활 ──
+  if (/일용|생활|세제|청소|욕실|주방|위생|마스크|화장지|휴지|샴푸|비누|바디워시|치약|칫솔|면도|세탁|섬유유연제|키친타올|랩|호일|지퍼백|쓰레기봉투|세척|소독|방향제|방충/.test(all)) return { key:'일용', label:'일용', color:'#7c3aed', icon:'일용' };
+  // ── 시즌·이벤트 ──
+  if (/시즌|이벤트|행사|특가|기획|메인|핵심|추석|설|명절|선물세트|기념일|발렌타인|어버이|어린이/.test(all)) return { key:'시즌', label:'시즌', color:'#ea580c', icon:'시즌' };
+  // ── 로컬·친환경 ──
+  if (/로컬|지역|친환경|유기농|무농약|무항생제|국내산|로컬푸드|동물복지(?!.*계란)/.test(all)) return { key:'로컬', label:'로컬', color:'#15803d', icon:'로컬' };
+  // ── 냉장·냉동 집기 타입 → 카테고리로 분류 불가, 기타 ──
+  return { key:'기타', label:'기타', color:'#64748b', icon:'기타' };
 }
+
 
 /* ── 개선 방향 추정 ── */
 function getImproveSuggestion(m) {
@@ -8534,12 +8525,86 @@ function calcSalesMetrics() {
   const nonSales = new Set(['입구','기둥']);
   const dataZones = zones.filter(z =>
     !nonSales.has(z.name) &&
-    !nonSales.has(z.type) &&        // type='기둥'도 제외
-    z.type !== '벽부' &&             // type='벽부'도 제외
+    !nonSales.has(z.type) &&
+    z.type !== '벽부' &&
     !String(z.color).startsWith('ent') &&
     z.color !== 'cpillar'
   );
 
+  // ── 종합 모드: 월별 데이터 취합 → 평당매출 평균 ──
+  const isAggregate = (window.currentSalesMonth === null || window.currentSalesMonth === undefined);
+  if (isAggregate) {
+    const store = window.currentStore || 'gs';
+    const monthlyStore = (window.monthlySalesStore && window.monthlySalesStore[store]) || {};
+    const monthKeys = Object.keys(monthlyStore).filter(k => {
+      const md = monthlyStore[k];
+      // ★ 종합 취합: 실제 매출 데이터가 있는 달만 포함 (그룹 구조만 있는 달 제외)
+      return md && (Object.keys(md.salesData||{}).length > 0 || Object.keys(md.salesGroupData||{}).length > 0);
+    });
+
+    if (monthKeys.length > 0) {
+      // 구역별 월별 평당매출 합산 후 평균
+      const aggSales  = {}; // 구역별 평당매출 합
+      const aggCounts = {}; // 구역별 데이터 있는 월 수
+      const aggArea   = {}; // 구역별 면적 (최신 값)
+
+      monthKeys.forEach(k => {
+        const md = monthlyStore[k];
+        const sd = md.salesData || {};
+        const ad = md.areaData  || {};
+        dataZones.forEach(z => {
+          const s = sd[z.id] || 0;
+          const a = ad[z.id] || 0;
+          if (a > 0 && s > 0) {
+            if (!aggSales[z.id])  aggSales[z.id]  = 0;
+            if (!aggCounts[z.id]) aggCounts[z.id] = 0;
+            aggSales[z.id]  += s / a; // 평당매출 누적
+            aggCounts[z.id] += 1;
+            aggArea[z.id]    = a; // 면적은 최신값 사용
+          }
+        });
+      });
+
+      // 평균 평당매출 계산
+      const aggPerSales = {};
+      dataZones.forEach(z => {
+        if (aggCounts[z.id] > 0) {
+          aggPerSales[z.id] = aggSales[z.id] / aggCounts[z.id];
+        } else {
+          aggPerSales[z.id] = 0;
+        }
+      });
+
+      const allPS = dataZones.map(z => aggPerSales[z.id] || 0).filter(v => v > 0);
+      const avgPerSales = allPS.length ? allPS.reduce((a,b)=>a+b,0)/allPS.length : 1;
+      const totalArea   = dataZones.reduce((s,z) => s + (aggArea[z.id] || 0), 0);
+      // 총매출 추정: 평당매출 × 면적
+      const totalSales  = dataZones.reduce((s,z) => s + (aggPerSales[z.id]||0) * (aggArea[z.id]||0), 0);
+
+      return dataZones.map(z => {
+        const perSales = aggPerSales[z.id] || 0;
+        const area     = aggArea[z.id] || 0.1;
+        const sales    = perSales * area;
+        const contrib  = totalSales > 0 ? sales / totalSales : 0;
+        const areaShare= totalArea  > 0 ? area  / totalArea  : 0;
+        const effIdx   = areaShare  > 0 ? contrib / areaShare : 0;
+        let grade;
+        if (effIdx >= 1.2)      grade = 'A';
+        else if (effIdx >= 0.8) grade = 'B';
+        else                    grade = 'C';
+        const isDead = perSales === 0 || perSales < avgPerSales * 0.3;
+        const _catGuess = guessCategoryChar(z);
+        return { z, sales, area, perSales, contrib, areaShare, effIdx, grade, isDead, avgPerSales, totalSales, totalArea, catChar: _catGuess };
+      });
+    }
+    // ★ 종합 모드에서 월별 데이터 없으면 모두 0으로 표시 (이전 달 오염 방지)
+    return dataZones.map(z => {
+      const _cat = guessCategoryChar(z);
+      return { z, sales:0, area:0.1, perSales:0, contrib:0, areaShare:0, effIdx:0, grade:'C', isDead:true, avgPerSales:1, totalSales:0, totalArea:0, catChar:_cat };
+    });
+  }
+
+  // ── 특정 월 또는 월별 데이터 없는 종합: 기존 방식 ──
   const totalSales = dataZones.reduce((s, z) => s + (window.salesData[z.id] || 0), 0);
   const totalArea  = dataZones.reduce((s, z) => s + (window.areaData[z.id]  || 0.1), 0);
   const allPerSales = dataZones
@@ -8550,7 +8615,7 @@ function calcSalesMetrics() {
   return dataZones.map(z => {
     const sales    = window.salesData[z.id] || 0;
     const area     = window.areaData[z.id]  || 0.1;
-    const perSales = area > 0 ? sales / area : 0;  // 평당매출 = 하루 실매출 ÷ 평수
+    const perSales = area > 0 ? sales / area : 0;
     const contrib  = totalSales > 0 ? sales / totalSales : 0;
     const areaShare= totalArea  > 0 ? area  / totalArea  : 0;
     const effIdx   = areaShare  > 0 ? contrib / areaShare : 0;
@@ -8559,7 +8624,6 @@ function calcSalesMetrics() {
     else if (effIdx >= 0.8)  grade = 'B';
     else                     grade = 'C';
     const isDead = sales === 0 || perSales < avgPerSales * 0.3;
-    // 카테고리 성격 추정 (z.category > z.type > z.prod > z.name 순)
     const _catGuess = guessCategoryChar(z);
     return { z, sales, area, perSales, contrib, areaShare, effIdx, grade, isDead, avgPerSales, totalSales, totalArea, catChar: _catGuess };
   });
@@ -8612,7 +8676,8 @@ function _salesMonthKey(idx) {
 /* ── 월별 데이터 로드 ── */
 function getSalesMonthData(monthIdx) {
   if (monthIdx === null || monthIdx === undefined) {
-    return { salesData: window.salesData || {}, areaData: window.areaData || {}, salesGroups: window.salesGroups || {}, salesGroupData: window.salesGroupData || {} };
+    // 종합: salesData/areaData는 비움 — calcSalesMetrics의 isAggregate 분기가 monthlySalesStore에서 직접 취합
+    return { salesData: {}, areaData: {}, salesGroups: {}, salesGroupData: {} };
   }
   if (!window.monthlySalesStore) window.monthlySalesStore = {};
   if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
@@ -8686,23 +8751,41 @@ function renderSalesMonthNav() {
 /* ── 월 전환: 이전 월 저장 → 새 월 데이터 로드 → 도면 위치 유지한 채 내용만 갱신 ── */
 function switchSalesMonth(monthIdx) {
   const prev = window.currentSalesMonth;
-  // 이전 월 데이터 보관
+  // 이전 월 데이터 항상 저장 (그룹 포함) — 단, 빈 월에 현재 데이터를 덮어쓰지 않음
   if (prev !== null && prev !== undefined) {
     if (!window.monthlySalesStore) window.monthlySalesStore = {};
     if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
-    window.monthlySalesStore[currentStore][_salesMonthKey(prev)] = {
-      salesData:      JSON.parse(JSON.stringify(window.salesData      || {})),
-      areaData:       JSON.parse(JSON.stringify(window.areaData       || {})),
-      salesGroups:    JSON.parse(JSON.stringify(window.salesGroups    || {})),
-      salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
-    };
+    const prevKey = _salesMonthKey(prev);
+    // ★ 항상 저장: salesGroups(그룹 구조)는 매출 데이터 유무와 무관하게 반드시 보존
+    const existingPrev = window.monthlySalesStore[currentStore][prevKey];
+    const hasAnyData = Object.keys(window.salesData||{}).length > 0
+                    || Object.keys(window.salesGroupData||{}).length > 0
+                    || Object.keys(window.salesGroups||{}).length > 0;
+    if (!existingPrev || hasAnyData) {
+      // 기존 데이터가 없거나, 현재 데이터가 있으면 무조건 저장
+      window.monthlySalesStore[currentStore][prevKey] = {
+        salesData:      JSON.parse(JSON.stringify(window.salesData      || {})),
+        areaData:       JSON.parse(JSON.stringify(window.areaData       || {})),
+        salesGroups:    JSON.parse(JSON.stringify(window.salesGroups    || {})),
+        salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
+      };
+    } else {
+      // 기존 데이터는 있는데 현재 데이터가 없는 경우 → salesGroups만 업데이트
+      window.monthlySalesStore[currentStore][prevKey] = Object.assign(
+        {}, existingPrev,
+        { salesGroups: JSON.parse(JSON.stringify(window.salesGroups || {})) }
+      );
+    }
   }
   window.currentSalesMonth = monthIdx;
   const md = getSalesMonthData(monthIdx);
   window.salesData      = JSON.parse(JSON.stringify(md.salesData));
   window.areaData       = JSON.parse(JSON.stringify(md.areaData));
-  window.salesGroups    = JSON.parse(JSON.stringify(md.salesGroups));
-  window.salesGroupData = JSON.parse(JSON.stringify(md.salesGroupData));
+  // ★ 종합 탭(null)에서는 그룹 표시 안 함 — 월별 그룹은 해당 월에서만 표시
+  window.salesGroups    = (monthIdx === null || monthIdx === undefined)
+    ? {} : JSON.parse(JSON.stringify(md.salesGroups    || {}));
+  window.salesGroupData = (monthIdx === null || monthIdx === undefined)
+    ? {} : JSON.parse(JSON.stringify(md.salesGroupData || {}));
 
   // 도면이 이미 렌더된 경우: 위치 유지하며 색상·패널만 갱신
   const gcSales = document.getElementById('gc-sales');
@@ -8736,27 +8819,71 @@ function refreshSalesContent(gcEl, panelEl) {
   }
 
   // ── 월 상태 바 텍스트 갱신 ──
+  const curMon = window.currentSalesMonth;
+  const curMonLabel = curMon !== null && curMon !== undefined
+    ? (typeof MONTHS !== 'undefined' ? MONTHS[curMon].label : (curMon+1)+'월') : '종합';
+  const hasMonthData = (function() {
+    if (curMon === null || curMon === undefined) return true;
+    if (!window.monthlySalesStore || !window.monthlySalesStore[currentStore]) return false;
+    const md2 = window.monthlySalesStore[currentStore][_salesMonthKey(curMon)];
+    return md2 && (Object.keys(md2.salesData||{}).length > 0 || Object.keys(md2.salesGroupData||{}).length > 0 || Object.keys(md2.salesGroups||{}).length > 0);
+  })();
+
   const monthBarLabel = document.getElementById('salesMonthBarLabel');
   if (monthBarLabel) {
-    const curMon = window.currentSalesMonth;
-    const curMonLabel = curMon !== null && curMon !== undefined
-      ? (typeof MONTHS !== 'undefined' ? MONTHS[curMon].label : (curMon+1)+'월') : '종합';
-    const hasMonthData = (function() {
-      if (curMon === null || curMon === undefined) return false;
-      if (!window.monthlySalesStore || !window.monthlySalesStore[currentStore]) return false;
-      const md2 = window.monthlySalesStore[currentStore][_salesMonthKey(curMon)];
-      return md2 && (Object.keys(md2.salesData||{}).length > 0 || Object.keys(md2.salesGroupData||{}).length > 0);
-    })();
     monthBarLabel.innerHTML =
       (curMon !== null && curMon !== undefined ? '📅 ' + curMonLabel + ' 데이터 보기 중' : '📊 종합 보기 중') +
-      (curMon !== null && curMon !== undefined && hasMonthData ? ' <span style="font-size:9px;color:#22d3ee;">✅</span>' : '') +
-      (curMon !== null && curMon !== undefined && !hasMonthData ? ' <span style="font-size:9px;color:#f59e0b;">⚠️</span>' : '');
+      (curMon !== null && curMon !== undefined && hasMonthData  ? ' <span style="font-size:9px;color:#22d3ee;">✅</span>' : '') +
+      (curMon !== null && curMon !== undefined && !hasMonthData ? ' <span style="font-size:9px;color:#f59e0b;">⚠️ 데이터 없음</span>' : '');
   }
 
-  // ── 도면 히트맵 색상 업데이트 (DOM 위치 건드리지 않음) ──
-  const groups     = window.salesGroups || {};
-  const hasGroups  = Object.keys(groups).length > 0;
-  const metricMap  = {};
+  // ── 데이터 없는 월: 전체 흐리게 처리 (구역 선택은 유지) ──
+  if (curMon !== null && curMon !== undefined && !hasMonthData) {
+    gcEl.querySelectorAll('.zb').forEach(zEl => {
+      zEl.style.opacity      = '0.35';
+      zEl.style.filter       = 'grayscale(0.8)';
+      zEl.style.outline      = 'none';
+      zEl.style.boxShadow    = 'none';
+      zEl.style.pointerEvents = 'all';
+      const zi = zEl.querySelector('.zi');
+      if (zi) zi.innerHTML = '';
+    });
+    // ★ 그룹 지정 모드에서 그룹 색상 표시 (데이터 없어도 그룹 구조는 유지)
+    if ((typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode) {
+      const _grps = window.salesGroups || {};
+      const _zgMap = {};
+      Object.entries(_grps).forEach(function(_e){ (_e[1].zoneIds||[]).forEach(function(zid){ _zgMap[zid]=_e[1]; }); });
+      gcEl.querySelectorAll('.zb').forEach(function(zEl) {
+        var zid = zEl.id.replace('sz-','');
+        var inGrp = _zgMap[zid];
+        if (inGrp) {
+          zEl.style.background = inGrp.color + '44';
+          zEl.style.border     = '2.5px solid ' + inGrp.color;
+          zEl.style.opacity    = '1';
+          zEl.style.filter     = '';
+        }
+        zEl.style.cursor = 'pointer';
+      });
+    }
+    gcEl.querySelectorAll('.sales-svg-overlay').forEach(s => s.remove());
+    gcEl.querySelectorAll('[id^="slbl-grp-"]').forEach(s => s.remove());
+    panelEl.innerHTML = '';
+    renderSalesPanel(panelEl, [], 1, 0, 0, 0);
+    // ★ 그룹 지정 모드면 클릭 리스너도 재등록
+    if ((typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode) {
+      setTimeout(function(){ if(typeof addSalesGroupClickListeners==='function') addSalesGroupClickListeners(); }, 50);
+    }
+    if (typeof renderSalesGroupPanel === 'function') renderSalesGroupPanel();
+    renderSalesMonthNav();
+    return;
+  }
+
+  // ── 도면 히트맵 색상 업데이트 ──
+  // ★ 종합 탭에서는 그룹 오버레이 표시 안 함 — 개별 구역 히트맵으로만 표시
+  const _isAggrView = (window.currentSalesMonth === null || window.currentSalesMonth === undefined);
+  const groups    = _isAggrView ? {} : (window.salesGroups || {});
+  const hasGroups = Object.keys(groups).length > 0;
+  const metricMap = {};
   metrics.forEach(m => { metricMap[m.z.id] = m; });
   const zoneGroupMap = {};
   Object.entries(groups).forEach(([gid, g]) => {
@@ -8764,49 +8891,74 @@ function refreshSalesContent(gcEl, panelEl) {
   });
 
   gcEl.querySelectorAll('.zb').forEach(zEl => {
-    const zid = zEl.id.replace('sz-','');
-    const m   = metricMap[zid];
+    // 스타일 초기화
+    zEl.style.opacity       = '';
+    zEl.style.background    = '';
+    zEl.style.border        = '';
+    zEl.style.outline       = '';
+    zEl.style.outlineOffset = '';
+    zEl.style.boxShadow     = '';
+    zEl.style.filter        = '';
+    zEl.style.borderRadius  = '';
+
+    const zid   = zEl.id.replace('sz-','');
+    const m     = metricMap[zid];
     const isCpillar = zEl.classList.contains('cpillar');
     const isCw      = zEl.classList.contains('cw');
-    const zidR2 = zEl.id.replace('sz-','').replace('z-','');
-    const zDataR = (typeof _zonesMap !== 'undefined' && _zonesMap) ? _zonesMap.get(zidR2)
-                 : (typeof zones !== 'undefined' ? zones.find(function(z){ return z.id === zidR2; }) : null);
+    const zidRaw = zEl.id.replace('sz-','').replace('z-','');
+    const zDataR = (typeof _zonesMap !== 'undefined' && _zonesMap)
+      ? _zonesMap.get(zidRaw)
+      : (typeof zones !== 'undefined' ? zones.find(z => z.id === zidRaw) : null);
     const isPillarTypeR = zDataR && (zDataR.type === '기둥' || zDataR.type === '벽부');
+    const isEntranceR   = zDataR && (zDataR.type === '입구' || (zDataR.color && zDataR.color.startsWith('ent')));
+
+    if (isEntranceR) {
+      zEl.style.background    = 'transparent';
+      zEl.style.border        = 'none';
+      zEl.style.boxShadow     = 'none';
+      zEl.style.outline       = 'none';
+      zEl.style.pointerEvents = 'none';
+      return;
+    }
     if (isCpillar || isCw || isPillarTypeR) {
-      // 벽부/기둥: 투명도 강제 복원 + 원본 색상 유지
-      zEl.style.opacity = '1';
-      zEl.style.filter  = 'none';
+      zEl.style.background = '#d1d5db';
+      zEl.style.border     = '1.5px solid #9ca3af';
+      zEl.style.opacity    = '0.6';
+      zEl.style.filter     = 'none';
+      zEl.style.outline    = 'none';
+      zEl.style.boxShadow  = 'none';
       zEl.classList.remove('cat-dimmed','cat-highlighted');
-      // 기둥이 아닌 벽부는 원본 색상 복원
-      const _isP = isCpillar || (zDataR && zDataR.type === '기둥');
-      if (!_isP && zDataR) {
-        var _wc = zDataR.color;
-        var _we = (typeof COLORS !== 'undefined' && _wc)
-          ? COLORS.find(function(c){ return c.key === _wc; }) : null;
-        if (_we) {
-          zEl.style.background = _we.bg;
-          zEl.style.borderColor = _we.bc;
-        }
-      }
       return;
     }
 
     if (hasGroups) {
-      // 그룹 모드: 색상 변경 없음, SVG 블록만 재렌더
+      // 그룹 모드: 모두 회색으로 (SVG 오버레이가 덮어씌움)
+      zEl.style.background   = '#9ca3af';
+      zEl.style.border       = '1px solid #6b7280';
+      zEl.style.boxShadow    = 'none';
+      zEl.style.outline      = 'none';
+      zEl.style.opacity      = '0.65';
+      zEl.style.borderRadius = '4px';
     } else {
       if (m) {
-        zEl.style.background = m.isDead ? '#6b7280' : salesColor(m.perSales);
-        zEl.style.outline      = '4px solid ' + (m.isDead ? '#374151' : salesBorderColor(m.perSales));
+        zEl.style.background    = m.isDead ? '#6b7280' : salesColor(m.perSales);
+        zEl.style.outline       = '4px solid ' + (m.isDead ? '#374151' : salesBorderColor(m.perSales));
         zEl.style.outlineOffset = '1px';
+        zEl.style.opacity       = '1';
         const zi = zEl.querySelector('.zi');
         if (zi) {
           zi.innerHTML = '';
-          const perSalesText = m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-';
           const numDiv = document.createElement('div');
           numDiv.style.cssText = 'font-size:12px;font-weight:900;color:#fff;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center;width:100%;';
-          numDiv.textContent = perSalesText;
+          numDiv.textContent = m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-';
           zi.appendChild(numDiv);
         }
+      } else {
+        zEl.style.background = '#d1d5db';
+        zEl.style.border     = '1.5px solid #9ca3af';
+        zEl.style.opacity    = '0.35';
+        zEl.style.outline    = 'none';
+        zEl.style.boxShadow  = 'none';
       }
     }
   });
@@ -8816,6 +8968,7 @@ function refreshSalesContent(gcEl, panelEl) {
     requestAnimationFrame(() => {
       renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSales);
     });
+    if (typeof renderSalesGroupPanel === 'function') renderSalesGroupPanel();
   }
 
   // ── 우측 패널 갱신 ──
@@ -8824,6 +8977,14 @@ function refreshSalesContent(gcEl, panelEl) {
 
   // 그룹 아웃라인 재적용
   setTimeout(applySalesGroupOutlines, 50);
+
+  // ★ 그룹 편집 모드 중이면 클릭 리스너 항상 재등록 (월 전환·패널 재렌더 후 DOM 변경 대비)
+  if ((typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode) {
+    setTimeout(function() {
+      if (typeof addSalesGroupClickListeners === 'function') addSalesGroupClickListeners();
+      if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
+    }, 60);
+  }
 }
 
 /* ── 평당매출 탭 진입 시 기존 navMonths 탭바와 동기화 ──
@@ -8868,17 +9029,22 @@ function renderSalesView() {
   toolbar.innerHTML = `
     <span style="font-size:11px;font-weight:800;color:#94a3b8;letter-spacing:.5px;">📊 평당매출 분석</span>
     <span style="font-size:10px;color:#64748b;background:#0f172a;border-radius:7px;padding:4px 10px;border:1.5px solid #334155;">📐 평당매출 = 하루 실매출 ÷ 평수</span>
-    <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
-      <span style="font-size:10px;color:#64748b;">정렬</span>
-      <button id="salSortPerSales" onclick="setSalesSort('perSales')"
-        style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #f97316;background:#7c2d12;color:#fb923c;cursor:pointer;">1H매출 ▼</button>
-      <button id="salSortEff" onclick="setSalesSort('effIdx')"
-        style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #475569;background:transparent;color:#94a3b8;cursor:pointer;">효율지수</button>
-      <button id="salSortSales" onclick="setSalesSort('sales')"
-        style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #475569;background:transparent;color:#94a3b8;cursor:pointer;">매출액</button>
-    </div>
-    ${isAdmin ? '<button onclick="openSalesDataModal()" class="admin-only" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #3a8c3a;background:transparent;color:#7dcd7d;cursor:pointer;">✏️ 데이터 입력</button><button onclick="openExcelUploadModal()" class="admin-only" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #2563eb;background:transparent;color:#60a5fa;cursor:pointer;">📥 엑셀 업로드</button><button onclick="toggleSalesGroupEdit()" id="salGroupEditBtn" class="admin-only" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #6366f1;background:transparent;color:#a5b4fc;cursor:pointer;">🗂 구역 그룹</button><button onclick="resetSalesLabelOffsets()" class="admin-only" title="레이블 위치 초기화" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #64748b;background:transparent;color:#94a3b8;cursor:pointer;">↺ 레이블 초기화</button>' : ''}
+
+    <button id="salBtnDataInput" onclick="openSalesDataModal()"
+      style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #3a8c3a;background:transparent;color:#7dcd7d;cursor:pointer;">✏️ 데이터 입력</button>
+    <button id="salBtnExcel" onclick="openExcelUploadModal()"
+      style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #2563eb;background:transparent;color:#60a5fa;cursor:pointer;">📥 엑셀 업로드</button>
+    <button id="salGroupEditBtn" onclick="toggleSalesGroupEdit()"
+      style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #6366f1;background:transparent;color:#a5b4fc;cursor:pointer;">🗂 구역 그룹</button>
+    <button id="salBtnResetLabel" onclick="resetSalesLabelOffsets()" title="레이블 위치 초기화"
+      style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1.5px solid #64748b;background:transparent;color:#94a3b8;cursor:pointer;">↺ 레이블 초기화</button>
   `;
+  // ★ 권한에 따라 버튼 표시 제어 (isAdmin 조건을 innerHTML 조건문 대신 런타임 display로 처리)
+  const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'];
+  _adminOnlyBtns.forEach(function(id) {
+    const el = toolbar.querySelector('#' + id);
+    if (el) el.style.display = isAdmin ? '' : 'none';
+  });
   wrap.appendChild(toolbar);
 
   // ① - 2 월별 동기화 안내 바 (기존 상단 navMonths 탭바와 연동)
@@ -8891,7 +9057,7 @@ function renderSalesView() {
     if (curMon === null || curMon === undefined) return false;
     if (!window.monthlySalesStore || !window.monthlySalesStore[currentStore]) return false;
     const md = window.monthlySalesStore[currentStore][_salesMonthKey(curMon)];
-    return md && (Object.keys(md.salesData||{}).length > 0 || Object.keys(md.salesGroupData||{}).length > 0);
+    return md && (Object.keys(md.salesData||{}).length > 0 || Object.keys(md.salesGroupData||{}).length > 0 || Object.keys(md.salesGroups||{}).length > 0);
   })();
 
   monthBar.style.cssText = 'background:#0c1220;padding:4px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;border-bottom:1px solid #1e3a5f;flex-wrap:wrap;min-height:32px;';
@@ -9339,8 +9505,9 @@ function renderSalesMap(container, metrics, maxPerSales) {
   const metricMap = {};
   metrics.forEach(m => { metricMap[m.z.id] = m; });
 
-  // ── 그룹 정보 수집 ──
-  const groups   = window.salesGroups || {};
+  // ── 그룹 정보 수집 (종합 탭에서는 그룹 오버레이 미사용) ──
+  const _isAggr = (window.currentSalesMonth === null || window.currentSalesMonth === undefined);
+  const groups   = _isAggr ? {} : (window.salesGroups || {});
   const hasGroups = Object.keys(groups).length > 0;
 
   // 어느 zoneId가 어느 그룹에 속하는지 역매핑
@@ -9368,20 +9535,29 @@ function renderSalesMap(container, metrics, maxPerSales) {
       zi.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;padding:3px 4px;box-sizing:border-box;overflow:hidden;gap:2px;position:relative;z-index:1;';
     }
 
-    // ── 벽부/기둥은 도면 탭과 완전히 동일하게 — opacity 1, 선명하게 ──
+    // ── 벽부/기둥/입구 처리 ──
     const isCpillar = zEl.classList.contains('cpillar');
     const isCw      = zEl.classList.contains('cw');
     const zidRaw = zEl.id.replace('sz-','').replace('z-','');
     const zData  = _zonesMap.get(zidRaw) || null;
     const isPillarType = zData && (zData.type === '기둥' || zData.type === '벽부');
+    const isEntrance   = zData && (zData.type === '입구' || (zData.color && zData.color.startsWith('ent')));
+
+    if (isEntrance) {
+      zEl.style.background    = 'transparent';
+      zEl.style.border        = 'none';
+      zEl.style.boxShadow     = 'none';
+      zEl.style.outline       = 'none';
+      zEl.style.pointerEvents = 'none';
+      return;
+    }
+
     if (isCpillar || isCw || isPillarType) {
-      // 위치/크기/회전 인라인값 백업
       const savedLeft      = zEl.style.left;
       const savedTop       = zEl.style.top;
       const savedWidth     = zEl.style.width;
       const savedHeight    = zEl.style.height;
       const savedTransform = zEl.style.transform;
-      // 인라인 스타일 전부 초기화 (CSS 클래스의 dim 효과 완전 차단)
       zEl.style.cssText = '';
       zEl.style.position      = 'absolute';
       zEl.style.left          = savedLeft      || '';
@@ -9393,40 +9569,13 @@ function renderSalesMap(container, metrics, maxPerSales) {
       zEl.style.overflow      = 'hidden';
       zEl.style.display       = 'flex';
       zEl.style.flexDirection = 'column';
-      zEl.style.opacity       = '1';       // 절대 흐려지지 않게
-      zEl.style.filter        = 'none';    // grayscale 등 차단
+      zEl.style.background    = '#d1d5db';
+      zEl.style.border        = '1.5px solid #9ca3af';
+      zEl.style.opacity       = '0.6';
+      zEl.style.filter        = 'none';
       zEl.style.pointerEvents = 'none';
       zEl.style.zIndex        = '10';
       zEl.style.boxSizing     = 'border-box';
-      const isPillarStyle = isCpillar || (zData && zData.type === '기둥');
-      if (isPillarStyle) {
-        // 기둥 — 도면 탭 .cpillar 와 완전 동일
-        zEl.style.background = '#555555';
-        zEl.style.border     = '2px solid #333333';
-        zEl.querySelectorAll('.zname,.zprod,.ztype,.znote,.znum').forEach(function(t) {
-          t.style.color   = '#e8e8e8';
-          t.style.opacity = '1';
-        });
-      } else {
-        // 벽부 — 원본 색상 클래스(z.color)를 COLORS에서 찾아 그대로 적용
-        var _wallColor = zData ? zData.color : null;
-        var _wallEntry = (typeof COLORS !== 'undefined' && _wallColor)
-          ? COLORS.find(function(c){ return c.key === _wallColor; })
-          : null;
-        if (_wallEntry) {
-          zEl.style.background = _wallEntry.bg;
-          zEl.style.border     = '2px solid ' + _wallEntry.bc;
-        } else if (_wallColor && _wallColor.startsWith('custom_')) {
-          var _hex = '#' + _wallColor.replace('custom_#','').replace('custom_','');
-          zEl.style.background = _hex;
-          zEl.style.border     = '2px solid ' + _hex;
-        } else {
-          // fallback: cw 기본색
-          zEl.style.background = '#fafaf5';
-          zEl.style.border     = '2px solid #d4d4aa';
-        }
-      }
-      // dim 클래스 확실히 제거
       zEl.classList.remove('cat-dimmed','cat-highlighted');
       return;
     }
@@ -9440,11 +9589,23 @@ function renderSalesMap(container, metrics, maxPerSales) {
         .filter(c => !c.match(/^cn\d$|^cc$|^cf$|^cw$|^cpillar$/))
         .join(' ');
       if (inGroup) {
-        // 그룹 집기 — 50% 회색, 그룹색 아웃라인은 applySalesGroupOutlines에서 덮음
-        zEl.style.cssText += ';background:#9ca3af !important;border:1px solid #6b7280 !important;box-shadow:none !important;outline:none !important;opacity:0.55;border-radius:4px;';
+        // 그룹에 속한 집기 — 색상 강조
+        const grpColor = zoneGroupMap[zid].g.color;
+        zEl.style.cssText += ';background:' + grpColor + '33 !important;border:2.5px solid ' + grpColor + ' !important;box-shadow:0 0 0 2px ' + grpColor + '66 !important;outline:none !important;opacity:1;border-radius:4px;cursor:pointer;';
       } else {
-        // 미지정 집기 — 동일한 50% 회색 (약간 더 연하게)
-        zEl.style.cssText += ';background:#9ca3af !important;border:1px solid #6b7280 !important;box-shadow:none !important;outline:none !important;opacity:0.5;border-radius:4px;';
+        // 미지정 집기 — 회색 반투명
+        zEl.style.cssText += ';background:#9ca3af !important;border:1px solid #6b7280 !important;box-shadow:none !important;outline:none !important;opacity:0.55;border-radius:4px;cursor:pointer;';
+      }
+      // ★ 그룹 편집 모드: hover 시 강조
+      if (salesGroupEditMode) {
+        zEl.addEventListener('mouseenter', function() {
+          zEl.style.opacity = '1';
+          zEl.style.transform = (zEl.style.transform || '') + ' scale(1.04)';
+        });
+        zEl.addEventListener('mouseleave', function() {
+          zEl.style.opacity = inGroup ? '1' : '0.55';
+          zEl.style.transform = (zEl.style.transform || '').replace(/ scale\([^)]+\)/, '');
+        });
       }
     } else {
       // 그룹 없음 → 기존 히트맵 방식
@@ -9458,9 +9619,10 @@ function renderSalesMap(container, metrics, maxPerSales) {
         zEl.style.outline      = '4px solid ' + _olColor;
         zEl.style.outlineOffset = '1px';
         zEl.style.overflow     = 'hidden';   // ★ 텍스트 구역 밖 침범 완전 차단
-        zEl.style.transition   = 'outline .12s ease, box-shadow .12s ease';
+        zEl.style.transition   = 'transform .15s cubic-bezier(.34,1.3,.64,1), outline .12s ease, box-shadow .12s ease';
         zEl.style.cursor       = 'pointer';
         zEl.style.zIndex       = '10';
+        zEl.dataset.baseTransform = zEl.style.transform || '';
 
         if (zi) {
           const _elW = parseFloat(zEl.style.width)  || 60;
@@ -9468,14 +9630,6 @@ function renderSalesMap(container, metrics, maxPerSales) {
           const perSalesText = m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() + '만/평' : '-';
           const _zName = (m.z && m.z.name) ? m.z.name : '';
 
-          // 구역명 (작게, 한 줄)
-          if (_zName && _elH >= 38) {
-            const nameDiv = document.createElement('div');
-            const nameFontSize = Math.max(9, Math.min(11, Math.floor(_elW / 7)));
-            nameDiv.style.cssText = 'font-size:' + nameFontSize + 'px;font-weight:700;color:rgba(255,255,255,.9);line-height:1.2;text-align:center;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,.6);flex-shrink:0;';
-            nameDiv.textContent = _zName;
-            zi.appendChild(nameDiv);
-          }
           // 평당매출 (크게, 한 줄)
           if (_elW >= 40 && _elH >= 24) {
             const numDiv = document.createElement('div');
@@ -9501,6 +9655,9 @@ function renderSalesMap(container, metrics, maxPerSales) {
             zEl.style.outline   = '3px solid #fff';
             zEl.style.boxShadow = '0 4px 16px rgba(0,0,0,.4)';
             zEl.style.zIndex    = '50';
+            zEl.style.transformOrigin = 'center center';
+            zEl.style.transform = (zEl.dataset.baseTransform||'') + ' scale(1.12)';
+            zEl.style.transition = 'transform .15s cubic-bezier(.34,1.3,.64,1), outline .1s, box-shadow .1s';
             showSalesZoneCard(m, zEl);
             highlightSalesTableRow(zid, true);
           });
@@ -9508,12 +9665,16 @@ function renderSalesMap(container, metrics, maxPerSales) {
             if (_sdDrag) return;
             zEl.style.outline   = '';
             zEl.style.boxShadow = '';
+            zEl.style.transform = zEl.dataset.baseTransform || '';
+            zEl.style.transition = 'transform .12s ease, outline .1s, box-shadow .1s';
             zEl.style.zIndex    = '10';
             hideSalesZoneCard();
             highlightSalesTableRow(zid, false);
           });
 
           zEl.addEventListener('mousedown', function(e) {
+            // ★ 구역 그룹 편집 모드 중에는 드래그 비활성화 → click 이벤트가 정상 발생하도록
+            if (salesGroupEditMode) return;
             e.preventDefault(); e.stopPropagation();
             hideSalesZoneCard();
 
@@ -9597,12 +9758,17 @@ function renderSalesMap(container, metrics, maxPerSales) {
             zEl.style.outline   = '3px solid #fff';
             zEl.style.boxShadow = '0 4px 16px rgba(0,0,0,.4)';
             zEl.style.zIndex    = '50';
+            zEl.style.transformOrigin = 'center center';
+            zEl.style.transform = (zEl.dataset.baseTransform||'') + ' scale(1.12)';
+            zEl.style.transition = 'transform .15s cubic-bezier(.34,1.3,.64,1), outline .1s, box-shadow .1s';
             showSalesZoneCard(m, zEl);
             highlightSalesTableRow(zid, true);
           });
           zEl.addEventListener('mouseleave', () => {
             zEl.style.outline   = '';
             zEl.style.boxShadow = '';
+            zEl.style.transform = zEl.dataset.baseTransform || '';
+            zEl.style.transition = 'transform .12s ease, outline .1s, box-shadow .1s';
             zEl.style.zIndex    = '10';
             hideSalesZoneCard();
             highlightSalesTableRow(zid, false);
@@ -9617,106 +9783,7 @@ function renderSalesMap(container, metrics, maxPerSales) {
     }
   });
 
-  // ── 관리자: 구역명+평당매출 레이블을 gcClone 위 draggable overlay로 추가 ──
-  if (isAdmin) {
-    const _CELL2 = (typeof CELL !== 'undefined') ? CELL : 72;
-    const _ROW2  = (typeof ROW  !== 'undefined') ? ROW  : 46;
-    const _GAP2  = (typeof GAP  !== 'undefined') ? GAP  : 3;
-    const _salesScale2 = window.salesMapScale || 0.6;
 
-    metrics.forEach(function(m) {
-      if (!m || m.perSales <= 0) return;
-      const zObj = m.z;
-      if (!zObj) return;
-      const zid2 = zObj.id;
-      const zEl2 = gcClone.querySelector('#sz-' + zid2);
-      if (!zEl2) return;
-
-      const _elW2 = parseFloat(zEl2.style.width)  || 60;
-      const _elH2 = parseFloat(zEl2.style.height) || 40;
-      const _elL2 = parseFloat(zEl2.style.left)   || 0;
-      const _elT2 = parseFloat(zEl2.style.top)    || 0;
-
-      const off = window.salesLabelOffsets[zid2] || { dx: 0, dy: 0 };
-
-      const lbl = document.createElement('div');
-      lbl.id = 'slbl-' + zid2;
-      lbl.dataset.zid = zid2;
-      lbl.style.cssText =
-        'position:absolute;pointer-events:all;cursor:move;z-index:80;' +
-        'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;' +
-        'padding:4px 6px;border-radius:6px;' +
-        'background:rgba(0,0,0,0.45);backdrop-filter:blur(2px);' +
-        'left:' + (_elL2 + _elW2/2 - 40 + off.dx) + 'px;' +
-        'top:'  + (_elT2 + _elH2/2 - 18 + off.dy) + 'px;' +
-        'width:80px;text-align:center;' +
-        'user-select:none;-webkit-user-select:none;';
-
-      const _zName2 = zObj.name || '';
-      const perSalesText2 = Math.floor(m.perSales).toLocaleString() + '만/평';
-      if (_zName2) {
-        const nd = document.createElement('div');
-        nd.style.cssText = 'font-size:10px;font-weight:700;color:rgba(255,255,255,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.8);';
-        nd.textContent = _zName2;
-        lbl.appendChild(nd);
-      }
-      const vd = document.createElement('div');
-      vd.style.cssText = 'font-size:13px;font-weight:900;color:#fff;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.9);';
-      vd.textContent = perSalesText2;
-      lbl.appendChild(vd);
-
-      // 드래그 힌트 아이콘
-      const hint = document.createElement('div');
-      hint.style.cssText = 'font-size:8px;color:rgba(255,255,255,.4);margin-top:1px;';
-      hint.textContent = '⠿ 이동';
-      lbl.appendChild(hint);
-
-      // 드래그 로직
-      let _lblDrag = null;
-      lbl.addEventListener('mousedown', function(e) {
-        e.preventDefault(); e.stopPropagation();
-        const curOff = window.salesLabelOffsets[zid2] || { dx: 0, dy: 0 };
-        _lblDrag = {
-          startX: e.clientX, startY: e.clientY,
-          startDx: curOff.dx, startDy: curOff.dy,
-          startL: parseFloat(lbl.style.left), startT: parseFloat(lbl.style.top)
-        };
-        lbl.style.opacity = '0.75';
-        lbl.style.zIndex  = '300';
-
-        function onLblMove(e2) {
-          if (!_lblDrag) return;
-          const dx = (e2.clientX - _lblDrag.startX) / _salesScale2;
-          const dy = (e2.clientY - _lblDrag.startY) / _salesScale2;
-          lbl.style.left = (_lblDrag.startL + dx) + 'px';
-          lbl.style.top  = (_lblDrag.startT + dy) + 'px';
-        }
-        function onLblUp(e2) {
-          document.removeEventListener('mousemove', onLblMove);
-          document.removeEventListener('mouseup',   onLblUp);
-          if (!_lblDrag) return;
-          const dx = (e2.clientX - _lblDrag.startX) / _salesScale2;
-          const dy = (e2.clientY - _lblDrag.startY) / _salesScale2;
-          window.salesLabelOffsets[zid2] = {
-            dx: _lblDrag.startDx + dx,
-            dy: _lblDrag.startDy + dy
-          };
-          _lblDrag = null;
-          lbl.style.opacity = '';
-          lbl.style.zIndex  = '80';
-          showToast('📌 레이블 위치 저장됨');
-        }
-        document.addEventListener('mousemove', onLblMove);
-        document.addEventListener('mouseup',   onLblUp);
-      });
-
-      gcClone.appendChild(lbl);
-
-      // zi 내부 텍스트 숨김 (레이블 overlay로 대체)
-      const zi2 = zEl2.querySelector('.zi');
-      if (zi2) zi2.style.visibility = 'hidden';
-    });
-  }
 
   scaler.appendChild(innerWrap);
   sizeWrapper.appendChild(scaler);
@@ -9739,6 +9806,63 @@ function renderSalesMap(container, metrics, maxPerSales) {
   }
 }
 
+/* ── 그룹 드래그 전역 핸들러 (박스 + 레이블 통합, 한 번만 등록) ── */
+window._salesGrpDrag = null;
+document.addEventListener('mousemove', function(e) {
+  var d = window._salesGrpDrag;
+  if (!d) return;
+  var scale = window.salesMapScale || 0.6;
+  var dx = (e.clientX - d.startClientX) / scale;
+  var dy = (e.clientY - d.startClientY) / scale;
+
+  if (d.type === 'box') {
+    var nx = d.startDx + dx, ny = d.startDy + dy;
+    // SVG attribute로만 위치 제어 (CSS transform과 충돌 방지)
+    d.grpG.setAttribute('transform', 'translate('+nx+','+ny+')');
+    d.grpG.style.transform = ''; // CSS transform 초기화
+    // 레이블도 박스와 함께 이동
+    var lbl = d.gcEl.querySelector('#slbl-grp-'+d.gid);
+    if (lbl) {
+      lbl.style.left = (d.lblBaseLeft + d.lblStartDx + dx) + 'px';
+      lbl.style.top  = (d.lblBaseTop  + d.lblStartDy + dy) + 'px';
+    }
+  } else if (d.type === 'label') {
+    d.glDiv.style.left = (d.startL + dx) + 'px';
+    d.glDiv.style.top  = (d.startT + dy) + 'px';
+  }
+});
+document.addEventListener('mouseup', function(e) {
+  var d = window._salesGrpDrag;
+  if (!d) return;
+  window._salesGrpDrag = null;
+  var scale = window.salesMapScale || 0.6;
+  var dx = (e.clientX - d.startClientX) / scale;
+  var dy = (e.clientY - d.startClientY) / scale;
+  if (!window.salesLabelOffsets) window.salesLabelOffsets = {};
+
+  if (d.type === 'box') {
+    d.grpG.style.opacity = '';
+    d.grpG.style.transform = '';
+    d.hitPath.style.cursor = 'grab';
+    var finalDx = d.startDx + dx, finalDy = d.startDy + dy;
+    window.salesLabelOffsets['_grp_box_'+d.gid] = { dx: finalDx, dy: finalDy };
+    // 레이블 오프셋도 박스 이동량만큼 누적
+    window.salesLabelOffsets['_grp_'+d.gid] = {
+      dx: d.lblStartDx + dx,
+      dy: d.lblStartDy + dy
+    };
+    if (typeof showToast === 'function') showToast('📌 그룹 구역 이동됨');
+  } else if (d.type === 'label') {
+    d.glDiv.style.opacity = '';
+    d.glDiv.style.zIndex  = '90';
+    window.salesLabelOffsets['_grp_'+d.gid] = {
+      dx: d.startDx + dx,
+      dy: d.startDy + dy
+    };
+    if (typeof showToast === 'function') showToast('📌 그룹 문구 이동됨');
+  }
+});
+
 /* ── 그룹 SVG 아웃라인 블록 렌더 ── */
 function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSales) {
   const ns   = 'http://www.w3.org/2000/svg';
@@ -9749,6 +9873,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
   const zh = rows => (rows||1)*ROW  + ((rows||1)-1)*GAP;
 
   gcEl.querySelectorAll('.sales-svg-overlay').forEach(s => s.remove());
+  gcEl.querySelectorAll('[id^="slbl-grp-"]').forEach(s => s.remove());
 
   const gcW = gcEl.offsetWidth  || gcEl.scrollWidth  || 900;
   const gcH = gcEl.offsetHeight || gcEl.scrollHeight || 700;
@@ -9757,9 +9882,11 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
   svg.classList.add('sales-svg-overlay');
   svg.setAttribute('width',  gcW);
   svg.setAttribute('height', gcH);
+  // ★ 그룹 편집 모드에서는 SVG가 클릭을 가로채지 않도록 pointer-events:none
+  var _svgPE = ((typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode) ? 'none' : 'all';
   svg.style.cssText =
     'position:absolute;left:0;top:0;width:'+gcW+'px;height:'+gcH+'px;' +
-    'overflow:visible;pointer-events:none;z-index:25;';
+    'overflow:visible;pointer-events:'+_svgPE+';z-index:25;';
 
   const defs = document.createElementNS(ns, 'defs');
   const filt = document.createElementNS(ns, 'filter');
@@ -9774,10 +9901,8 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
   svg.appendChild(defs);
 
   // ── 픽셀 그리드 union → 외곽 폴리곤 추출 ──
-  // 집기를 grid 셀 단위로 래스터화 → marching-squares 방식으로 외곽 추출
-  const UNIT = 4;  // 4px 단위 그리드 (정밀도와 성능 균형)
+  const UNIT = 1;
 
-  // 회전 포함 집기의 픽셀 점이 rect 안에 있는지 판별
   function ptInRotRect(px_, py_, x, y, w, h, rot, cx, cy) {
     if (!rot) return px_ >= x && px_ <= x+w && py_ >= y && py_ <= y+h;
     const rad = -rot * Math.PI / 180;
@@ -9786,6 +9911,30 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
     const lx = dx*cos - dy*sin + cx;
     const ly = dx*sin + dy*cos + cy;
     return lx >= x && lx <= x+w && ly >= y && ly <= y+h;
+  }
+
+  function polyBBox(poly) {
+    var xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]);
+    var x1=Math.min(...xs),y1=Math.min(...ys),x2=Math.max(...xs),y2=Math.max(...ys);
+    return { x1,y1,x2,y2, w:x2-x1, h:y2-y1, area:(x2-x1)*(y2-y1), cx:(x1+x2)/2, cy:(y1+y2)/2 };
+  }
+
+  // Douglas-Peucker — epsilon을 크게 잡아 직선 근사
+  function dpSimplify(pts, eps) {
+    if (pts.length <= 2) return pts;
+    var maxD=0, idx=0;
+    var x1=pts[0][0],y1=pts[0][1],x2=pts[pts.length-1][0],y2=pts[pts.length-1][1];
+    var dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy)||1;
+    for (var i=1;i<pts.length-1;i++){
+      var d = Math.abs(dy*(pts[i][0]-x1)-dx*(pts[i][1]-y1))/len;
+      if(d>maxD){maxD=d;idx=i;}
+    }
+    if(maxD>eps){
+      var l=dpSimplify(pts.slice(0,idx+1),eps);
+      var r=dpSimplify(pts.slice(idx),eps);
+      return l.slice(0,-1).concat(r);
+    }
+    return [pts[0],pts[pts.length-1]];
   }
 
   Object.entries(groups).forEach(function(entry) {
@@ -9812,10 +9961,9 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
       return { x, y, w, h, cx, cy, rot };
     });
 
-    // 전체 바운딩박스
+    // 바운딩박스
     var allPts = [];
     zRects.forEach(r => {
-      // 4 코너 회전
       [[r.x,r.y],[r.x+r.w,r.y],[r.x+r.w,r.y+r.h],[r.x,r.y+r.h]].forEach(([px_,py_]) => {
         if (!r.rot) { allPts.push([px_,py_]); return; }
         var rad = r.rot*Math.PI/180, cos=Math.cos(rad), sin=Math.sin(rad);
@@ -9831,130 +9979,88 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
     var cols = Math.ceil((mxX-mnX)/UNIT) + 2;
     var rows = Math.ceil((mxY-mnY)/UNIT) + 2;
 
-    // 그리드 래스터화
+    // 래스터화
     var grid = new Uint8Array((cols+1)*(rows+1));
     for (var gy = 0; gy < rows; gy++) {
       for (var gx = 0; gx < cols; gx++) {
         var wx = mnX + gx*UNIT + UNIT/2;
         var wy = mnY + gy*UNIT + UNIT/2;
-        var inside = zRects.some(r => ptInRotRect(wx, wy, r.x, r.y, r.w, r.h, r.rot, r.cx, r.cy));
-        if (inside) grid[gy*cols+gx] = 1;
+        if (zRects.some(r => ptInRotRect(wx, wy, r.x, r.y, r.w, r.h, r.rot, r.cx, r.cy)))
+          grid[gy*cols+gx] = 1;
       }
     }
 
-    // Marching squares — 외곽 edge 수집
-    var hEdges = []; // 수평 경계 (top/bottom)
-    var vEdges = []; // 수직 경계 (left/right)
-
+    // Marching squares
+    var hEdges = [], vEdges = [];
     for (var gy = 0; gy <= rows; gy++) {
       for (var gx = 0; gx < cols; gx++) {
         var above = gy > 0    ? grid[(gy-1)*cols+gx] : 0;
         var below = gy < rows ? grid[gy*cols+gx]     : 0;
-        if (above !== below) {
-          hEdges.push({
-            x1: mnX+gx*UNIT, y1: mnY+gy*UNIT,
-            x2: mnX+(gx+1)*UNIT, y2: mnY+gy*UNIT,
-            dir: below ? 'right' : 'left'
-          });
-        }
+        if (above !== below)
+          hEdges.push({ x1:mnX+gx*UNIT, y1:mnY+gy*UNIT, x2:mnX+(gx+1)*UNIT, y2:mnY+gy*UNIT });
       }
     }
     for (var gy = 0; gy < rows; gy++) {
       for (var gx = 0; gx <= cols; gx++) {
         var left_  = gx > 0    ? grid[gy*cols+(gx-1)] : 0;
         var right_ = gx < cols ? grid[gy*cols+gx]     : 0;
-        if (left_ !== right_) {
-          vEdges.push({
-            x1: mnX+gx*UNIT, y1: mnY+gy*UNIT,
-            x2: mnX+gx*UNIT, y2: mnY+(gy+1)*UNIT,
-            dir: right_ ? 'down' : 'up'
-          });
-        }
+        if (left_ !== right_)
+          vEdges.push({ x1:mnX+gx*UNIT, y1:mnY+gy*UNIT, x2:mnX+gx*UNIT, y2:mnY+(gy+1)*UNIT });
       }
     }
 
-    // Edge → polyline 연결 (endpoint map)
     var allEdges = hEdges.concat(vEdges);
     if (!allEdges.length) return;
 
-    // endpoint → 연결 edge 인덱스 맵
     var epMap = {};
     function epKey(x,y){ return Math.round(x)+','+Math.round(y); }
     allEdges.forEach(function(e,i){
       var k1=epKey(e.x1,e.y1), k2=epKey(e.x2,e.y2);
       if(!epMap[k1]) epMap[k1]=[];
       if(!epMap[k2]) epMap[k2]=[];
-      epMap[k1].push(i);
-      epMap[k2].push(i);
+      epMap[k1].push(i); epMap[k2].push(i);
     });
 
-    // 폴리곤 추출
     var used = new Uint8Array(allEdges.length);
     var polys = [];
-
     for (var si=0; si<allEdges.length; si++) {
       if (used[si]) continue;
       var poly = [];
       var cur = si;
       var cx_ = allEdges[cur].x1, cy_ = allEdges[cur].y1;
-      poly.push([cx_,cy_]);
-      used[cur]=1;
-
+      poly.push([cx_,cy_]); used[cur]=1;
       for (var iter=0; iter<allEdges.length*2; iter++) {
-        var nx_ = (epKey(allEdges[cur].x1,allEdges[cur].y1)===epKey(cx_,cy_))
-                  ? allEdges[cur].x2 : allEdges[cur].x1;
-        var ny_ = (epKey(allEdges[cur].x1,allEdges[cur].y1)===epKey(cx_,cy_))
-                  ? allEdges[cur].y2 : allEdges[cur].y1;
+        var nx_ = epKey(allEdges[cur].x1,allEdges[cur].y1)===epKey(cx_,cy_) ? allEdges[cur].x2 : allEdges[cur].x1;
+        var ny_ = epKey(allEdges[cur].x1,allEdges[cur].y1)===epKey(cx_,cy_) ? allEdges[cur].y2 : allEdges[cur].y1;
         cx_=nx_; cy_=ny_;
-        var nk = epKey(cx_,cy_);
-        var nexts = (epMap[nk]||[]).filter(j=>!used[j]);
+        var nexts = (epMap[epKey(cx_,cy_)]||[]).filter(j=>!used[j]);
         if (!nexts.length) break;
-        cur = nexts[0];
-        used[cur]=1;
-        poly.push([cx_,cy_]);
+        cur=nexts[0]; used[cur]=1; poly.push([cx_,cy_]);
       }
-
       if (poly.length > 3) polys.push(poly);
     }
-
     if (!polys.length) return;
 
-    // Douglas-Peucker 단순화
-    function dpSimplify(pts, eps) {
-      if (pts.length <= 2) return pts;
-      var maxD=0, idx=0;
-      var x1=pts[0][0],y1=pts[0][1],x2=pts[pts.length-1][0],y2=pts[pts.length-1][1];
-      var dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy)||1;
-      for (var i=1;i<pts.length-1;i++){
-        var d = Math.abs(dy*(pts[i][0]-x1)-dx*(pts[i][1]-y1))/len;
-        if(d>maxD){maxD=d;idx=i;}
-      }
-      if(maxD>eps){
-        var l=dpSimplify(pts.slice(0,idx+1),eps);
-        var r=dpSimplify(pts.slice(idx),eps);
-        return l.slice(0,-1).concat(r);
-      }
-      return [pts[0],pts[pts.length-1]];
-    }
-
-    // ── 각 폴리곤(분리된 덩어리)별 개별 처리 ──
-    // 가장 큰 폴리곤 찾기 (레이블 표시 위치 결정)
-    function polyBBox(poly) {
-      var xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]);
-      var x1=Math.min(...xs),y1=Math.min(...ys),x2=Math.max(...xs),y2=Math.max(...ys);
-      return { x1,y1,x2,y2, w:x2-x1, h:y2-y1, area:(x2-x1)*(y2-y1), cx:(x1+x2)/2, cy:(y1+y2)/2 };
-    }
-
     var polyInfos = polys.map(function(poly) {
-      var simplified = dpSimplify(poly, UNIT*0.5);
+      // epsilon을 크게 → 직선 구간을 하나의 선분으로 압축
+      var simplified = dpSimplify(poly, 1.5);
       var d = 'M ' + simplified.map(p=>p[0]+' '+p[1]).join(' L ') + ' Z';
       var bb = polyBBox(poly);
       return { d, bb, poly };
-    }).sort((a,b) => b.bb.area - a.bb.area); // 큰 것 먼저
+    }).sort((a,b) => b.bb.area - a.bb.area);
 
     if (!polyInfos.length) return;
 
-    // ── 각 덩어리마다 채움 + 테두리 그리기 ──
+    // ── 박스 오프셋 (이동 배치 저장값) ──
+    var _boxOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_box_'+gid]) || { dx:0, dy:0 };
+    var _isAdminGrp = (typeof isAdmin !== 'undefined') && isAdmin;
+
+    // ── SVG <g> 로 박스 전체 묶기 (transform으로 이동) ──
+    var grpG = document.createElementNS(ns, 'g');
+    grpG.setAttribute('transform', 'translate('+_boxOff.dx+','+_boxOff.dy+')');
+    grpG.style.cursor = _isAdminGrp ? 'grab' : 'default';
+
+    // ── 각 집기마다 채움 + 테두리 (스타일 완전 통일) ──
     var fillPaths = [], strokePaths = [];
     polyInfos.forEach(function(pi) {
       var fp = document.createElementNS(ns, 'path');
@@ -9963,7 +10069,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
       fp.setAttribute('fill-opacity', '0.85');
       fp.setAttribute('fill-rule', 'nonzero');
       fp.style.pointerEvents = 'none';
-      svg.appendChild(fp);
+      grpG.appendChild(fp);
       fillPaths.push(fp);
 
       var sp = document.createElementNS(ns, 'path');
@@ -9974,33 +10080,160 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
       sp.setAttribute('stroke-linejoin', 'round');
       sp.setAttribute('stroke-linecap', 'round');
       sp.style.pointerEvents = 'none';
-      svg.appendChild(sp);
+      grpG.appendChild(sp);
       strokePaths.push(sp);
     });
 
+    // ── 분리된 작은 덩어리 배지 ──
+    polyInfos.slice(1).forEach(function(pi) {
+      var bb = pi.bb;
+      var bFo = document.createElementNS(ns, 'foreignObject');
+      var bW = Math.min(bb.w, 80), bH = Math.min(bb.h, 28);
+      bFo.setAttribute('x', bb.cx - bW/2);
+      bFo.setAttribute('y', bb.cy - bH/2);
+      bFo.setAttribute('width', bW);
+      bFo.setAttribute('height', bH);
+      bFo.style.pointerEvents = 'none';
+      bFo.innerHTML =
+        '<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">'+
+          '<span style="font-family:Pretendard,sans-serif;font-size:10px;font-weight:800;color:#fff;'+
+            'text-shadow:0 1px 3px rgba(0,0,0,.6);white-space:nowrap;background:'+g.color+';border-radius:4px;padding:2px 6px;">'+
+            g.label+'</span></div>';
+      grpG.appendChild(bFo);
+    });
+
+    // ── hit path ──
+    var allPathData = polyInfos.map(function(pi){return pi.d;}).join(' ');
+    var hitPath = document.createElementNS(ns, 'path');
+    hitPath.setAttribute('d', allPathData);
+    hitPath.setAttribute('fill', 'transparent');
+    hitPath.setAttribute('fill-rule', 'nonzero');
+    // ★ 그룹 편집 모드에서는 hitPath도 클릭 통과 (아래 .zb까지 전달)
+    var _inGrpEdit = (typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode;
+    hitPath.style.pointerEvents = _inGrpEdit ? 'none' : 'all';
+    hitPath.style.cursor = _inGrpEdit ? 'pointer' : (_isAdminGrp ? 'grab' : 'pointer');
+    grpG.appendChild(hitPath);
+    svg.appendChild(grpG);
+
+    var groupFake = {
+      z:{ name:g.label, id:gid },
+      sales:tSales, area:tArea, perSales:tPS,
+      contrib:   gMetrics.reduce((s,m)=>s+m.contrib,  0),
+      areaShare: gMetrics.reduce((s,m)=>s+m.areaShare, 0),
+      effIdx:    gMetrics.reduce((s,m)=>s+m.effIdx,     0)/gMetrics.length,
+      grade:avgGrade, isDead:tPS===0,
+      avgPerSales: gMetrics[0]?gMetrics[0].avgPerSales:0,
+      catChar: (function(){
+        var _CAT_MAP = {
+          '축산':{ icon:'축산', label:'축산', color:'#dc2626' },
+          '수산':{ icon:'수산', label:'수산', color:'#2563eb' },
+          '채소':{ icon:'채소', label:'채소', color:'#22c55e' },
+          '농산':{ icon:'농산', label:'농산·과일', color:'#16a34a' },
+          '공산':{ icon:'공산', label:'공산', color:'#d97706' },
+          '델리':{ icon:'델리', label:'델리', color:'#0891b2' },
+          '일용':{ icon:'일용', label:'일용', color:'#7c3aed' },
+          '시즌':{ icon:'시즌', label:'시즌', color:'#ea580c' },
+          '로컬':{ icon:'로컬', label:'로컬', color:'#15803d' },
+          '기타':{ icon:'기타', label:'기타', color:'#64748b' },
+        };
+        // 1순위: 그룹에 직접 지정된 카테고리
+        if (g.category && _CAT_MAP[g.category]) {
+          var _gc = _CAT_MAP[g.category];
+          return { icon:_gc.icon, label:_gc.label, color:g.color, key:g.category };
+        }
+        // 2순위: 집기 대표 카테고리
+        var _mc = gMetrics[0] && gMetrics[0].catChar;
+        if (_mc && _mc.key !== '기타' && _mc.key !== 'group') return _mc;
+        return { icon:'그룹', label:g.label, color:g.color, key:'group' };
+      }())
+    };
+
+    // ── 박스 드래그 (관리자 전용) ──
+    if (_isAdminGrp) {
+      hitPath.addEventListener('mousedown', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        hideSalesZoneCard();
+        var boxOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_box_'+gid]) || { dx:0, dy:0 };
+        var lblOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid])     || { dx:0, dy:0 };
+        var lbl = gcEl.querySelector('#slbl-grp-'+gid);
+        window._salesGrpDrag = {
+          type: 'box',
+          gid: gid, gcEl: gcEl,
+          grpG: grpG, hitPath: hitPath,
+          startClientX: e.clientX, startClientY: e.clientY,
+          startDx: boxOff.dx, startDy: boxOff.dy,
+          lblBaseLeft: lbl ? parseFloat(lbl.dataset.baseLeft||0) : 0,
+          lblBaseTop:  lbl ? parseFloat(lbl.dataset.baseTop ||0) : 0,
+          lblStartDx: lblOff.dx, lblStartDy: lblOff.dy
+        };
+        grpG.style.opacity = '0.75';
+        grpG.style.transform = '';
+        hitPath.style.cursor = 'grabbing';
+        var _lbl0 = gcEl.querySelector('#slbl-grp-'+gid);
+        if (_lbl0) _lbl0.style.transform = 'scale(1)';
+      });
+
+      hitPath.addEventListener('mouseenter', function() {
+        if (window._salesGrpDrag) return;
+        fillPaths.forEach(fp=>fp.setAttribute('fill-opacity','1'));
+        strokePaths.forEach(sp=>sp.setAttribute('stroke-width','8'));
+        var _lbl = gcEl.querySelector('#slbl-grp-'+gid);
+        if (_lbl) { _lbl.style.transform = 'scale(1.10)'; _lbl.style.transition = 'transform .15s cubic-bezier(.34,1.3,.64,1)'; }
+        showSalesZoneCard(groupFake, hitPath);
+      });
+      hitPath.addEventListener('mouseleave', function() {
+        if (window._salesGrpDrag) return;
+        fillPaths.forEach(fp=>fp.setAttribute('fill-opacity','0.85'));
+        strokePaths.forEach(sp=>sp.setAttribute('stroke-width','5'));
+        var _lbl = gcEl.querySelector('#slbl-grp-'+gid);
+        if (_lbl) _lbl.style.transform = 'scale(1)';
+        hideSalesZoneCard();
+      });
+    } else {
+      hitPath.addEventListener('mouseenter', ()=>{
+        fillPaths.forEach(fp=>fp.setAttribute('fill-opacity','1'));
+        strokePaths.forEach(sp=>sp.setAttribute('stroke-width','8'));
+        var _lbl = gcEl.querySelector('#slbl-grp-'+gid);
+        if (_lbl) { _lbl.style.transform = 'scale(1.10)'; _lbl.style.transition = 'transform .15s cubic-bezier(.34,1.3,.64,1)'; }
+        showSalesZoneCard(groupFake, hitPath);
+      });
+      hitPath.addEventListener('mouseleave', ()=>{
+        fillPaths.forEach(fp=>fp.setAttribute('fill-opacity','0.85'));
+        strokePaths.forEach(sp=>sp.setAttribute('stroke-width','5'));
+        var _lbl = gcEl.querySelector('#slbl-grp-'+gid);
+        if (_lbl) _lbl.style.transform = 'scale(1)';
+        hideSalesZoneCard();
+      });
+    }
+
     // ── 레이블: 가장 큰 덩어리 중심에만 표시 ──
     var mainBB = polyInfos[0].bb;
-    var fontSize1 = Math.max(11, Math.min(18, mainBB.w / 6));
-    var fontSize2 = Math.max(14, Math.min(28, mainBB.w / 4));
+    var fontSize1 = 18; // 구역명 고정
+    var fontSize2 = 30; // 평당매출 고정
 
-    // 그룹 레이블 오프셋
+    // 그룹 레이블 오프셋 (박스 오프셋 포함)
     var _glOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid]) || { dx:0, dy:0 };
-    var _glLblW = 120;
-    var _glLblH = 56;
-    var _glLeft = mainBB.x1 + mainBB.w/2 - _glLblW/2 + _glOff.dx;
-    var _glTop  = mainBB.y1 + mainBB.h/2 - _glLblH/2 + _glOff.dy;
+    var _glLblW = 180;
+    var _glLblH = 84;
+    // baseLeft/baseTop: 박스 이동 전 기준 위치 (박스 드래그 시 동기화용)
+    var _baseLblLeft = mainBB.x1 + mainBB.w/2 - _glLblW/2;
+    var _baseLblTop  = mainBB.y1 + mainBB.h/2 - _glLblH/2;
+    var _glLeft = _baseLblLeft + _glOff.dx;
+    var _glTop  = _baseLblTop  + _glOff.dy;
 
     var glDiv = document.createElement('div');
     glDiv.id = 'slbl-grp-' + gid;
     glDiv.dataset.gid = gid;
-    var _isAdmin2 = (typeof isAdmin !== 'undefined') && isAdmin;
+    glDiv.dataset.baseLeft = _baseLblLeft;
+    glDiv.dataset.baseTop  = _baseLblTop;
     glDiv.style.cssText =
       'position:absolute;z-index:90;' +
       'left:' + _glLeft + 'px;top:' + _glTop + 'px;' +
       'width:' + _glLblW + 'px;height:' + _glLblH + 'px;' +
       'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;' +
-      'pointer-events:' + (_isAdmin2 ? 'all' : 'none') + ';' +
-      'cursor:' + (_isAdmin2 ? 'move' : 'default') + ';' +
+      'transform-origin:center center;transition:transform 0.15s ease;' +
+      'pointer-events:' + (_isAdminGrp ? 'all' : 'none') + ';' +
+      'cursor:' + (_isAdminGrp ? 'move' : 'default') + ';' +
       'user-select:none;-webkit-user-select:none;';
     glDiv.innerHTML =
       '<div style="font-family:Pretendard,sans-serif;font-size:'+fontSize1+'px;font-weight:900;color:#fff;'+
@@ -10011,106 +10244,29 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
         '<div style="font-family:Pretendard,sans-serif;font-size:'+fontSize2+'px;font-weight:900;color:#fff;'+
         'text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap;">'+
         tPS.toLocaleString()+'만/평</div>':'');
-    if (_isAdmin2) {
+    if (_isAdminGrp) {
       var _hintD = document.createElement('div');
       _hintD.style.cssText = 'font-size:8px;color:rgba(255,255,255,.4);margin-top:1px;';
-      _hintD.textContent = '⠿ 이동';
+      _hintD.textContent = '⠿ 문구 이동';
       glDiv.appendChild(_hintD);
 
-      var _glDrag = null;
-      var _glScale = window.salesMapScale || 0.6;
       glDiv.addEventListener('mousedown', function(e) {
         e.preventDefault(); e.stopPropagation();
-        var curOff2 = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid]) || { dx:0, dy:0 };
-        _glDrag = {
-          startX: e.clientX, startY: e.clientY,
-          startL: parseFloat(glDiv.style.left), startT: parseFloat(glDiv.style.top),
-          startDx: curOff2.dx, startDy: curOff2.dy
+        var curOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid]) || { dx:0, dy:0 };
+        window._salesGrpDrag = {
+          type: 'label',
+          gid: gid,
+          glDiv: glDiv,
+          startClientX: e.clientX, startClientY: e.clientY,
+          startL: parseFloat(glDiv.style.left),
+          startT: parseFloat(glDiv.style.top),
+          startDx: curOff.dx, startDy: curOff.dy
         };
         glDiv.style.opacity = '0.75';
         glDiv.style.zIndex  = '300';
-        function onGlMove(e2) {
-          if (!_glDrag) return;
-          var dx2 = (e2.clientX - _glDrag.startX) / _glScale;
-          var dy2 = (e2.clientY - _glDrag.startY) / _glScale;
-          glDiv.style.left = (_glDrag.startL + dx2) + 'px';
-          glDiv.style.top  = (_glDrag.startT + dy2) + 'px';
-        }
-        function onGlUp(e2) {
-          document.removeEventListener('mousemove', onGlMove);
-          document.removeEventListener('mouseup',   onGlUp);
-          if (!_glDrag) return;
-          var dx2 = (e2.clientX - _glDrag.startX) / _glScale;
-          var dy2 = (e2.clientY - _glDrag.startY) / _glScale;
-          if (!window.salesLabelOffsets) window.salesLabelOffsets = {};
-          window.salesLabelOffsets['_grp_'+gid] = {
-            dx: _glDrag.startDx + dx2,
-            dy: _glDrag.startDy + dy2
-          };
-          _glDrag = null;
-          glDiv.style.opacity = '';
-          glDiv.style.zIndex  = '90';
-          if (typeof showToast === 'function') showToast('📌 그룹 레이블 위치 저장됨');
-        }
-        document.addEventListener('mousemove', onGlMove);
-        document.addEventListener('mouseup',   onGlUp);
       });
     }
     gcEl.appendChild(glDiv);
-
-    // ── 분리된 작은 덩어리에 배지(이름 태그) 표시 ──
-    polyInfos.slice(1).forEach(function(pi) {
-      var bb = pi.bb;
-      var bFo = document.createElementNS(ns, 'foreignObject');
-      var bW = Math.min(bb.w, 80), bH = Math.min(bb.h, 28);
-      bFo.setAttribute('x', bb.cx - bW/2);
-      bFo.setAttribute('y', bb.cy - bH/2);
-      bFo.setAttribute('width',  bW);
-      bFo.setAttribute('height', bH);
-      bFo.style.pointerEvents = 'none';
-      bFo.innerHTML =
-        '<div xmlns="http://www.w3.org/1999/xhtml" style="'+
-          'width:100%;height:100%;display:flex;align-items:center;justify-content:center;">'+
-          '<span style="font-family:Pretendard,sans-serif;font-size:10px;font-weight:800;'+
-            'color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);white-space:nowrap;'+
-            'background:'+g.color+';border-radius:4px;padding:2px 6px;">'+
-            g.label+
-          '</span>'+
-        '</div>';
-      svg.appendChild(bFo);
-    });
-
-    // ── 모든 덩어리를 하나로 합친 hit path (hover 감지용) ──
-    var allPathData = polyInfos.map(pi=>pi.d).join(' ');
-    var hitPath = document.createElementNS(ns, 'path');
-    hitPath.setAttribute('d', allPathData);
-    hitPath.setAttribute('fill', 'transparent');
-    hitPath.setAttribute('fill-rule', 'nonzero');
-    hitPath.style.pointerEvents = 'all';
-    hitPath.style.cursor = 'pointer';
-
-    var groupFake = {
-      z:{ name:g.label, id:gid },
-      sales:tSales, area:tArea, perSales:tPS,
-      contrib:   gMetrics.reduce((s,m)=>s+m.contrib,  0),
-      areaShare: gMetrics.reduce((s,m)=>s+m.areaShare, 0),
-      effIdx:    gMetrics.reduce((s,m)=>s+m.effIdx,     0)/gMetrics.length,
-      grade:avgGrade, isDead:tPS===0,
-      avgPerSales: gMetrics[0]?gMetrics[0].avgPerSales:0,
-      catChar:{ icon:'🗂', label:'🗂 '+g.label, color:g.color, key:'group' }
-    };
-
-    hitPath.addEventListener('mouseenter', ()=>{
-      fillPaths.forEach(fp=>fp.setAttribute('fill-opacity','1'));
-      strokePaths.forEach(sp=>sp.setAttribute('stroke-width','6'));
-      showSalesZoneCard(groupFake, hitPath);
-    });
-    hitPath.addEventListener('mouseleave', ()=>{
-      fillPaths.forEach(fp=>fp.setAttribute('fill-opacity','0.85'));
-      strokePaths.forEach(sp=>sp.setAttribute('stroke-width','4'));
-      hideSalesZoneCard();
-    });
-    svg.appendChild(hitPath);
   });
 
   gcEl.appendChild(svg);
@@ -10132,11 +10288,36 @@ function showSalesZoneCard(m, zEl) {
   const impr = (m.catChar && m.catChar.key === 'group')
     ? { spaceEff: m.effIdx, salesEff: m.perSales / (m.avgPerSales||1), actions: [], severity: 'ok', reasons: [] }
     : getImproveSuggestion(m);
-  const cat  = m.catChar;
+
+  // ── 현재 주차 배치상품 기반으로 카테고리 재추정 ──
+  // zone 집기명(오픈냉장 등)만으로 추정하면 기타가 되는 문제 해결
+  let cat = m.catChar || { key:"기타", label:"📦 기타", color:"#64748b", icon:"📦" };
+  if (cat.key === "기타") {
+    // 1순위: 현재 주차 overrides prod
+    let tryProd = "";
+    if (typeof WEEKS !== "undefined" && typeof currentWeekIdx !== "undefined" && currentWeekIdx >= 0) {
+      const wk = WEEKS[currentWeekIdx];
+      tryProd = (wk && wk.overrides && wk.overrides[m.z.id] && wk.overrides[m.z.id].prod) || "";
+    }
+    // 2순위: zone.prod 필드
+    if (!tryProd && m.z.prod) tryProd = m.z.prod;
+    if (tryProd) {
+      const reCat = guessCategoryChar({ category:"", type:"", prod:tryProd, name:tryProd });
+      if (reCat.key !== "기타") cat = reCat;
+    }
+  }
+
+  const grp  = getSalesGroupOfZone(m.z.id);
+  // 현재 주차 배치상품 (팝업 헤더 서브텍스트용)
+  let _curProd = "";
+  if (typeof WEEKS !== "undefined" && typeof currentWeekIdx !== "undefined" && currentWeekIdx >= 0) {
+    const _wk = WEEKS[currentWeekIdx];
+    _curProd = (_wk && _wk.overrides && _wk.overrides[m.z.id] && _wk.overrides[m.z.id].prod) || "";
+  }
+  if (!_curProd && m.z.prod) _curProd = m.z.prod;
   const sep  = Math.round(impr.salesEff * 100);
   const spC  = impr.spaceEff>=1.2?'#16a34a':impr.spaceEff>=0.8?'#d97706':'#dc2626';
   const seC  = sep>=80?'#16a34a':sep>=50?'#d97706':'#dc2626';
-  const grp  = getSalesGroupOfZone(m.z.id);
 
   card.style.cssText =
     'position:fixed;z-index:9999;pointer-events:none;' +
@@ -10155,10 +10336,10 @@ function showSalesZoneCard(m, zEl) {
     'background:linear-gradient(135deg,' + _hdColor + 'ee,' + _hdColor + 'aa);' +
     'display:flex;align-items:flex-start;gap:8px;';
   hd.innerHTML =
-    '<span style="font-size:20px;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.2));">' + cat.icon + '</span>' +
+    '<div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.25);border:1.5px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;flex-shrink:0;">' + '<span style="font-size:' + (cat.icon.length <= 2 ? '11' : '9') + 'px;font-weight:900;color:#fff;letter-spacing:-.3px;text-shadow:0 1px 2px rgba(0,0,0,.4);line-height:1;">' + cat.icon + '</span></div>' +
     '<div style="flex:1;min-width:0;">' +
-      '<div style="font-size:13px;font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + m.z.name + '</div>' +
-      '<div style="font-size:10px;color:rgba(255,255,255,.8);margin-top:2px;">' + (cat.key==='group' ? '' : cat.label + (grp?' · <span style="background:rgba(255,255,255,.25);padding:1px 5px;border-radius:4px;">'+grp.label+'</span>':'')) + '</div>' +
+      '<div style="font-size:13px;font-weight:900;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (_curProd && _curProd !== m.z.name ? _curProd : m.z.name) + '</div>' +
+      '<div style="font-size:10px;color:rgba(255,255,255,.8);margin-top:2px;">' + (cat.key==='group' ? '' : cat.label + (_curProd && _curProd !== m.z.name ? ' · ' + _curProd : '') + (grp?' · <span style="background:rgba(255,255,255,.25);padding:1px 5px;border-radius:4px;">'+grp.label+'</span>':'')) + '</div>' +
     '</div>' +
     '<span style="font-size:11px;font-weight:900;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.25);color:#fff;flex-shrink:0;border:1.5px solid rgba(255,255,255,.4);">' + m.grade + '</span>';
   card.appendChild(hd);
@@ -10176,7 +10357,7 @@ function showSalesZoneCard(m, zEl) {
     '</div>' +
     '<div style="text-align:right;">' +
       '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">면적</div>' +
-      '<div style="font-size:16px;font-weight:800;color:#374151;">' + m.area + '<span style="font-size:11px;font-weight:600;color:#9ca3af;">평</span></div>' +
+      '<div style="font-size:16px;font-weight:800;color:#374151;">' + Math.round(m.area) + '<span style="font-size:11px;font-weight:600;color:#9ca3af;">평</span></div>' +
     '</div>';
   card.appendChild(bigNum);
 
@@ -10268,17 +10449,130 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
   const cGrades   = {A:0,B:0,C:0};
   metrics.forEach(m=>{if(cGrades[m.grade]!==undefined)cGrades[m.grade]++;});
 
+  // ★ 좌우 분할 래퍼: 왼쪽=분석패널, 오른쪽=그룹관리패널(편집모드 시)
+  const outerFlex = document.createElement('div');
+  outerFlex.style.cssText = 'display:flex;flex:1;overflow:hidden;min-height:0;';
+
+  // ── 왼쪽: 기존 분석 패널 영역 ──
+  const analysisCol = document.createElement('div');
+  analysisCol.style.cssText = 'display:flex;flex-direction:column;flex:1;overflow:hidden;min-width:0;transition:flex .2s ease;';
+
+  // ── 오른쪽: 그룹 관리 패널 ──
+  const groupCol = document.createElement('div');
+  groupCol.id = 'salesGroupSidePanel';
+  const hasEdit = (typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode && isAdmin && !isViewer;
+  groupCol.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;transition:width .2s ease,border .2s ease;border-left:' +
+    (hasEdit ? '2px solid #6366f1' : 'none') + ';width:' + (hasEdit ? '170px' : '0') + ';flex-shrink:0;background:#0f172a;';
+
+  outerFlex.appendChild(analysisCol);
+  outerFlex.appendChild(groupCol);
+  container.appendChild(outerFlex);
+
+  // ── 그룹 관리 패널 내용 렌더 함수 ──
+  function renderGroupSidePanel() {
+    groupCol.innerHTML = '';
+    if (!((typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode && isAdmin && !isViewer)) return;
+
+    // 제목 바
+    const hd = document.createElement('div');
+    hd.style.cssText = 'flex-shrink:0;padding:10px 10px 8px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;';
+    hd.innerHTML = '<span style="font-size:10px;font-weight:800;color:#a5b4fc;letter-spacing:.3px;">🗂 그룹 지정</span>';
+    const doneBtn = document.createElement('button');
+    doneBtn.style.cssText = 'font-family:inherit;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid #16a34a;background:transparent;color:#4ade80;cursor:pointer;';
+    doneBtn.textContent = '✓ 완료';
+    doneBtn.onclick = function() { if(typeof toggleSalesGroupEdit==='function') toggleSalesGroupEdit(); };
+    hd.appendChild(doneBtn);
+    groupCol.appendChild(hd);
+
+    // 힌트
+    const hint = document.createElement('div');
+    hint.style.cssText = 'flex-shrink:0;padding:6px 10px;font-size:9px;color:#475569;border-bottom:1px solid #1e293b;line-height:1.5;';
+    hint.textContent = '그룹 선택 후 도면 구역 클릭으로 배정';
+    groupCol.appendChild(hint);
+
+    // 그룹 목록 (스크롤)
+    const listWrap = document.createElement('div');
+    listWrap.style.cssText = 'flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px;';
+
+    const entries = Object.entries(window.salesGroups || {});
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:16px 0;text-align:center;font-size:9px;color:#334155;';
+      empty.textContent = '그룹 없음';
+      listWrap.appendChild(empty);
+    } else {
+      entries.forEach(function(_e) {
+        var gid = _e[0], g = _e[1];
+        var isActive = (typeof salesGroupActiveId !== 'undefined') && salesGroupActiveId === gid;
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;background:' +
+          (isActive ? '#312e81' : '#1e293b') + ';border:1.5px solid ' + (isActive ? '#6366f1' : '#334155') + ';cursor:pointer;';
+        row.onmouseover = function(){ if(!isActive) row.style.background='#1e293b'; };
+        row.onmouseout  = function(){ if(!isActive) row.style.background='#1e293b'; };
+        var dot = document.createElement('div');
+        dot.style.cssText = 'width:9px;height:9px;border-radius:2px;background:'+g.color+';flex-shrink:0;';
+        var lbl = document.createElement('span');
+        lbl.style.cssText = 'flex:1;font-size:10px;font-weight:700;color:'+(isActive?'#c7d2fe':'#64748b')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
+        lbl.textContent = g.label;
+        var cntEl = document.createElement('span');
+        cntEl.style.cssText = 'font-size:8px;color:#334155;flex-shrink:0;';
+        cntEl.textContent = (g.zoneIds||[]).length+'개';
+        var actRow = document.createElement('div');
+        actRow.style.cssText = 'display:flex;gap:3px;flex-shrink:0;';
+        var selBtn = document.createElement('button');
+        selBtn.style.cssText = 'font-size:8px;padding:1px 5px;border-radius:3px;border:1px solid '+(isActive?'#818cf8':'#475569')+';background:'+(isActive?'#4f46e5':'transparent')+';color:'+(isActive?'#fff':'#64748b')+';cursor:pointer;font-family:inherit;';
+        selBtn.textContent = isActive ? '✓' : '선택';
+        selBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
+        var delBtn = document.createElement('button');
+        delBtn.style.cssText = 'font-size:8px;padding:1px 4px;border-radius:3px;border:1px solid #334155;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;';
+        delBtn.textContent = '✕';
+        delBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); if(typeof deleteSalesGroup==='function') deleteSalesGroup(id); }; })(gid);
+        actRow.appendChild(selBtn); actRow.appendChild(delBtn);
+        row.appendChild(dot); row.appendChild(lbl); row.appendChild(cntEl); row.appendChild(actRow);
+        row.onclick = (function(id){ return function(){ if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
+        listWrap.appendChild(row);
+      });
+    }
+    groupCol.appendChild(listWrap);
+
+    // 추가 버튼
+    const addWrap = document.createElement('div');
+    addWrap.style.cssText = 'flex-shrink:0;padding:6px 8px;border-top:1px solid #1e293b;';
+    const addBtn = document.createElement('button');
+    addBtn.style.cssText = 'width:100%;font-family:inherit;font-size:9px;font-weight:700;padding:5px;border-radius:5px;border:1.5px dashed #334155;background:transparent;color:#475569;cursor:pointer;';
+    addBtn.textContent = '+ 새 그룹 추가';
+    addBtn.onmouseover = function(){ addBtn.style.borderColor='#6366f1'; addBtn.style.color='#a5b4fc'; };
+    addBtn.onmouseout  = function(){ addBtn.style.borderColor='#334155'; addBtn.style.color='#475569'; };
+    addBtn.onclick = function(){ if(typeof addSalesGroup==='function') addSalesGroup(); };
+    addWrap.appendChild(addBtn);
+    groupCol.appendChild(addWrap);
+  }
+
+  // 초기 렌더
+  renderGroupSidePanel();
+
+  // ★ 외부에서 패널 토글 가능하도록 전역 등록
+  window._refreshGroupSidePanel = function() {
+    const panel = document.getElementById('salesGroupSidePanel');
+    if (!panel) return;
+    const on = (typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode && isAdmin && !isViewer;
+    panel.style.width       = on ? '170px' : '0';
+    panel.style.borderLeft  = on ? '2px solid #6366f1' : 'none';
+    if (on) renderGroupSidePanel();
+    else panel.innerHTML = '';
+  };
+
   // ─── 상단: KPI 요약 스코어카드 ───
   const sumWrap = document.createElement('div');
   sumWrap.style.cssText='flex-shrink:0;background:#fff;border-bottom:2px solid #f1f5f9;';
 
   const sumHd = document.createElement('div');
-  sumHd.style.cssText='padding:13px 16px 8px;display:flex;align-items:center;gap:7px;';
+  sumHd.style.cssText='padding:7px 14px 5px;display:flex;align-items:center;gap:6px;';
   sumHd.innerHTML=
-    '<span style="font-size:16px;">📊</span>'+
+    '<span style="font-size:13px;">📊</span>'+
     '<div>'+
-      '<div style="font-size:14px;font-weight:900;color:#111827;letter-spacing:-.4px;">공간 효율 분석</div>'+
-      '<div style="font-size:10px;color:#9ca3af;margin-top:1px;">'+storeName+' · '+metrics.length+'개 구역</div>'+
+      '<div style="font-size:12px;font-weight:900;color:#111827;letter-spacing:-.3px;">공간 효율 분석</div>'+
+      '<div style="font-size:9px;color:#9ca3af;margin-top:1px;">'+storeName+' · '+metrics.length+'개 구역</div>'+
     '</div>';
   sumWrap.appendChild(sumHd);
 
@@ -10302,24 +10596,24 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
 
   function kpi(icon,label,value,color,border){
     const c=document.createElement('div');
-    c.style.cssText='padding:10px 6px;text-align:center;'+(border?'border-right:1px solid #f1f5f9;':'');
-    c.innerHTML='<div style="font-size:13px;margin-bottom:3px;">'+icon+'</div><div style="font-size:11px;font-weight:900;color:'+(color||'#111827')+';">'+value+'</div><div style="font-size:9px;color:#9ca3af;margin-top:2px;">'+label+'</div>';
+    c.style.cssText='padding:5px 4px;text-align:center;'+(border?'border-right:1px solid #f1f5f9;':'');
+    c.innerHTML='<div style="font-size:11px;margin-bottom:1px;">'+icon+'</div><div style="font-size:10px;font-weight:900;color:'+(color||'#111827')+';">'+value+'</div><div style="font-size:8px;color:#9ca3af;margin-top:1px;">'+label+'</div>';
     return c;
   }
 
   // ── 편집 가능한 KPI 카드 생성 ──
   function kpiEditable(icon, label, initVal, unit, color, border, storageKey) {
     const c = document.createElement('div');
-    c.style.cssText = 'padding:8px 6px;text-align:center;cursor:pointer;position:relative;'+(border?'border-right:1px solid #f1f5f9;':'');
+    c.style.cssText = 'padding:5px 4px;text-align:center;cursor:pointer;position:relative;'+(border?'border-right:1px solid #f1f5f9;':'');
     c.title = '클릭하여 직접 입력';
 
     const isManual = window[storageKey] > 0;
     const displayVal = isManual ? window[storageKey].toLocaleString() : (unit==='평' ? Math.round(initVal).toLocaleString() : fmtM(initVal));
 
     c.innerHTML =
-      '<div style="font-size:13px;margin-bottom:2px;">'+icon+'</div>'+
-      '<div id="kpi-display-'+storageKey+'" style="font-size:11px;font-weight:900;color:'+(color||'#111827')+';">'+displayVal+unit+'</div>'+
-      '<div style="font-size:9px;color:#9ca3af;margin-top:1px;">'+label+(isManual?' ✏️':'')+'</div>'+
+      '<div style="font-size:11px;margin-bottom:1px;">'+icon+'</div>'+
+      '<div id="kpi-display-'+storageKey+'" style="font-size:10px;font-weight:900;color:'+(color||'#111827')+';">'+displayVal+unit+'</div>'+
+      '<div style="font-size:8px;color:#9ca3af;margin-top:0px;">'+label+(isManual?' ✏️':'')+'</div>'+
       '<div id="kpi-input-wrap-'+storageKey+'" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:#fff;border:2px solid '+color+';border-radius:4px;display:none;align-items:center;justify-content:center;flex-direction:column;gap:2px;padding:4px;">'+
         '<input id="kpi-inp-'+storageKey+'" type="number" min="0" placeholder="직접 입력" '+
           'style="font-family:inherit;font-size:11px;font-weight:800;width:80px;text-align:center;border:1px solid #e5e7eb;border-radius:4px;padding:2px 4px;color:'+color+';">'+
@@ -10366,17 +10660,17 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
   const total_g=cGrades.A+cGrades.B+cGrades.C||1;
   const pA=Math.round(cGrades.A/total_g*100),pB=Math.round(cGrades.B/total_g*100),pC=100-pA-pB;
   const gradeBar=document.createElement('div');
-  gradeBar.style.cssText='padding:8px 14px 12px;';
+  gradeBar.style.cssText='padding:4px 12px 6px;';
   gradeBar.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">'+
-      '<span style="font-size:10px;font-weight:700;color:#374151;">등급 분포</span>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">'+
+      '<span style="font-size:9px;font-weight:700;color:#374151;">등급 분포</span>'+
       '<div style="display:flex;gap:8px;">'+
-        '<span style="font-size:9px;color:#16a34a;font-weight:700;">✅ A '+cGrades.A+'</span>'+
-        '<span style="font-size:9px;color:#d97706;font-weight:700;">🟡 B '+cGrades.B+'</span>'+
-        '<span style="font-size:9px;color:#ef4444;font-weight:700;">🔴 C '+cGrades.C+'</span>'+
+        '<span style="font-size:8px;color:#16a34a;font-weight:700;">✅ A '+cGrades.A+'</span>'+
+        '<span style="font-size:8px;color:#d97706;font-weight:700;">🟡 B '+cGrades.B+'</span>'+
+        '<span style="font-size:8px;color:#ef4444;font-weight:700;">🔴 C '+cGrades.C+'</span>'+
       '</div>'+
     '</div>'+
-    '<div style="display:flex;border-radius:8px;overflow:hidden;height:10px;gap:1px;">'+
+    '<div style="display:flex;border-radius:6px;overflow:hidden;height:7px;gap:1px;">'+
       (pA>0?'<div style="flex:'+pA+';background:#16a34a;border-radius:8px 0 0 8px;" title="A '+cGrades.A+'개"></div>':'')+
       (pB>0?'<div style="flex:'+pB+';background:#eab308;" title="B '+cGrades.B+'개"></div>':'')+
       (pC>0?'<div style="flex:'+pC+';background:#ef4444;border-radius:0 8px 8px 0;" title="C '+cGrades.C+'개"></div>':'')+
@@ -10408,12 +10702,12 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
     if (!hasAny) return;
 
     const trendWrap = document.createElement('div');
-    trendWrap.style.cssText = 'padding:10px 14px 12px;border-top:1px solid #f1f5f9;';
-    trendWrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-size:10px;font-weight:700;color:#374151;">📈 월별 평당매출 추이</span><span style="font-size:9px;color:#9ca3af;">만원/평 · 막대 클릭으로 월 전환</span></div>';
+    trendWrap.style.cssText = 'padding:5px 12px 7px;border-top:1px solid #f1f5f9;';
+    trendWrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:9px;font-weight:700;color:#374151;">📈 월별 추이</span><span style="font-size:8px;color:#9ca3af;">클릭으로 월 전환</span></div>';
 
     const maxVal = Math.max.apply(null, vals.filter(function(v){return v!==null;})) || 1;
-    const chartH = 44;
-    const barW = 18;
+    const chartH = 28;
+    const barW = 12;
     const barGap = 3;
     const totalW = months.length * (barW + barGap);
 
@@ -10470,14 +10764,14 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
       ? ((typeof MONTHS !== 'undefined' ? MONTHS[window.currentSalesMonth].label : (window.currentSalesMonth+1)+'월'))
       : '종합';
     const info = document.createElement('div');
-    info.style.cssText = 'font-size:9px;color:#64748b;text-align:center;margin-top:6px;';
+    info.style.cssText = 'font-size:8px;color:#64748b;text-align:center;margin-top:3px;';
     info.textContent = '현재: ' + curLabel + ' · 보라색=현재 상단 월 탭 · 파란색=데이터 있음';
     trendWrap.appendChild(info);
 
     sumWrap.appendChild(trendWrap);
   })();
 
-  container.appendChild(sumWrap);
+  analysisCol.appendChild(sumWrap);
 
   // ─── 탭 바 ───
   const tabBar=document.createElement('div');
@@ -10493,6 +10787,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
   ];
 
   function switchTab(tid){
+    window._currentSalesPanelTab = tid;  // 탭 기억
     tabBar.querySelectorAll('.sal-tab').forEach(t=>{
       const on=t.dataset.tab===tid;
       t.style.borderBottom=on?'3px solid #f97316':'3px solid transparent';
@@ -10516,16 +10811,99 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
     tabBar.appendChild(btn);
   });
 
-  container.appendChild(tabBar);
-  container.appendChild(tabContents);
-  switchTab('tab-rank');
+  analysisCol.appendChild(tabBar);
+  analysisCol.appendChild(tabContents);
+  switchTab(window._currentSalesPanelTab || 'tab-rank');
 }
 
 /* ─── 탭1: 🏆 순위 ─── */
+/* ─── 탭5: 📊 공간효율 분석 (즉시 표시) ─── */
+/* ─── 공유 헬퍼: 배치상품/그룹명 ─── */
+function getSalesDisplayName(m) {
+  const zid = m.z.id;
+  const groups = window.salesGroups || {};
+  for (const gid in groups) {
+    const g = groups[gid];
+    if ((g.zoneIds || []).indexOf(zid) !== -1 && g.label) {
+      return { name: g.label, sub: m.z.name, isGroup: true, color: g.color };
+    }
+  }
+  if (typeof WEEKS !== 'undefined' && typeof currentWeekIdx !== 'undefined' && currentWeekIdx >= 0) {
+    const wk = WEEKS[currentWeekIdx];
+    if (wk && wk.overrides && wk.overrides[zid] && wk.overrides[zid].prod) {
+      const p = wk.overrides[zid].prod;
+      if (p) return { name: p, sub: m.z.name, isGroup: false, color: null };
+    }
+  }
+  if (m.z.prod) return { name: m.z.prod, sub: m.z.name, isGroup: false, color: null };
+  return { name: m.z.name, sub: null, isGroup: false, color: null };
+}
+
+/* ─── 공유 헬퍼: 카드 섹션 렌더 ─── */
+function makeSalesSection(icon, title, color, rows) {
+  const sec = document.createElement('div');
+  sec.style.cssText = 'margin-bottom:8px;border-radius:9px;overflow:hidden;background:#fff;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05);';
+  const sHd = document.createElement('div');
+  sHd.style.cssText = 'padding:7px 11px;display:flex;align-items:center;gap:6px;background:' + color + '18;border-bottom:1px solid ' + color + '30;';
+  sHd.innerHTML = '<span style="font-size:13px;">' + icon + '</span><span style="font-size:11px;font-weight:800;color:' + color + ';">' + title + '</span>';
+  sec.appendChild(sHd);
+  rows.forEach(function(r) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:6px 11px;border-bottom:1px solid #f9fafb;';
+    if (r.zone) {
+      const dn = getSalesDisplayName(r.zone);
+      const left = document.createElement('div');
+      left.style.cssText = 'flex:1;min-width:0;';
+      left.innerHTML =
+        '<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;flex-wrap:wrap;">' +
+          (dn.color ? '<div style="width:8px;height:8px;border-radius:2px;background:' + dn.color + ';flex-shrink:0;"></div>' : '') +
+          '<span style="font-size:11px;font-weight:800;color:#111827;">' + dn.name + '</span>' +
+          (dn.sub && dn.sub !== dn.name ? '<span style="font-size:9px;color:#9ca3af;">(' + dn.sub + ')</span>' : '') +
+          '<span style="font-size:9px;background:' + gradeColor(r.zone.grade) + '22;color:' + gradeColor(r.zone.grade) + ';border-radius:3px;padding:1px 5px;font-weight:700;">' + r.zone.grade + '등급</span>' +
+          '<span style="font-size:9px;color:#9ca3af;">' + Math.round(r.zone.area) + '평</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<span style="font-size:10px;font-weight:700;color:' + salesColor(r.zone.perSales) + ';">' + Math.round(r.zone.perSales).toLocaleString() + '만/평</span>' +
+          '<span style="font-size:9px;color:#9ca3af;">효율 ' + Math.round(r.zone.effIdx * 100) + '%</span>' +
+        '</div>';
+      if (r.desc) {
+        const d = document.createElement('div');
+        d.style.cssText = 'font-size:9.5px;color:#6b7280;margin-top:2px;line-height:1.5;';
+        d.textContent = r.desc;
+        left.appendChild(d);
+      }
+      row.appendChild(left);
+      if (r.zone.z && r.zone.z.id) {
+        row.style.cursor = 'pointer';
+        row.onmouseover = function() { highlightSalesMapZone(r.zone.z.id, true); row.style.background = '#f0f9ff'; };
+        row.onmouseout  = function() { highlightSalesMapZone(r.zone.z.id, false); row.style.background = ''; };
+        row.onclick     = function() { focusSalesMapZone(r.zone.z.id); };
+      }
+    } else if (r.tag) {
+      const tg = document.createElement('div');
+      tg.style.cssText = 'flex:1;display:flex;align-items:center;gap:7px;';
+      tg.innerHTML =
+        '<span style="font-size:9px;background:' + (r.tagColor||'#e5e7eb') + ';color:' + (r.tagTextColor||'#374151') + ';border-radius:4px;padding:2px 6px;font-weight:700;flex-shrink:0;">' + r.tag + '</span>' +
+        '<span style="font-size:10px;color:#374151;">' + r.val + '</span>';
+      row.appendChild(tg);
+    }
+    sec.appendChild(row);
+  });
+  return sec;
+}
+
+function renderAiAnalysisTab(container, metrics, avgPerSales, maxPerSales) {}
+
 function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
   const MEDAL=['🥇','🥈','🥉'];
   const groups   = window.salesGroups || {};
   const hasGroups = Object.keys(groups).length > 0;
+
+  // 클릭 안내 배지
+  const hint = document.createElement('div');
+  hint.style.cssText = 'padding:5px 12px 0;';
+  hint.innerHTML = '<span style="font-size:9px;color:#94a3b8;display:flex;align-items:center;gap:3px;"><span>👆</span><span>구역 클릭 시 도면에서 위치 이동</span></span>';
+  container.appendChild(hint);
 
   // ── 그룹 단위 순위 데이터 생성 ──
   let rankItems = []; // { name, sales, area, perSales, color, gid, zids }
@@ -10566,6 +10944,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
       row.style.cssText='display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;transition:background .08s;';
       row.onmouseover=()=>{r.zids.forEach(id=>highlightSalesMapZone(id,true));row.style.background='#dcfce7';};
       row.onmouseout= ()=>{r.zids.forEach(id=>highlightSalesMapZone(id,false));row.style.background='';};
+      row.onclick    =()=>{ if(r.zids[0]) focusSalesMapZone(r.zids[0]); };
       row.innerHTML=
         '<span style="font-size:13px;flex-shrink:0;">✅</span>'+
         (r.color?'<div style="width:10px;height:10px;border-radius:2px;background:'+r.color+';flex-shrink:0;"></div>':'')+
@@ -10594,6 +10973,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
     row.style.cssText='display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f9fafb;cursor:pointer;transition:background .08s;';
     row.onmouseover=()=>{r.zids.forEach(id=>highlightSalesMapZone(id,true));row.style.background='#f0f9ff';};
     row.onmouseout= ()=>{r.zids.forEach(id=>highlightSalesMapZone(id,false));row.style.background='';};
+    row.onclick    =()=>{ if(r.zids[0]) focusSalesMapZone(r.zids[0]); };
 
     const rb=document.createElement('div');
     if(i<3){
@@ -10633,6 +11013,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
       row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid #fef2f2;cursor:pointer;transition:background .08s;';
       row.onmouseover=()=>{r.zids.forEach(id=>highlightSalesMapZone(id,true));row.style.background='#fff1f2';};
       row.onmouseout= ()=>{r.zids.forEach(id=>highlightSalesMapZone(id,false));row.style.background='';};
+      row.onclick    =()=>{ if(r.zids[0]) focusSalesMapZone(r.zids[0]); };
       row.innerHTML=
         '<div style="display:flex;align-items:center;gap:6px;">'+
           (r.color?'<div style="width:10px;height:10px;border-radius:2px;background:'+r.color+';"></div>':'')+
@@ -10646,9 +11027,115 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
     });
   }
   container.appendChild(rankCard);
-}
 
-/* ─── 탭2: ⚠️ 개선 ─── */
+  // ── 고성과 구역 패턴 (그룹 있으면 그룹 단위) ──
+  (function() {
+    const gi2 = buildGroupItems(metrics);
+    let highItems2;
+    if (gi2 && gi2.length) {
+      highItems2 = gi2.filter(g => g.perSales >= avgPerSales * 1.2)
+                      .sort((a,b) => b.perSales - a.perSales).slice(0, 5);
+    } else {
+      highItems2 = [...metrics].filter(m => m.area > 0 && m.perSales >= avgPerSales * 1.2)
+                               .sort((a,b) => b.perSales - a.perSales).slice(0, 5);
+    }
+    if (!highItems2.length) return;
+
+    const rows5 = highItems2.map(function(item) {
+      if (item.z) {
+        // 집기 단위
+        const cat = item.catChar;
+        return { zone: item, desc: (cat ? cat.icon + ' ' + cat.label + ' — ' : '') + '현 배치 유지, 인접 확장 검토' };
+      }
+      // 그룹 단위
+      return {
+        tag: item.grade + '등급',
+        tagColor: '#dcfce7', tagTextColor: '#15803d',
+        val: '<span style="display:flex;align-items:center;gap:5px;">' +
+             (item.color ? '<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + item.color + ';flex-shrink:0;"></span>' : '') +
+             '<b>' + item.name + '</b>' +
+             '<span style="color:#9ca3af;font-weight:400;font-size:9px;">' + Math.round(item.area) + '평 · ' + Math.round(item.perSales).toLocaleString() + '만/평 · 효율 ' + Math.round(item.effIdx*100) + '%</span>' +
+             '</span><br><span style="font-size:9.5px;color:#15803d;">→ 현 배치 유지, 인접 확장 검토</span>'
+      };
+    });
+    const sec5 = makeSalesSection('🏆', '고성과 구역 패턴 · ' + (gi2 ? '그룹 단위' : '집기 단위'), '#16a34a', rows5);
+    sec5.style.margin = '0 12px 12px';
+    container.appendChild(sec5);
+    // 그룹 행 클릭 이벤트
+    if (gi2) {
+      const rowEls = sec5.querySelectorAll('div[style*="border-bottom:1px solid #f9fafb"]');
+      rowEls.forEach(function(rowEl, i) {
+        if (highItems2[i] && highItems2[i].zids && highItems2[i].zids[0]) {
+          rowEl.style.cursor = 'pointer';
+          rowEl.onmouseover = function() { highItems2[i].zids.forEach(id => highlightSalesMapZone(id, true)); rowEl.style.background = '#f0fdf4'; };
+          rowEl.onmouseout  = function() { highItems2[i].zids.forEach(id => highlightSalesMapZone(id, false)); rowEl.style.background = ''; };
+          rowEl.onclick     = function() { focusSalesMapZone(highItems2[i].zids[0]); };
+        }
+      });
+    }
+  })();
+
+  // ── 전월 대비 변화 (그룹 있으면 그룹 단위) ──
+  (function() {
+    const curMon = window.currentSalesMonth;
+    if (curMon === null || curMon === undefined || curMon <= 0) return;
+    if (!window.monthlySalesStore || !window.monthlySalesStore[window.currentStore || 'gs']) return;
+    const prevKey = 'm' + (curMon - 1);
+    const prevMd  = window.monthlySalesStore[window.currentStore || 'gs'][prevKey];
+    if (!prevMd || !Object.keys(prevMd.salesData||{}).length) return;
+
+    // 집기 단위 전월 평당매출
+    const prevPS = {};
+    Object.entries(prevMd.salesData).forEach(function([zid, s]) {
+      const a = (prevMd.areaData||{})[zid] || 0;
+      if (a > 0) prevPS[zid] = s / a;
+    });
+
+    const curMonLabel = (typeof MONTHS !== 'undefined') ? MONTHS[curMon].label : (curMon+1)+'월';
+    const gi3 = buildGroupItems(metrics);
+    let changes;
+
+    if (gi3 && gi3.length) {
+      // 그룹 단위: 그룹 내 집기들의 전월 평당매출 가중 평균
+      changes = gi3.map(function(g) {
+        const metricMap = {}; metrics.forEach(m => { metricMap[m.z.id] = m; });
+        const members = g.zids.map(zid => metricMap[zid]).filter(Boolean);
+        const prevSales = members.reduce((s,m) => s + (prevPS[m.z.id] !== undefined ? prevPS[m.z.id] * (m.area||0) : 0), 0);
+        const prevArea  = members.filter(m => prevPS[m.z.id] !== undefined).reduce((s,m) => s + (m.area||0), 0);
+        if (prevArea <= 0) return null;
+        const prevGroupPS = prevSales / prevArea;
+        const diff = g.perSales - prevGroupPS;
+        return { label: g.name, color: g.color, zids: g.zids, curPS: g.perSales, prevPS: prevGroupPS, diff };
+      }).filter(Boolean);
+    } else {
+      changes = metrics.filter(m => m.area > 0)
+        .filter(m => prevPS[m.z.id] !== undefined && m.perSales > 0)
+        .map(m => {
+          const dn = getSalesDisplayName(m);
+          return { label: dn.name, color: null, zids: [m.z.id], curPS: m.perSales, prevPS: prevPS[m.z.id], diff: m.perSales - prevPS[m.z.id] };
+        });
+    }
+
+    changes = changes.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff)).slice(0, 6);
+    if (!changes.length) return;
+
+    const rows = changes.map(function(c) {
+      const sign = c.diff > 0 ? '+' : '';
+      const col  = c.diff > 0 ? '#16a34a' : '#dc2626';
+      const arrow = c.diff > 0 ? '▲' : '▼';
+      return {
+        tag: arrow + ' ' + sign + Math.round(c.diff) + '만',
+        tagColor: (c.diff > 0 ? '#dcfce7' : '#fee2e2'),
+        tagTextColor: col,
+        val: (c.color ? '<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + c.color + ';margin-right:4px;vertical-align:middle;"></span>' : '') +
+             '<b>' + c.label + '</b> — ' + Math.round(c.curPS) + '만/평 (전월 ' + Math.round(c.prevPS) + '만/평)'
+      };
+    });
+    const secC = makeSalesSection('📊', '전월 대비 변화 · ' + curMonLabel + (gi3 ? ' · 그룹 단위' : ''), '#0891b2', rows);
+    secC.style.margin = '0 12px 12px';
+    container.appendChild(secC);
+  })();
+}
 /* ── 그룹 단위 집계 헬퍼 ── */
 function buildGroupItems(metrics) {
   const groups = window.salesGroups || {};
@@ -10680,98 +11167,225 @@ function buildGroupItems(metrics) {
 }
 
 function renderImproveTab(container, metrics, avgPerSales) {
-  const groupItems = buildGroupItems(metrics);
-  const hasGroups  = !!groupItems;
+  // ── 클릭 안내 ──
+  const hint = document.createElement('div');
+  hint.style.cssText = 'padding:6px 14px 4px;';
+  hint.innerHTML = '<span style="font-size:9px;color:#94a3b8;display:flex;align-items:center;gap:3px;"><span>👆</span><span>카드 클릭 시 도면에서 위치 이동</span></span>';
+  container.appendChild(hint);
 
-  // 표시할 아이템 목록 (그룹 or 집기)
-  let items;
-  if (hasGroups) {
-    items = groupItems.map(g => ({
-      name: g.name, color: g.color, zids: g.zids,
-      perSales: g.perSales, area: g.area, sales: g.sales,
-      effIdx: g.effIdx, salesEff: g.salesEff, grade: g.grade, severity: g.severity,
-      spaceEff: g.effIdx,
-    }));
-  } else {
-    items = metrics.map(m => {
-      const impr = getImproveSuggestion(m);
+  // ── 분석 단위: 그룹 or 집기 ──
+  const gi = buildGroupItems(metrics);
+  const dataM = metrics.filter(m => m.area > 0);
+  const totalSales = dataM.reduce((s,m)=>s+m.sales,0);
+  const totalArea  = dataM.reduce((s,m)=>s+m.area,0);
+
+  // 아이템 생성: 통합 분석용
+  let allItems;
+  if (gi && gi.length) {
+    const metricMap = {};
+    metrics.forEach(m => { metricMap[m.z.id] = m; });
+    allItems = gi.map(function(g) {
+      const members = g.zids.map(zid => metricMap[zid]).filter(Boolean);
+      const worst   = [...members].sort((a,b)=>a.perSales-b.perSales)[0];
+      const sg      = worst ? getImproveSuggestion(worst) : { reasons:[], actions:[], severity:'ok', spaceEff:g.effIdx, salesEff:g.salesEff };
+      // 태그 계산
+      const tags = [];
+      if (sg.severity === 'high') tags.push({ text:'심각', bg:'#fee2e2', col:'#b91c1c' });
+      else if (sg.severity === 'mid') tags.push({ text:'주의', bg:'#fef9c3', col:'#b45309' });
+      if (g.area >= 3 && g.effIdx < 0.8) tags.push({ text:'면적낭비', bg:'#f3e8ff', col:'#7c3aed' });
+      if (g.perSales < avgPerSales * 0.5 && g.perSales > 0) tags.push({ text:'저성과', bg:'#fff1f2', col:'#be123c' });
+      if (g.grade === 'A') tags.push({ text:'고효율', bg:'#dcfce7', col:'#15803d' });
       return {
-        name: m.z.name, color: m.catChar.color, zids: [m.z.id],
+        name:g.name, color:g.color, zids:g.zids,
+        perSales:g.perSales, area:g.area, sales:g.sales,
+        effIdx:g.effIdx, salesEff:g.salesEff, grade:g.grade,
+        spaceEff:g.effIdx,
+        reasons: sg.reasons || [],
+        actions: sg.actions || [],
+        severity: sg.severity,
+        tags: tags,
+        isGroup: true,
+      };
+    });
+  } else {
+    allItems = dataM.map(function(m) {
+      const sg = getImproveSuggestion(m);
+      const dn = getSalesDisplayName(m);
+      const tags = [];
+      if (sg.severity === 'high') tags.push({ text:'심각', bg:'#fee2e2', col:'#b91c1c' });
+      else if (sg.severity === 'mid') tags.push({ text:'주의', bg:'#fef9c3', col:'#b45309' });
+      if (m.area >= 3 && m.effIdx < 0.8 && m.perSales > 0) tags.push({ text:'면적낭비', bg:'#f3e8ff', col:'#7c3aed' });
+      if (m.perSales > 0 && m.perSales < avgPerSales * 0.5) tags.push({ text:'저성과', bg:'#fff1f2', col:'#be123c' });
+      if (m.grade === 'A') tags.push({ text:'고효율', bg:'#dcfce7', col:'#15803d' });
+      return {
+        name: dn.name, color: m.catChar ? m.catChar.color : '#9ca3af',
+        zids: [m.z.id],
         perSales: m.perSales, area: m.area, sales: m.sales,
-        effIdx: m.effIdx, salesEff: impr.salesEff, grade: m.grade, severity: impr.severity,
-        spaceEff: impr.spaceEff, action: impr.actions[0]||'',
+        effIdx: m.effIdx, salesEff: sg.salesEff, grade: m.grade,
+        spaceEff: sg.spaceEff,
+        reasons: sg.reasons || [],
+        actions: sg.actions || [],
+        severity: sg.severity,
+        tags: tags,
+        isGroup: false,
       };
     });
   }
 
-  const highRisk = items.filter(r=>r.severity==='high');
-  const midRisk  = items.filter(r=>r.severity==='mid');
+  // ── 정렬: 심각 → 주의 → 기타, 같은 그룹 내에서는 effIdx 낮은 순 ──
+  const sevOrder = { high:0, mid:1, ok:2 };
+  allItems.sort((a,b) => {
+    const sd = (sevOrder[a.severity]||2) - (sevOrder[b.severity]||2);
+    if (sd !== 0) return sd;
+    return a.effIdx - b.effIdx;
+  });
 
-  if (!highRisk.length && !midRisk.length) {
-    const ok=document.createElement('div');
-    ok.style.cssText='padding:40px 20px;text-align:center;';
-    ok.innerHTML='<div style="font-size:36px;margin-bottom:10px;">✅</div><div style="font-size:13px;font-weight:800;color:#16a34a;">전 구역 효율 양호</div><div style="font-size:11px;color:#9ca3af;margin-top:4px;">개선이 필요한 구역이 없습니다</div>';
-    container.appendChild(ok);
+  if (!allItems.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:40px 20px;text-align:center;';
+    empty.innerHTML = '<div style="font-size:28px;margin-bottom:8px;">✅</div><div style="font-size:12px;font-weight:800;color:#16a34a;">전 구역 효율 양호</div>';
+    container.appendChild(empty);
     return;
   }
 
-  function renderSection(list, secIcon, secTitle, badgeBg, badgeColor) {
-    if (!list.length) return;
-    const sHd=document.createElement('div');
-    sHd.style.cssText='padding:9px 14px;display:flex;align-items:center;gap:7px;background:#fff;border-bottom:1px solid #f1f5f9;margin-top:6px;';
-    sHd.innerHTML=
-      '<span style="font-size:13px;">'+secIcon+'</span>'+
-      '<span style="font-size:12px;font-weight:900;color:#111827;">'+secTitle+'</span>'+
-      '<span style="font-size:9px;background:'+badgeBg+';color:'+badgeColor+';padding:2px 8px;border-radius:10px;font-weight:800;">'+list.length+'곳</span>';
-    container.appendChild(sHd);
+  // ── 섹션 헤더: 개선 필요 / 효율 주의 / 전체 ──
+  const needFix  = allItems.filter(a => a.severity === 'high');
+  const watchOut = allItems.filter(a => a.severity === 'mid');
+  const goodOnes = allItems.filter(a => a.severity === 'ok' && a.grade === 'A');
 
-    list.forEach(r=>{
-      const spC=r.spaceEff>=1.2?'#16a34a':r.spaceEff>=0.8?'#d97706':'#dc2626';
-      const sep=Math.round(r.salesEff*100);
-      const seC=sep>=80?'#16a34a':sep>=50?'#d97706':'#dc2626';
-      const card=document.createElement('div');
-      card.style.cssText='margin:8px 12px;background:#fff;border-radius:10px;border:1px solid #e5e7eb;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);cursor:pointer;transition:box-shadow .1s;';
-      card.onmouseover=()=>{card.style.boxShadow='0 3px 12px rgba(0,0,0,.1)';r.zids.forEach(id=>highlightSalesMapZone(id,true));};
-      card.onmouseout= ()=>{card.style.boxShadow='0 1px 3px rgba(0,0,0,.05)';r.zids.forEach(id=>highlightSalesMapZone(id,false));};
-      const cHd=document.createElement('div');
-      cHd.style.cssText='padding:10px 13px 8px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f8fafc;';
-      cHd.innerHTML=
-        '<div style="width:12px;height:12px;border-radius:3px;background:'+(r.color||'#9ca3af')+';flex-shrink:0;"></div>'+
-        '<div style="flex:1;min-width:0;">'+
-          '<div style="font-size:12px;font-weight:900;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+r.name+'</div>'+
-          '<div style="font-size:9px;color:#9ca3af;margin-top:1px;">'+Math.round(r.area)+'평 · '+fmtM(r.sales)+'원</div>'+
-        '</div>'+
-        '<span style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:5px;border:1.5px solid '+gradeColor(r.grade)+';color:'+gradeColor(r.grade)+';">'+r.grade+'등급</span>';
-      card.appendChild(cHd);
-      const mg=document.createElement('div');
-      mg.style.cssText='display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #f8fafc;';
-      function mc(l,v,c,b){
-        const d=document.createElement('div');
-        d.style.cssText='padding:8px 10px;text-align:center;'+(b?'border-right:1px solid #f1f5f9;':'');
-        d.innerHTML='<div style="font-size:8px;color:#9ca3af;margin-bottom:3px;">'+l+'</div><div style="font-size:12px;font-weight:900;color:'+c+';">'+v+'</div>';
-        return d;
-      }
-      mg.appendChild(mc('평당매출',Math.floor(r.perSales).toLocaleString()+'만','#f97316',true));
-      mg.appendChild(mc('공간효율',fmtEff(r.spaceEff),spC,true));
-      mg.appendChild(mc('평당효율',sep+'%',seC,false));
-      card.appendChild(mg);
-      const actionText = r.action || (r.spaceEff<0.8?'공간 대비 매출 기여 부족 — 진열 개선 검토':'평당매출 저조 — 상품 구성 재검토');
-      const act=document.createElement('div');
-      act.style.cssText='padding:8px 12px;background:#f0fdf4;border-left:3px solid '+(r.color||'#16a34a')+';';
-      act.innerHTML='<span style="font-size:10px;color:#14532d;font-weight:700;line-height:1.6;">→ '+actionText+'</span>';
-      card.appendChild(act);
-      container.appendChild(card);
-    });
+  function renderGroup(list, icon, title, badgeBg, badgeCol) {
+    if (!list.length) return;
+    const hd = document.createElement('div');
+    hd.style.cssText = 'padding:8px 14px 6px;display:flex;align-items:center;gap:7px;background:#fff;border-bottom:1px solid #f1f5f9;margin-top:8px;';
+    hd.innerHTML =
+      '<span style="font-size:12px;">'+icon+'</span>'+
+      '<span style="font-size:12px;font-weight:900;color:#111827;">'+title+'</span>'+
+      '<span style="font-size:9px;background:'+badgeBg+';color:'+badgeCol+';padding:2px 8px;border-radius:10px;font-weight:800;">'+list.length+'곳</span>';
+    container.appendChild(hd);
+    list.forEach(function(r) { renderCard(r); });
   }
 
-  renderSection(highRisk,'⚠️','개선 필요 구역','#fee2e2','#dc2626');
-  renderSection(midRisk, '🔶','효율 주의 구역','#fef3c7','#d97706');
+  function renderCard(r) {
+    const spC = r.spaceEff>=1.2?'#16a34a':r.spaceEff>=0.8?'#d97706':'#dc2626';
+    const sep = Math.round(r.salesEff*100);
+    const seC = sep>=80?'#16a34a':sep>=50?'#d97706':'#dc2626';
+    const borderCol = r.severity==='high'?'#fca5a5':r.severity==='mid'?'#fcd34d':'#e5e7eb';
+
+    const card = document.createElement('div');
+    card.style.cssText =
+      'margin:6px 12px;background:#fff;border-radius:10px;' +
+      'border:1.5px solid '+borderCol+';overflow:hidden;' +
+      'box-shadow:0 1px 3px rgba(0,0,0,.05);cursor:pointer;transition:box-shadow .1s;';
+    card.onmouseover = ()=>{ card.style.boxShadow='0 3px 12px rgba(0,0,0,.1)'; r.zids.forEach(id=>highlightSalesMapZone(id,true)); };
+    card.onmouseout  = ()=>{ card.style.boxShadow='0 1px 3px rgba(0,0,0,.05)'; r.zids.forEach(id=>highlightSalesMapZone(id,false)); };
+    card.onclick     = ()=>{ if(r.zids[0]) focusSalesMapZone(r.zids[0]); };
+
+    // ① 헤더: 이름 + 태그들 + 등급
+    const cHd = document.createElement('div');
+    cHd.style.cssText = 'padding:9px 12px 7px;display:flex;align-items:flex-start;gap:6px;border-bottom:1px solid #f8fafc;';
+    let tagHTML = '';
+    r.tags.forEach(function(t) {
+      tagHTML += '<span style="font-size:8px;font-weight:800;padding:1px 5px;border-radius:4px;background:'+t.bg+';color:'+t.col+';flex-shrink:0;">'+t.text+'</span>';
+    });
+    cHd.innerHTML =
+      '<div style="width:11px;height:11px;border-radius:2px;background:'+(r.color||'#9ca3af')+';flex-shrink:0;margin-top:2px;"></div>'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:3px;">'+
+          '<span style="font-size:12px;font-weight:900;color:#111827;">'+r.name+'</span>'+
+          tagHTML+
+        '</div>'+
+        '<div style="font-size:9px;color:#9ca3af;">'+Math.round(r.area)+'평 · '+fmtM(r.sales)+'원</div>'+
+      '</div>'+
+      '<span style="font-size:10px;font-weight:900;padding:3px 8px;border-radius:5px;border:1.5px solid '+gradeColor(r.grade)+';color:'+gradeColor(r.grade)+';flex-shrink:0;">'+r.grade+'</span>';
+    card.appendChild(cHd);
+
+    // ② 지표 3칸
+    const mg = document.createElement('div');
+    mg.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #f8fafc;';
+    function mc(l,v,c,b) {
+      const d = document.createElement('div');
+      d.style.cssText = 'padding:7px 8px;text-align:center;'+(b?'border-right:1px solid #f1f5f9;':'');
+      d.innerHTML = '<div style="font-size:8px;color:#9ca3af;margin-bottom:2px;">'+l+'</div><div style="font-size:12px;font-weight:900;color:'+c+';">'+v+'</div>';
+      return d;
+    }
+    mg.appendChild(mc('평당매출', r.perSales>0?Math.floor(r.perSales).toLocaleString()+'만':'-', '#f97316', true));
+    mg.appendChild(mc('공간효율', fmtEff(r.spaceEff), spC, true));
+    mg.appendChild(mc('평당효율', sep+'%', seC, false));
+    card.appendChild(mg);
+
+    // ③ 분석 박스: 원인 + 개선방향 통합
+    if (r.reasons.length || r.actions.length) {
+      const actBorderCol = r.severity==='high'?'#dc2626':r.severity==='mid'?'#d97706':'#16a34a';
+      const act = document.createElement('div');
+      act.style.cssText = 'padding:8px 12px 10px;background:#fffbeb;border-left:3px solid '+actBorderCol+';';
+      let html = '';
+      if (r.reasons.length) {
+        html += '<div style="font-size:8px;color:#92400e;font-weight:700;margin-bottom:3px;letter-spacing:.3px;">원인</div>';
+        r.reasons.forEach(function(rsn) {
+          html += '<div style="font-size:9px;color:#78350f;line-height:1.5;margin-bottom:1px;">• '+rsn+'</div>';
+        });
+        html += '<div style="height:4px;"></div>';
+      }
+      if (r.actions.length) {
+        html += '<div style="font-size:8px;color:#166534;font-weight:700;margin-bottom:3px;letter-spacing:.3px;">개선 방향</div>';
+        r.actions.forEach(function(a, i) {
+          html += '<div style="font-size:9.5px;color:#14532d;font-weight:'+(i===0?'800':'600')+';line-height:1.6;">→ '+a+'</div>';
+        });
+      }
+      act.innerHTML = html;
+      card.appendChild(act);
+    }
+
+    container.appendChild(card);
+  }
+
+  renderGroup(needFix,  '⚠️', '개선 필요',   '#fee2e2', '#dc2626');
+  renderGroup(watchOut, '🔶', '효율 주의',    '#fef3c7', '#d97706');
+  renderGroup(goodOnes, '🏆', '고효율 유지',  '#dcfce7', '#16a34a');
 }
 
-/* ─── 탭3: 📋 목록 ─── */
 function renderListTab(container, metrics, maxPerSales) {
   const groupItems = buildGroupItems(metrics);
   const hasGroups  = !!groupItems;
+
+  // 클릭 안내 배지
+  const hint = document.createElement('div');
+  hint.style.cssText = 'padding:6px 14px 0;';
+  hint.innerHTML = '<span style="font-size:9px;color:#94a3b8;display:flex;align-items:center;gap:3px;"><span>👆</span><span>구역 클릭 시 도면에서 위치 이동</span></span>';
+  container.appendChild(hint);
+
+  // ── 정렬 바 (목록 탭 전용) ──
+  const sortBar = document.createElement('div');
+  sortBar.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 14px 4px;border-bottom:1px solid #f1f5f9;';
+  sortBar.innerHTML = '<span style="font-size:9px;color:#6b7280;font-weight:700;">정렬</span>';
+  var _SORT_BTNS = [{key:'perSales',label:'평당매출'},{key:'effIdx',label:'효율지수'},{key:'sales',label:'매출액'}];
+  function _updateSortBtns() {
+    sortBar.querySelectorAll('.list-sort-btn').forEach(function(b) {
+      var active = b.dataset.key === salesSortKey;
+      b.style.background  = active ? '#7c2d12'   : 'transparent';
+      b.style.color       = active ? '#fb923c'   : '#6b7280';
+      b.style.borderColor = active ? '#f97316'   : '#d1d5db';
+      b.textContent = b.dataset.label + (active ? (salesSortAsc ? ' ▲' : ' ▼') : '');
+    });
+  }
+  _SORT_BTNS.forEach(function(s) {
+    var btn = document.createElement('button');
+    btn.className = 'list-sort-btn';
+    btn.dataset.key = s.key; btn.dataset.label = s.label;
+    btn.style.cssText = 'font-family:inherit;font-size:10px;font-weight:700;padding:3px 9px;border-radius:5px;border:1.5px solid #d1d5db;background:transparent;color:#6b7280;cursor:pointer;transition:all .1s;';
+    btn.onclick = function() {
+      if (salesSortKey === s.key) salesSortAsc = !salesSortAsc;
+      else { salesSortKey = s.key; salesSortAsc = false; }
+      _updateSortBtns();
+      var gc = document.getElementById('gc-sales');
+      var panel = document.querySelector('#salesWrap [data-sales-panel]');
+      if (gc && panel) refreshSalesContent(gc, panel); else renderSalesView();
+    };
+    sortBar.appendChild(btn);
+  });
+  _updateSortBtns();
+  container.appendChild(sortBar);
+
 
   // 정렬할 아이템 생성
   let items;
@@ -10823,6 +11437,7 @@ function renderListTab(container, metrics, maxPerSales) {
     row.style.cssText='display:grid;grid-template-columns:1fr 60px 40px 40px 30px;align-items:center;padding:7px 12px;gap:4px;border-bottom:1px solid #f1f5f9;background:'+(i%2===0?'#fff':'#fafafa')+';cursor:pointer;transition:background .08s;';
     row.onmouseover=()=>{row.style.background='#eff6ff';r.zids.forEach(id=>highlightSalesMapZone(id,true));};
     row.onmouseout= ()=>{row.style.background=(i%2===0?'#fff':'#fafafa');r.zids.forEach(id=>highlightSalesMapZone(id,false));};
+    row.onclick    =()=>{ if(r.zids[0]) focusSalesMapZone(r.zids[0]); };
 
     const nm=document.createElement('div');
     nm.style.cssText='display:flex;align-items:center;gap:5px;min-width:0;';
@@ -10847,10 +11462,12 @@ function renderListTab(container, metrics, maxPerSales) {
 function renderGroupTab(container, metrics) {
   const entries=Object.entries(window.salesGroups);
   const metricMap={};metrics.forEach(m=>{metricMap[m.z.id]=m;});
+
+  // ★ 그룹별 분석 카드 (스크롤 영역)
   if(!entries.length){
     const empty=document.createElement('div');
     empty.style.cssText='padding:40px 20px;text-align:center;';
-    empty.innerHTML='<div style="font-size:32px;margin-bottom:10px;">🗂</div><div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:4px;">그룹이 없습니다</div><div style="font-size:11px;color:#9ca3af;">🗂 구역 그룹 버튼으로<br>집기 묶음을 지정하세요</div>';
+    empty.innerHTML='<div style="font-size:32px;margin-bottom:10px;">🗂</div><div style="font-size:13px;font-weight:800;color:#374151;margin-bottom:4px;">그룹이 없습니다</div><div style="font-size:11px;color:#9ca3af;">' + (isAdmin ? '🗂 구역 그룹 버튼으로<br>집기를 묶어 보세요' : '관리자가 그룹을 설정하면<br>여기서 확인할 수 있습니다') + '</div>';
     container.appendChild(empty);return;
   }
   entries.forEach(function(entry){
@@ -10879,6 +11496,9 @@ function renderGroupTab(container, metrics) {
       const mr=document.createElement('div');mr.style.cssText='display:flex;align-items:center;gap:8px;padding:4px 2px;cursor:pointer;border-radius:4px;';
       mr.onmouseover=()=>{mr.style.background='#f0f9ff';highlightSalesMapZone(m.z.id,true);};
       mr.onmouseout= ()=>{mr.style.background='';highlightSalesMapZone(m.z.id,false);};
+      mr.onclick    =()=>{ focusSalesMapZone(m.z.id); };
+      mr.onclick    =()=>{ focusSalesMapZone(m.z.id); };
+      mr.onclick    =()=>{ focusSalesMapZone(m.z.id); };
       const bw=Math.max(2,Math.round((m.perSales/maxGPS)*50));
       mr.innerHTML='<span style="font-size:9px;color:#9ca3af;font-weight:700;width:16px;text-align:right;">'+(i+1)+'</span><span style="font-size:10px;font-weight:700;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+m.z.name+'</span><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(m.perSales,maxGPS)+';"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(m.perSales).toLocaleString()+'만</span></div>';
       ml.appendChild(mr);
@@ -10920,7 +11540,7 @@ function getSalesGroupOfZone(zid) {
 }
 
 function toggleSalesGroupEdit() {
-  if (!isAdmin) { showToast('관리자만 그룹을 지정할 수 있습니다'); return; }
+  if (!isAdmin || isViewer) { showToast('관리자만 그룹을 지정할 수 있습니다'); return; }
   salesGroupEditMode = !salesGroupEditMode;
   const btn = document.getElementById('salGroupEditBtn');
   if (btn) {
@@ -10928,103 +11548,42 @@ function toggleSalesGroupEdit() {
     btn.style.color       = salesGroupEditMode ? '#fff'    : '#a5b4fc';
     btn.textContent       = salesGroupEditMode ? '🗂 그룹 지정 중...' : '🗂 구역 그룹';
   }
+  // ★ 사이드 패널 즉시 갱신
+  if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
   if (salesGroupEditMode) {
-    renderSalesGroupPanel();
+    // 그룹 편집 모드 ON: SVG pointer-events 비활성화 + 클릭 리스너 등록
+    document.querySelectorAll('#gc-sales .sales-svg-overlay').forEach(function(s) {
+      s.style.pointerEvents = 'none';
+    });
+    document.querySelectorAll('#gc-sales .sales-svg-overlay path[fill="transparent"]').forEach(function(p) {
+      p.style.pointerEvents = 'none';
+    });
+    setTimeout(function() {
+      if (typeof addSalesGroupClickListeners === 'function') addSalesGroupClickListeners();
+    }, 80);
   } else {
+    // 그룹 편집 모드 OFF: SVG pointer-events 복원
+    document.querySelectorAll('#gc-sales .sales-svg-overlay').forEach(function(s) {
+      s.style.pointerEvents = 'all';
+    });
+    document.querySelectorAll('#gc-sales .sales-svg-overlay path[fill="transparent"]').forEach(function(p) {
+      p.style.pointerEvents = 'all';
+    });
     salesGroupActiveId = null;
     const panel = document.getElementById('salesGroupPanel');
     if (panel) panel.style.display = 'none';
-    // 도면 클릭 이벤트 해제
     removeSalesGroupClickListeners();
-    // 도면 새로고침
     renderSalesView();
   }
 }
 
 function renderSalesGroupPanel() {
-  let panel = document.getElementById('salesGroupPanel');
-  if (!panel) {
-    panel = document.createElement('div');
-    panel.id = 'salesGroupPanel';
-    panel.style.cssText = 'position:fixed;right:444px;top:50%;transform:translateY(-50%);z-index:8000;background:#1e293b;border:2px solid #6366f1;border-radius:12px;padding:14px;width:230px;box-shadow:0 8px 32px rgba(0,0,0,.4);font-family:inherit;';
-    document.body.appendChild(panel);
-  }
-  panel.style.display = 'block';
-  panel.innerHTML = '';
-
-  // 제목
-  const title = document.createElement('div');
-  title.style.cssText = 'font-size:11px;font-weight:800;color:#a5b4fc;letter-spacing:.4px;margin-bottom:8px;';
-  title.textContent = '🗂 구역 그룹 지정';
-  panel.appendChild(title);
-
-  const hint = document.createElement('div');
-  hint.style.cssText = 'font-size:9px;color:#64748b;margin-bottom:8px;';
-  hint.textContent = '그룹 선택 후 도면 구역 클릭으로 묶으세요';
-  panel.appendChild(hint);
-
-  // 그룹 목록
-  const groups = window.salesGroups;
-  const entries = Object.entries(groups);
-  if (!entries.length) {
-    const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:10px;color:#475569;padding:6px 0;';
-    empty.textContent = '그룹 없음';
-    panel.appendChild(empty);
-  } else {
-    entries.forEach(function(_entry) {
-      var gid = _entry[0], g = _entry[1];
-      var isActive = salesGroupActiveId === gid;
-
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid #334155;';
-
-      var dot = document.createElement('div');
-      dot.style.cssText = 'width:11px;height:11px;border-radius:3px;background:' + g.color + ';flex-shrink:0;';
-
-      var lbl = document.createElement('span');
-      lbl.style.cssText = 'flex:1;font-size:11px;font-weight:700;color:' + (isActive ? '#fff' : '#94a3b8') + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-      lbl.textContent = g.label;
-
-      var cnt = document.createElement('span');
-      cnt.style.cssText = 'font-size:9px;color:#64748b;flex-shrink:0;';
-      cnt.textContent = (g.zoneIds || []).length + '개';
-
-      var selBtn = document.createElement('button');
-      selBtn.style.cssText = 'font-size:9px;padding:2px 6px;border-radius:4px;border:1px solid ' + (isActive ? '#a5b4fc' : '#475569') + ';background:' + (isActive ? '#4f46e5' : 'transparent') + ';color:' + (isActive ? '#fff' : '#94a3b8') + ';cursor:pointer;font-family:inherit;flex-shrink:0;';
-      selBtn.textContent = '선택';
-      selBtn.onclick = (function(id){ return function(){ selectSalesGroup(id); }; })(gid);
-
-      var delBtn = document.createElement('button');
-      delBtn.style.cssText = 'font-size:9px;padding:2px 5px;border-radius:4px;border:1px solid #475569;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;flex-shrink:0;';
-      delBtn.textContent = '✕';
-      delBtn.onclick = (function(id){ return function(){ deleteSalesGroup(id); }; })(gid);
-
-      row.appendChild(dot); row.appendChild(lbl); row.appendChild(cnt);
-      row.appendChild(selBtn); row.appendChild(delBtn);
-      panel.appendChild(row);
-    });
-  }
-
-  // 추가 버튼
-  var addBtn = document.createElement('button');
-  addBtn.style.cssText = 'width:100%;margin-top:10px;font-family:inherit;font-size:10px;font-weight:700;padding:6px;border-radius:6px;border:1.5px dashed #6366f1;background:transparent;color:#a5b4fc;cursor:pointer;';
-  addBtn.textContent = '+ 새 그룹 추가';
-  addBtn.onclick = addSalesGroup;
-  panel.appendChild(addBtn);
-
-  // 완료 버튼
-  var doneBtn = document.createElement('button');
-  doneBtn.style.cssText = 'width:100%;margin-top:6px;font-family:inherit;font-size:10px;font-weight:700;padding:6px;border-radius:6px;border:none;background:#16a34a;color:#fff;cursor:pointer;';
-  doneBtn.textContent = '✓ 완료';
-  doneBtn.onclick = toggleSalesGroupEdit;
-  panel.appendChild(doneBtn);
-
-  // 도면 구역 클릭 이벤트 등록
-  addSalesGroupClickListeners();
+  // ★ 우측 패널 탭 안의 인라인 UI로 통합됨 — 탭 전환만 수행
+  switchSalesPanelTab('tab-group');
 }
 
 function addSalesGroup() {
+  if (!isAdmin || isViewer) { showToast('관리자만 그룹을 추가할 수 있습니다'); return; }
   const num = Object.keys(window.salesGroups).length + 1;
   const label = prompt('그룹 이름을 입력하세요 (예: 구역' + num + ')', '구역' + num);
   if (!label) return;
@@ -11032,14 +11591,21 @@ function addSalesGroup() {
   const color = SALES_GROUP_COLORS[(num - 1) % SALES_GROUP_COLORS.length];
   window.salesGroups[gid] = { label, color, zoneIds: [] };
   salesGroupActiveId = gid;
-  renderSalesGroupPanel();
-  renderSalesView();
+  // 도면 히트맵만 갱신 (DOM 재생성 최소화)
+  const _gcS = document.getElementById('gc-sales');
+  const _tbl = document.querySelector('#salesWrap [data-sales-panel]');
+  if (_gcS && _tbl) { refreshSalesContent(_gcS, _tbl); } else { renderSalesView(); }
+  // 사이드 패널 + 클릭 리스너 갱신
+  setTimeout(function() {
+    if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
+    if (typeof addSalesGroupClickListeners === 'function') addSalesGroupClickListeners();
+  }, 80);
   showToast('그룹 "' + label + '" 추가됨 — 도면에서 구역을 클릭해 추가하세요');
 }
 
 function selectSalesGroup(gid) {
   salesGroupActiveId = (salesGroupActiveId === gid) ? null : gid;
-  renderSalesGroupPanel();
+  if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
 }
 
 function deleteSalesGroup(gid) {
@@ -11048,17 +11614,22 @@ function deleteSalesGroup(gid) {
   if (!confirm('"' + g.label + '" 그룹을 삭제할까요?')) return;
   delete window.salesGroups[gid];
   if (salesGroupActiveId === gid) salesGroupActiveId = null;
-  renderSalesGroupPanel();
-  renderSalesView();
+  const _gcS2 = document.getElementById('gc-sales');
+  const _tbl2 = document.querySelector('#salesWrap [data-sales-panel]');
+  if (_gcS2 && _tbl2) { refreshSalesContent(_gcS2, _tbl2); } else { renderSalesView(); }
+  if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
   showToast('그룹 삭제됨');
 }
 
 let _sgClickHandlers = [];
 function addSalesGroupClickListeners() {
   removeSalesGroupClickListeners();
-  document.querySelectorAll('#gc-sales .zb').forEach(el => {
+  const zbEls = document.querySelectorAll('#gc-sales .zb');
+  console.log('[SGClick] zb수:', zbEls.length, '| activeId:', salesGroupActiveId, '| editMode:', salesGroupEditMode);
+  zbEls.forEach(el => {
     const zid = el.id.replace('sz-', '');
     const handler = function(e) {
+      console.log('[SGClick] 집기 클릭됨 zid:', zid, '| activeId:', salesGroupActiveId, '| editMode:', salesGroupEditMode);
       e.stopPropagation();
       if (!salesGroupEditMode || !salesGroupActiveId) {
         showToast('먼저 패널에서 그룹을 선택하세요'); return;
@@ -11069,7 +11640,11 @@ function addSalesGroupClickListeners() {
       const idx = g.zoneIds.indexOf(zid);
       if (idx >= 0) {
         g.zoneIds.splice(idx, 1);
-        el.style.outline = '';
+        // ★ 제거: 회색으로 복원
+        el.style.background  = '#9ca3af';
+        el.style.border      = '1px solid #6b7280';
+        el.style.boxShadow   = 'none';
+        el.style.opacity     = '0.55';
         showToast('"' + (el.title || zid) + '" 제거');
       } else {
         // 다른 그룹에서 제거
@@ -11080,11 +11655,15 @@ function addSalesGroupClickListeners() {
           }
         });
         g.zoneIds.push(zid);
-        el.style.outline = '';
-        el.style.outlineOffset = '2px';
+        // ★ 추가: 그룹 색으로 강조
+        el.style.background  = g.color + '33';
+        el.style.border      = '2.5px solid ' + g.color;
+        el.style.boxShadow   = '0 0 0 2px ' + g.color + '66';
+        el.style.opacity     = '1';
         showToast('"' + g.label + '" 에 추가');
       }
-      renderSalesGroupPanel();
+      renderSalesGroupPanel();  // → _refreshGroupSidePanel 으로 갱신
+      if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
       // 테이블 그룹 뱃지 갱신
       updateSalesTableGroupBadges();
     };
@@ -11205,6 +11784,76 @@ function highlightSalesMapZone(zoneId, on, scroll) {
     el.style.filter = on ? 'brightness(1.15) drop-shadow(0 0 6px rgba(249,115,22,.7))' : '';
     el.style.zIndex = on ? '10' : '';
   }
+}
+
+/* ── 도면 클릭 포커스: 해당 구역으로 스크롤 + 펄스 강조 ── */
+function focusSalesMapZone(zoneId) {
+  const el = document.getElementById('sz-' + zoneId);
+  const mapCol = document.getElementById('salesMapCol');
+  if (!el || !mapCol) return;
+
+  // 현재 적용 중인 scale
+  const scale = window.salesMapScale || 0.6;
+  const PAD   = 20;
+
+  // scaler의 실제 위치 (left/top)
+  const scaler = document.getElementById('salesMapScaler');
+  const scalerLeft = scaler ? (parseFloat(scaler.style.left) || 0) : PAD;
+  const scalerTop  = scaler ? (parseFloat(scaler.style.top)  || 0) : PAD;
+
+  // el의 gc-sales 내 절대 위치 계산 (offsetLeft/Top 재귀 합산, gc-sales 기준)
+  let offL = 0, offT = 0, node = el;
+  const gcSales = document.getElementById('gc-sales');
+  while (node && node !== gcSales && node !== mapCol) {
+    offL += node.offsetLeft || 0;
+    offT += node.offsetTop  || 0;
+    node = node.offsetParent;
+  }
+  // gc-sales 자체의 left/top (salesMapScalerInner 내부)
+  if (gcSales) {
+    offL += parseFloat(gcSales.style.left) || 0;
+    offT += parseFloat(gcSales.style.top)  || 0;
+  }
+
+  // mapCol 기준 실제 픽셀 위치 = scalerLeft + offL * scale
+  const elW = (el.offsetWidth  || 80) * scale;
+  const elH = (el.offsetHeight || 60) * scale;
+  const elX = scalerLeft + offL * scale;
+  const elY = scalerTop  + offT * scale;
+
+  // 구역이 뷰포트 중앙에 오도록 스크롤
+  const targetLeft = elX + elW / 2 - mapCol.clientWidth  / 2;
+  const targetTop  = elY + elH / 2 - mapCol.clientHeight / 2;
+
+  mapCol.scrollTo({ left: Math.max(0, targetLeft), top: Math.max(0, targetTop), behavior: 'smooth' });
+
+  // 기존 강조 제거
+  if (window._salesFocusPrev && window._salesFocusPrev !== zoneId) {
+    const prev = document.getElementById('sz-' + window._salesFocusPrev);
+    if (prev) {
+      prev.style.filter   = '';
+      prev.style.zIndex   = '';
+      prev.style.outline  = '';
+    }
+  }
+  window._salesFocusPrev = zoneId;
+
+  // 펄스 강조 (1.5초 후 자동 해제)
+  el.style.filter  = 'brightness(1.2) drop-shadow(0 0 10px rgba(249,115,22,.9))';
+  el.style.zIndex  = '20';
+  el.style.outline = '3px solid #f97316';
+  el.style.outlineOffset = '2px';
+
+  clearTimeout(window._salesFocusTimer);
+  window._salesFocusTimer = setTimeout(function() {
+    const target = document.getElementById('sz-' + zoneId);
+    if (target) {
+      target.style.filter  = '';
+      target.style.zIndex  = '';
+      target.style.outline = '';
+      target.style.outlineOffset = '';
+    }
+  }, 1800);
 }
 
 /* ── 테이블 행 하이라이트 (도면 hover → 테이블 동기화) ── */
@@ -11328,10 +11977,44 @@ function renderGroupInputSection(body, groups) {
     hd.style.cssText =
       'display:flex;align-items:center;gap:8px;padding:9px 13px;' +
       'background:'+g.color+';';
+    // 카테고리 선택 드롭다운
+    var CAT_OPTIONS = [
+      { key:'', label:'카테고리 선택' },
+      { key:'축산', label:'축산' }, { key:'수산', label:'수산' },
+      { key:'채소', label:'채소' }, { key:'농산', label:'농산·과일' },
+      { key:'공산', label:'공산' }, { key:'델리', label:'델리' },
+      { key:'일용', label:'일용' }, { key:'시즌', label:'시즌' },
+      { key:'로컬', label:'로컬' }, { key:'기타', label:'기타' },
+    ];
+    var savedCat = g.category || '';
+    var catSel = document.createElement('select');
+    catSel.id = 'gdsi_cat_' + gid;
+    catSel.style.cssText =
+      'font-family:inherit;font-size:10px;font-weight:800;padding:3px 8px 3px 6px;' +
+      'border-radius:5px;border:1.5px solid rgba(255,255,255,.5);' +
+      'background:rgba(255,255,255,.2);color:#fff;cursor:pointer;' +
+      'outline:none;max-width:90px;';
+    CAT_OPTIONS.forEach(function(opt) {
+      var o = document.createElement('option');
+      o.value = opt.key; o.textContent = opt.label;
+      o.style.color = '#111'; o.style.background = '#fff';
+      if (opt.key === savedCat) o.selected = true;
+      catSel.appendChild(o);
+    });
+    catSel.onchange = function() {
+      if (window.salesGroups && window.salesGroups[gid]) {
+        window.salesGroups[gid].category = catSel.value;
+        if (typeof saveData === 'function') saveData();
+        if (typeof renderSalesView === 'function') renderSalesView();
+      }
+    };
+
     hd.innerHTML =
       '<div style="font-size:13px;font-weight:900;color:#fff;flex:1;">'+g.label+'</div>' +
-      '<div style="font-size:10px;color:rgba(255,255,255,.75);">'+zids.length+'개 집기</div>';
+      '<div style="font-size:10px;color:rgba(255,255,255,.75);margin-right:6px;">'+zids.length+'개 집기</div>';
+    hd.appendChild(catSel);
     card.appendChild(hd);
+
 
     // 집기 목록 (읽기 전용 소형 뱃지)
     const zoneNames = zids.map(zid => {
