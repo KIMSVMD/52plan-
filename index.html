@@ -2332,7 +2332,10 @@ window.onerror = function(msg, src, line, col, err) {
  </div>
 
  <!-- 구역 미선택 안내 -->
- <div class="rpemp" id="rpEmp" style="flex:1;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+ <div class="rpemp" id="rpEmp" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;">
+  <span style="font-size:24px;margin-bottom:8px;">↑</span>
+  <span style="font-size:11px;color:var(--muted);">구역 클릭 시 상세 편집</span>
+ </div>
  <div id="rpEdit" style="display:none;flex:1;overflow-y:auto;padding:10px;min-height:0;">
 
  <!-- 뷰어 안내 -->
