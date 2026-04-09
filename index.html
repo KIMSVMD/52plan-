@@ -3165,11 +3165,31 @@ function getMonthZoneOverride(zoneId) {
  return result;
 }
 
+// 특정 월 인덱스 기준으로 오버라이드 조회 (평당매출탭 등 다른 월 컨텍스트용)
+function getMonthZoneOverrideAt(zoneId, monthIdx) {
+ let result = null;
+ for (let m = monthIdx; m >= 0; m--) {
+  if (monthZoneOverrides[m] && monthZoneOverrides[m][zoneId]) {
+   result = monthZoneOverrides[m][zoneId];
+   break;
+  }
+ }
+ return result;
+}
+
 // 현재 월의 오버라이드가 적용된 구역 반환 (_hidden이면 null 반환)
 function getEffectiveZone(z) {
  const ovr = getMonthZoneOverride(z.id);
  if (!ovr) return z;
  if (ovr._hidden) return null; // 이 달 이후 삭제된 집기
+ return Object.assign({}, z, ovr);
+}
+
+// 특정 월 기준 오버라이드 적용 (평당매출탭용)
+function getEffectiveZoneAt(z, monthIdx) {
+ const ovr = getMonthZoneOverrideAt(z.id, monthIdx);
+ if (!ovr) return z;
+ if (ovr._hidden) return null;
  return Object.assign({}, z, ovr);
 }
 
@@ -9379,9 +9399,12 @@ function getImproveSuggestion(m) {
 function calcSalesMetrics() {
  ensureSampleSalesData();
  const nonSales = new Set(['입구','기둥']);
- // getEffectiveZone으로 월별 오버라이드(위치/크기/숨김) 반영
+ // 평당매출탭의 현재 월(currentSalesMonth) 기준으로 오버라이드 적용
+ // 종합 탭(null)이면 curMonthIdx 사용
+ const _salesMoIdx = (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined)
+  ? window.currentSalesMonth : curMonthIdx;
  const dataZones = zones
- .map(z => (typeof getEffectiveZone === 'function') ? getEffectiveZone(z) : z)
+ .map(z => (typeof getEffectiveZoneAt === 'function') ? getEffectiveZoneAt(z, _salesMoIdx) : z)
  .filter(z => z && // _hidden 제외
   !nonSales.has(z.name) &&
   !nonSales.has(z.type) &&
@@ -9768,6 +9791,28 @@ function refreshSalesContent(gcEl, panelEl) {
  const zoneGroupMap = {};
  Object.entries(groups).forEach(([gid, g]) => {
  (g.zoneIds||[]).forEach(zid => { zoneGroupMap[zid] = {gid, g}; });
+ });
+
+ // ── currentSalesMonth 기준으로 집기 위치/크기/숨김 갱신 ──
+ const _rSalMoIdx = (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined)
+  ? window.currentSalesMonth : curMonthIdx;
+ const _rCELL = (typeof CELL !== 'undefined') ? CELL : 72;
+ const _rROW  = (typeof ROW  !== 'undefined') ? ROW  : 46;
+ const _rGAP  = (typeof GAP  !== 'undefined') ? GAP  : 3;
+ const _rZonesMap = new Map();
+ if (typeof zones !== 'undefined') zones.forEach(z => _rZonesMap.set(z.id, z));
+ gcEl.querySelectorAll('.zb').forEach(zEl => {
+  const _rzid = zEl.id.replace('sz-', '');
+  const _rzOrig = _rZonesMap.get(_rzid);
+  if (!_rzOrig) return;
+  const _reff = (typeof getEffectiveZoneAt === 'function')
+   ? getEffectiveZoneAt(_rzOrig, _rSalMoIdx) : _rzOrig;
+  if (!_reff) { zEl.style.display = 'none'; return; }
+  zEl.style.display = '';
+  zEl.style.left   = (_reff.col * (_rCELL + _rGAP) + 8) + 'px';
+  zEl.style.top    = (_reff.row * (_rROW  + _rGAP) + 8) + 'px';
+  zEl.style.width  = (_reff.cols * _rCELL + (_reff.cols - 1) * _rGAP) + 'px';
+  zEl.style.height = (_reff.rows * _rROW  + (_reff.rows - 1) * _rGAP) + 'px';
  });
 
  gcEl.querySelectorAll('.zb').forEach(zEl => {
@@ -10407,6 +10452,32 @@ function renderSalesMap(container, metrics, maxPerSales) {
  if (typeof zones !== 'undefined') {
  zones.forEach(function(z) { _zonesMap.set(z.id, z); });
  }
+
+ // ── currentSalesMonth 기준으로 집기 위치/크기/숨김 업데이트 ──
+ // cloneNode는 curMonthIdx 기준 DOM이라, 평당매출 월과 다를 수 있음
+ const _salMoIdx = (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined)
+  ? window.currentSalesMonth : curMonthIdx;
+ const _CELL = (typeof CELL !== 'undefined') ? CELL : 72;
+ const _ROW = (typeof ROW !== 'undefined') ? ROW : 46;
+ const _GAP = (typeof GAP !== 'undefined') ? GAP : 3;
+ scalerClone.querySelectorAll('.zb').forEach(zEl => {
+  const _zid = zEl.id.replace('z-', '');
+  const _zOrig = _zonesMap.get(_zid);
+  if (!_zOrig) return;
+  const _effZ = (typeof getEffectiveZoneAt === 'function')
+   ? getEffectiveZoneAt(_zOrig, _salMoIdx) : _zOrig;
+  if (!_effZ) {
+   // _hidden: 이 달에 없는 집기 숨김
+   zEl.style.display = 'none';
+   return;
+  }
+  // 위치/크기를 currentSalesMonth 기준으로 업데이트
+  zEl.style.left = (_effZ.col * (_CELL + _GAP) + 8) + 'px';
+  zEl.style.top  = (_effZ.row * (_ROW  + _GAP) + 8) + 'px';
+  zEl.style.width  = (_effZ.cols * _CELL + (_effZ.cols - 1) * _GAP) + 'px';
+  zEl.style.height = (_effZ.rows * _ROW  + (_effZ.rows - 1) * _GAP) + 'px';
+  zEl.style.display = '';
+ });
 
  // ── 1) 개별 집기 스타일 처리 ──
  scalerClone.querySelectorAll('.zb').forEach(zEl => {
