@@ -1202,7 +1202,17 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  if (data.salesGroups) window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
  if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
  if (data.labelOffsets) { window.storeLabelOffsetsMap = window.storeLabelOffsetsMap||{}; window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets)); }
- if (data.monthlySales) window.monthlySalesStore[store] = JSON.parse(JSON.stringify(data.monthlySales));
+ if (data.monthlySales) {
+   var _loadedMonthly = JSON.parse(JSON.stringify(data.monthlySales));
+   var _masterSG = data.salesGroups || {};
+   // 각 월에 salesGroups 없으면 최상위 salesGroups로 백필
+   Object.keys(_loadedMonthly).forEach(function(mk) {
+     if (!_loadedMonthly[mk].salesGroups || !Object.keys(_loadedMonthly[mk].salesGroups).length) {
+       _loadedMonthly[mk].salesGroups = JSON.parse(JSON.stringify(_masterSG));
+     }
+   });
+   window.monthlySalesStore[store] = _loadedMonthly;
+ }
  // 현재 지점이면 활성 변수에도 즉시 적용
  if (store === (window.currentStore || 'gs')) {
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
@@ -1212,6 +1222,14 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  window.salesGroups = JSON.parse(JSON.stringify(data.salesGroups || {}));
  window.salesGroupData = JSON.parse(JSON.stringify(data.salesGroupData || {}));
  window.salesLabelOffsets= JSON.parse(JSON.stringify(data.labelOffsets || {}));
+    window.productMaster = JSON.parse(JSON.stringify(data.productMaster || []));
+    window.zoneProducts = JSON.parse(JSON.stringify(data.zoneProducts || {}));
+    window.productSalesData = JSON.parse(JSON.stringify(data.productSalesData || {}));
+    // storeSalesGroupsMap도 동시 갱신 (폴백 소스)
+    if (data.salesGroups && Object.keys(data.salesGroups).length > 0) {
+      if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
+      window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
+    }
  }
  }
 
@@ -1298,7 +1316,17 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  if (data.salesGroups) window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
  if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
  if (data.labelOffsets) { window.storeLabelOffsetsMap = window.storeLabelOffsetsMap||{}; window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets)); }
- if (data.monthlySales) window.monthlySalesStore[store] = JSON.parse(JSON.stringify(data.monthlySales));
+ if (data.monthlySales) {
+   var _loadedMonthly = JSON.parse(JSON.stringify(data.monthlySales));
+   var _masterSG = data.salesGroups || {};
+   // 각 월에 salesGroups 없으면 최상위 salesGroups로 백필
+   Object.keys(_loadedMonthly).forEach(function(mk) {
+     if (!_loadedMonthly[mk].salesGroups || !Object.keys(_loadedMonthly[mk].salesGroups).length) {
+       _loadedMonthly[mk].salesGroups = JSON.parse(JSON.stringify(_masterSG));
+     }
+   });
+   window.monthlySalesStore[store] = _loadedMonthly;
+ }
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
  window.areaData = JSON.parse(JSON.stringify(data.areaData || {}));
  window.manualTotalSales = data.manualTotalSales || 0;
@@ -1306,6 +1334,9 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  window.salesGroups = JSON.parse(JSON.stringify(data.salesGroups || {}));
  window.salesGroupData = JSON.parse(JSON.stringify(data.salesGroupData || {}));
  window.salesLabelOffsets= JSON.parse(JSON.stringify(data.labelOffsets || {}));
+    window.productMaster = JSON.parse(JSON.stringify(data.productMaster || []));
+    window.zoneProducts = JSON.parse(JSON.stringify(data.zoneProducts || {}));
+    window.productSalesData = JSON.parse(JSON.stringify(data.productSalesData || {}));
  // 평당매출 탭이 열려있으면 갱신
  if (typeof renderSalesView === 'function' && document.getElementById('salesWrap') &&
  document.getElementById('salesWrap').style.display !== 'none') {
@@ -5479,7 +5510,7 @@ function deleteSel(){ saveUndoState();
  }
  // storeSalesGroupsMap 백업
  if(!window.storeSalesGroupsMap) window.storeSalesGroupsMap={};
- window.storeSalesGroupsMap[currentStore]=JSON.parse(JSON.stringify(window.salesGroups||{}));
+ _safeSaveGroups(currentStore, window.salesGroups);
  // monthlySales에서도 제거
  if(window.monthlySalesStore && window.monthlySalesStore[currentStore]){
  Object.values(window.monthlySalesStore[currentStore]).forEach(function(mo){
@@ -5548,7 +5579,7 @@ function mergeZones() {
  }
  });
  if(!window.storeSalesGroupsMap) window.storeSalesGroupsMap={};
- window.storeSalesGroupsMap[currentStore]=JSON.parse(JSON.stringify(window.salesGroups||{}));
+ _safeSaveGroups(currentStore, window.salesGroups);
  if(typeof syncToFirebase==='function') syncToFirebase();
 
  showToast(' ' + ids.length + '개 구역 합치기 완료');
@@ -6172,13 +6203,28 @@ window._getSavePayload = function(store) {
  var saveAreaData = isCurrent ? JSON.parse(JSON.stringify(window.areaData || {})) : JSON.parse(JSON.stringify((window.storeAreaDataMap && window.storeAreaDataMap[store]) || {}));
  var saveManualSales = isCurrent ? (window.manualTotalSales || 0) : ((window.storeManualSalesMap && window.storeManualSalesMap[store]) || 0);
  var saveManualArea = isCurrent ? (window.manualTotalArea || 0) : ((window.storeManualAreaMap && window.storeManualAreaMap[store]) || 0);
- var saveSalesGroups = isCurrent ? JSON.parse(JSON.stringify(window.salesGroups || {})) : JSON.parse(JSON.stringify((window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {}));
+ // salesGroups: 항상 _getActiveGroups 헬퍼로 가져옴 (빈값이면 storeSalesGroupsMap 폴백)
+ var saveSalesGroups = isCurrent
+   ? JSON.parse(JSON.stringify(_getActiveGroups(store)))
+   : JSON.parse(JSON.stringify((window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {}));
  var saveSalesGroupData = isCurrent ? JSON.parse(JSON.stringify(window.salesGroupData || {})) : JSON.parse(JSON.stringify((window.storeSalesGroupDataMap && window.storeSalesGroupDataMap[store]) || {}));
  var saveLabelOffsets = isCurrent ? JSON.parse(JSON.stringify(window.salesLabelOffsets || {})) : JSON.parse(JSON.stringify((window.storeLabelOffsetsMap && window.storeLabelOffsetsMap[store]) || {}));
 
  // ── 월별 평당매출 데이터 ──
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
- var saveMonthlySales = JSON.parse(JSON.stringify(window.monthlySalesStore[store] || {}));
+ // monthlySalesStore 저장 시 각 월에 salesGroups 항상 포함 (없으면 현재 그룹으로 채움)
+ var _masterGroups = isCurrent
+   ? _getActiveGroups(store)
+   : ((window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {});
+ var _rawMonthly = window.monthlySalesStore[store] || {};
+ var saveMonthlySales = {};
+ Object.keys(_rawMonthly).forEach(function(mk) {
+   var md = _rawMonthly[mk];
+   var mdGroups = md.salesGroups || {};
+   saveMonthlySales[mk] = Object.assign({}, md, {
+     salesGroups: Object.keys(mdGroups).length > 0 ? mdGroups : JSON.parse(JSON.stringify(_masterGroups))
+   });
+ });
 
  const payload = {
  name: allNames[store] || store,
@@ -6197,6 +6243,9 @@ window._getSavePayload = function(store) {
  salesGroupData: saveSalesGroupData,
  labelOffsets: saveLabelOffsets,
  monthlySales: saveMonthlySales,
+    productMaster: JSON.parse(JSON.stringify(window.productMaster || [])),
+    zoneProducts: JSON.parse(JSON.stringify(window.zoneProducts || {})),
+    productSalesData: JSON.parse(JSON.stringify(window.productSalesData || {})),
  savedAt: Date.now()
  };
  console.log('[PAYLOAD]', store, '| canvasRotation:', payload.canvasRotation, '| textRotation:', payload.textRotation, '| catTagPos:', payload.catTagPos);
@@ -6216,7 +6265,22 @@ function syncToFirebase(){
  if (!window.storeAreaDataMap) window.storeAreaDataMap = {};
  if (!window.storeSalesGroupDataMap) window.storeSalesGroupDataMap = {};
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups || {}));
+ // salesGroups: _getActiveGroups로 항상 올바른 값 취득 (빈값이면 storeSalesGroupsMap 폴백)
+ var _activeGroups = _getActiveGroups(currentStore);
+ if (Object.keys(_activeGroups).length > 0) {
+   // window.salesGroups에도 복원 (이후 _getSavePayload에서 isCurrent 분기가 읽음)
+   window.salesGroups = JSON.parse(JSON.stringify(_activeGroups));
+ }
+ _safeSaveGroups(currentStore, _activeGroups);
+ // 모든 월의 monthlySalesStore에도 전파
+ if (Object.keys(_activeGroups).length > 0 && window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
+   Object.keys(window.monthlySalesStore[currentStore]).forEach(function(mk) {
+     var mData = window.monthlySalesStore[currentStore][mk];
+     if (!mData.salesGroups || !Object.keys(mData.salesGroups).length) {
+       mData.salesGroups = JSON.parse(JSON.stringify(_activeGroups));
+     }
+   });
+ }
  window.storeSalesDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesData || {}));
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
@@ -6581,6 +6645,23 @@ function doSyncSave() {
  localStorage.setItem('_syncBranch', branch);
  localStorage.setItem('_syncName', name);
 
+ // ── 저장 전 salesGroups 반드시 확보 ──
+ // window.salesGroups가 비어있으면(종합보기 등) storeSalesGroupsMap에서 복원
+ var _doSyncGroups = _getActiveGroups(currentStore);
+ if (Object.keys(_doSyncGroups).length > 0) {
+   window.salesGroups = JSON.parse(JSON.stringify(_doSyncGroups));
+   _safeSaveGroups(currentStore, window.salesGroups);
+   // monthlySalesStore 각 월에도 salesGroups 백필
+   if (window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
+     Object.keys(window.monthlySalesStore[currentStore]).forEach(function(mk) {
+       var md = window.monthlySalesStore[currentStore][mk];
+       if (!md.salesGroups || !Object.keys(md.salesGroups).length) {
+         md.salesGroups = JSON.parse(JSON.stringify(_doSyncGroups));
+       }
+     });
+   }
+ }
+
  // diff 계산 (로그용)
  var diffs = _calcDiff(currentStore);
  var storeName = (window.storeNames || storeNames)[currentStore] || currentStore;
@@ -6606,7 +6687,7 @@ function doSyncSave() {
  if (!window.storeAreaDataMap) window.storeAreaDataMap = {};
  if (!window.storeSalesGroupDataMap) window.storeSalesGroupDataMap = {};
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups || {}));
+ _safeSaveGroups(currentStore, window.salesGroups);
  window.storeSalesDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesData || {}));
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
@@ -7940,7 +8021,7 @@ function switchStore(store) {
  window.storeManualSalesMap[currentStore] = window.manualTotalSales || 0;
  window.storeManualAreaMap[currentStore] = window.manualTotalArea || 0;
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups || {}));
+ _safeSaveGroups(currentStore, window.salesGroups);
  if (!window.storeSalesGroupDataMap) window.storeSalesGroupDataMap = {};
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
  // 레이블 오프셋 저장
@@ -8890,8 +8971,34 @@ window.operatingHours = window.operatingHours || 10; // 영업시간(시간) —
 
 // 평당매출 구역 그룹: { groupId: { label:'구역1', color:'#...', zoneIds:['z...','z...'] } }
 window.salesGroups = window.salesGroups || {};
+// ── salesGroups 안전 저장 헬퍼 (빈값으로 절대 덮어쓰지 않음) ──
+function _safeSaveGroups(store, groups) {
+  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
+  var current = window.storeSalesGroupsMap[store];
+  var incoming = groups || {};
+  // 새 값이 비어있으면 기존 값 유지
+  if (Object.keys(incoming).length === 0) return;
+  window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(incoming));
+}
+// ── 현재 salesGroups를 안전하게 가져오는 헬퍼 (빈값이면 storeSalesGroupsMap → _savedSalesGroupsBeforePM 폴백) ──
+function _getActiveGroups(store) {
+  var active = window.salesGroups || {};
+  if (Object.keys(active).length > 0) return active;
+  var fromMap = (window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {};
+  if (Object.keys(fromMap).length > 0) return fromMap;
+  return (window._savedSalesGroupsBeforePM && Object.keys(window._savedSalesGroupsBeforePM).length > 0)
+    ? window._savedSalesGroupsBeforePM : {};
+}
+
 // 평당매출 레이블 오프셋: { zoneId: {dx, dy} } — 관리자가 드래그한 위치
 window.salesLabelOffsets = window.salesLabelOffsets || {};
+// ── 상품 마스터 DB: ['코카콜라 1.5L', '오리온 초코파이', ...] ──
+window.productMaster = window.productMaster || [];
+// ── 구역별 상품 배치: { zoneId: { month: 'all'|'2025-04', products: ['상품A','상품B'] }[] } ──
+// 구조: { zoneId: [ { month:'all', products:['A','B'] }, { month:'2025-04', products:['C'] } ] }
+window.zoneProducts = window.zoneProducts || {};
+// ── 상품별 월매출: { 'YYYY-MM': { '상품명': 매출액(만원) } } ──
+window.productSalesData = window.productSalesData || {};
 let salesGroupEditMode = false; // 관리자: 그룹 지정 모드
 let salesGroupActiveId = null; // 현재 선택된 그룹 ID
 
@@ -9175,10 +9282,15 @@ function getSalesMonthData(monthIdx) {
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
  if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
  const md = window.monthlySalesStore[currentStore][_salesMonthKey(monthIdx)] || {};
+ // salesGroups: 해당 월에 없으면 전역 storeSalesGroupsMap → window.salesGroups 순으로 폴백
+ const fallbackGroups =
+   (window.storeSalesGroupsMap && window.storeSalesGroupsMap[currentStore] && Object.keys(window.storeSalesGroupsMap[currentStore]).length > 0)
+     ? window.storeSalesGroupsMap[currentStore]
+     : (window.salesGroups && Object.keys(window.salesGroups).length > 0 ? window.salesGroups : {});
  return {
  salesData: md.salesData || {},
  areaData: md.areaData || {},
- salesGroups: md.salesGroups || {},
+ salesGroups: (md.salesGroups && Object.keys(md.salesGroups).length > 0) ? md.salesGroups : JSON.parse(JSON.stringify(fallbackGroups)),
  salesGroupData: md.salesGroupData || {}
  };
 }
@@ -9191,7 +9303,7 @@ function saveSalesMonthData(monthIdx) {
  window.monthlySalesStore[currentStore][_salesMonthKey(monthIdx)] = {
  salesData: JSON.parse(JSON.stringify(window.salesData || {})),
  areaData: JSON.parse(JSON.stringify(window.areaData || {})),
- salesGroups: JSON.parse(JSON.stringify(window.salesGroups || {})),
+ salesGroups: JSON.parse(JSON.stringify(_getActiveGroups(currentStore))),
  salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
  };
  // map 백업
@@ -9201,7 +9313,7 @@ function saveSalesMonthData(monthIdx) {
  if (!window.storeSalesGroupDataMap) window.storeSalesGroupDataMap = {};
  window.storeSalesDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesData || {}));
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups || {}));
+ _safeSaveGroups(currentStore, window.salesGroups);
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
  if (typeof syncToFirebase === 'function') syncToFirebase();
 }
@@ -9251,22 +9363,22 @@ function switchSalesMonth(monthIdx) {
  const prevKey = _salesMonthKey(prev);
  // 항상 저장: salesGroups(그룹 구조)는 매출 데이터 유무와 무관하게 반드시 보존
  const existingPrev = window.monthlySalesStore[currentStore][prevKey];
+ // salesGroups는 _getActiveGroups로 항상 올바른 값 사용 (window.salesGroups 비어있어도 폴백)
+ var _switchGroups = _getActiveGroups(currentStore);
  const hasAnyData = Object.keys(window.salesData||{}).length > 0
  || Object.keys(window.salesGroupData||{}).length > 0
- || Object.keys(window.salesGroups||{}).length > 0;
+ || Object.keys(_switchGroups).length > 0;
  if (!existingPrev || hasAnyData) {
- // 기존 데이터가 없거나, 현재 데이터가 있으면 무조건 저장
  window.monthlySalesStore[currentStore][prevKey] = {
  salesData: JSON.parse(JSON.stringify(window.salesData || {})),
  areaData: JSON.parse(JSON.stringify(window.areaData || {})),
- salesGroups: JSON.parse(JSON.stringify(window.salesGroups || {})),
+ salesGroups: JSON.parse(JSON.stringify(_switchGroups)),
  salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
  };
  } else {
- // 기존 데이터는 있는데 현재 데이터가 없는 경우 → salesGroups만 업데이트
  window.monthlySalesStore[currentStore][prevKey] = Object.assign(
  {}, existingPrev,
- { salesGroups: JSON.parse(JSON.stringify(window.salesGroups || {})) }
+ { salesGroups: JSON.parse(JSON.stringify(_switchGroups)) }
  );
  }
  }
@@ -9275,10 +9387,26 @@ function switchSalesMonth(monthIdx) {
  window.salesData = JSON.parse(JSON.stringify(md.salesData));
  window.areaData = JSON.parse(JSON.stringify(md.areaData));
  // 종합 탭(null)에서는 그룹 표시 안 함 — 월별 그룹은 해당 월에서만 표시
- window.salesGroups = (monthIdx === null || monthIdx === undefined)
- ? {} : JSON.parse(JSON.stringify(md.salesGroups || {}));
- window.salesGroupData = (monthIdx === null || monthIdx === undefined)
- ? {} : JSON.parse(JSON.stringify(md.salesGroupData || {}));
+ if (monthIdx === null || monthIdx === undefined) {
+   window.salesGroups = {};
+   window.salesGroupData = {};
+ } else {
+   // md.salesGroups가 있으면 사용, 없으면 storeSalesGroupsMap 폴백
+   var _loadedGroups = md.salesGroups || {};
+   if (!Object.keys(_loadedGroups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[currentStore]) {
+     _loadedGroups = window.storeSalesGroupsMap[currentStore];
+   }
+   window.salesGroups = JSON.parse(JSON.stringify(_loadedGroups));
+   window.salesGroupData = JSON.parse(JSON.stringify(md.salesGroupData || {}));
+   // 이 월 monthlySalesStore에 그룹 백필
+   if (Object.keys(_loadedGroups).length > 0 && window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
+     var _mk = _salesMonthKey(monthIdx);
+     if (!window.monthlySalesStore[currentStore][_mk]) window.monthlySalesStore[currentStore][_mk] = {};
+     if (!window.monthlySalesStore[currentStore][_mk].salesGroups || !Object.keys(window.monthlySalesStore[currentStore][_mk].salesGroups).length) {
+       window.monthlySalesStore[currentStore][_mk].salesGroups = JSON.parse(JSON.stringify(_loadedGroups));
+     }
+   }
+ }
 
  // 도면이 이미 렌더된 경우: 위치 유지하며 색상·패널만 갱신
  const gcSales = document.getElementById('gc-sales');
@@ -9533,9 +9661,13 @@ function renderSalesView() {
  style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #e5e7eb;background:#f9fafb;color:#6b7280;cursor:pointer;">↺ 레이블 초기화</button>
  <button id="salBtnDeleteMonth" onclick="deleteSalesMonthData()" title="현재 월 데이터 삭제"
  style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;cursor:pointer;">이 달 데이터 삭제</button>
+      <div style="width:1px;height:18px;background:#e5e7eb;margin:0 2px;flex-shrink:0;"></div>
+      <button id="salBtnProductDB" onclick="openProductMasterModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #f59e0b;background:#fffbeb;color:#b45309;cursor:pointer;">📦 상품 DB</button>
+      <button id="salBtnZoneProducts" onclick="openZoneProductsModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #34d399;background:#ecfdf5;color:#065f46;cursor:pointer;">🗂 구역별 상품 배치</button>
+      <button id="salBtnProductUpload" onclick="openProductSalesUploadModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #818cf8;background:#eef2ff;color:#3730a3;cursor:pointer;">📊 매출 업로드</button>
  `;
  // 권한에 따라 버튼 표시 제어 (isAdmin 조건을 innerHTML 조건문 대신 런타임 display로 처리)
- const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel','salBtnDeleteMonth'];
+ const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel','salBtnDeleteMonth','salBtnProductDB','salBtnZoneProducts','salBtnProductUpload'];
  _adminOnlyBtns.forEach(function(id) {
  const el = toolbar.querySelector('#' + id);
  if (el) el.style.display = isAdmin ? '' : 'none';
@@ -12219,7 +12351,7 @@ function addSalesGroup() {
  showToast('그룹 "' + label + '" 추가됨 — 도면에서 구역을 클릭해 추가하세요');
  // storeSalesGroupsMap 백업 + Firebase 동기화
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups));
+ _safeSaveGroups(currentStore, window.salesGroups);
  if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
@@ -12241,7 +12373,7 @@ function deleteSalesGroup(gid) {
  showToast('그룹 삭제됨');
  // storeSalesGroupsMap 백업 + Firebase 동기화
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups));
+ _safeSaveGroups(currentStore, window.salesGroups);
  if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
@@ -12292,7 +12424,7 @@ function addSalesGroupClickListeners() {
  updateSalesTableGroupBadges();
  // storeSalesGroupsMap 백업 + Firebase 동기화
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups));
+ _safeSaveGroups(currentStore, window.salesGroups);
  if (typeof syncToFirebase === 'function') syncToFirebase();
  };
  el.addEventListener('click', handler);
@@ -12668,7 +12800,7 @@ function renderGroupInputSection(body, groups) {
  if (window.salesGroups && window.salesGroups[gid]) {
  window.salesGroups[gid].category = catSel.value;
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
- window.storeSalesGroupsMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroups));
+ _safeSaveGroups(currentStore, window.salesGroups);
  if (typeof syncToFirebase === 'function') syncToFirebase();
  if (typeof renderSalesView === 'function') renderSalesView();
  }
@@ -13965,6 +14097,884 @@ function renderMainZoneOverlay(){
  gc.appendChild(wrap);
  });
 }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   📦 상품 마스터 관리 모달
+══════════════════════════════════════════════════════════════════ */
+function openProductMasterModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  // 모달 열기 전 salesGroups 스냅샷 보존 (저장 시 복원용)
+  if (window.salesGroups && Object.keys(window.salesGroups).length > 0) {
+    window._savedSalesGroupsBeforePM = JSON.parse(JSON.stringify(window.salesGroups));
+    if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
+    _safeSaveGroups(currentStore, window.salesGroups);
+  }
+  const existing = document.getElementById('productMasterModal');
+  if (existing) { existing.remove(); }
+
+  const modal = document.createElement('div');
+  modal.id = 'productMasterModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
+
+  const pm = window.productMaster || [];
+
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:560px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">
+      <!-- 헤더 -->
+      <div style="background:linear-gradient(135deg,#b45309,#92400e);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div>
+          <div style="font-size:16px;font-weight:900;color:#fff;">📦 상품 마스터 DB</div>
+          <div style="font-size:10px;color:#fde68a;margin-top:3px;">전체 취급 상품명을 등록하세요 — 구역 배치 시 검색 목록으로 사용됩니다</div>
+        </div>
+        <button onclick="document.getElementById('productMasterModal').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>
+      </div>
+
+      <!-- 입력 -->
+      <div style="padding:16px 20px;border-bottom:1px solid #f1f5f9;flex-shrink:0;background:#fffbeb;">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+          <input id="pmNewName" placeholder="상품명 입력 (예: 코카콜라 1.5L)" 
+            style="flex:1;font-family:inherit;font-size:13px;padding:8px 12px;border:2px solid #f59e0b;border-radius:8px;outline:none;"
+            onkeydown="if(event.key==='Enter')addProductToMaster()"/>
+          <button onclick="addProductToMaster()" style="font-family:inherit;font-size:12px;font-weight:700;padding:8px 16px;background:#b45309;color:#fff;border:none;border-radius:8px;cursor:pointer;">+ 추가</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="document.getElementById('pmExcelInput').click()" style="font-family:inherit;font-size:11px;font-weight:700;padding:6px 14px;background:#fff;border:1.5px solid #f59e0b;color:#b45309;border-radius:7px;cursor:pointer;">📥 엑셀로 일괄 등록</button>
+          <input id="pmExcelInput" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importProductMasterExcel(this.files[0])"/>
+          <span style="font-size:9px;color:#9ca3af;align-self:center;">엑셀 A열에 상품명 목록 → 일괄 등록</span>
+        </div>
+      </div>
+
+      <!-- 검색 + 목록 -->
+      <div style="padding:12px 20px 6px;flex-shrink:0;">
+        <input id="pmSearch" placeholder="🔍 상품명 검색..." oninput="renderProductMasterList()"
+          style="width:100%;font-family:inherit;font-size:12px;padding:7px 12px;border:1.5px solid #e5e7eb;border-radius:8px;box-sizing:border-box;outline:none;"/>
+      </div>
+      <div style="padding:4px 20px 6px;flex-shrink:0;">
+        <span id="pmCount" style="font-size:10px;color:#9ca3af;"></span>
+      </div>
+      <div id="pmList" style="flex:1;overflow-y:auto;padding:0 20px 16px;"></div>
+
+      <!-- 하단 -->
+      <div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">
+        <button onclick="saveProductMasterAndClose()" style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#b45309;color:#fff;border:none;border-radius:8px;cursor:pointer;">💾 저장</button>
+        <button onclick="document.getElementById('productMasterModal').remove()" style="flex:1;font-family:inherit;font-size:12px;font-weight:700;padding:10px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;border-radius:8px;cursor:pointer;">닫기</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  renderProductMasterList();
+  setTimeout(()=>{ const el=document.getElementById('pmNewName'); if(el) el.focus(); }, 100);
+}
+
+function renderProductMasterList() {
+  const list = document.getElementById('pmList');
+  const count = document.getElementById('pmCount');
+  const q = (document.getElementById('pmSearch')||{value:''}).value.toLowerCase().trim();
+  const pm = window.productMaster || [];
+  const filtered = q ? pm.filter(p => p.toLowerCase().includes(q)) : pm;
+  if(count) count.textContent = pm.length + '개 등록됨' + (q ? ' (검색: ' + filtered.length + '개)' : '');
+  if (!list) return;
+  if (!filtered.length) {
+    list.innerHTML = '<div style="text-align:center;padding:32px;color:#9ca3af;font-size:12px;">' + (q ? '검색 결과 없음' : '등록된 상품이 없습니다. 위에서 추가해주세요.') + '</div>';
+    return;
+  }
+  list.innerHTML = filtered.map((p, i) => {
+    const realIdx = pm.indexOf(p);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;background:#f9fafb;margin-bottom:5px;border:1px solid #f1f5f9;">
+      <span style="font-size:11px;color:#9ca3af;font-weight:700;min-width:24px;">${realIdx+1}</span>
+      <span style="flex:1;font-size:13px;font-weight:600;color:#111827;">${p}</span>
+      <button onclick="deleteProductFromMaster(${realIdx})" style="background:none;border:none;color:#ef4444;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:4px;" title="삭제">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function addProductToMaster() {
+  const inp = document.getElementById('pmNewName');
+  if (!inp) return;
+  const name = inp.value.trim();
+  if (!name) return;
+  if (!window.productMaster) window.productMaster = [];
+  if (window.productMaster.includes(name)) { showToast('이미 등록된 상품입니다'); return; }
+  window.productMaster.push(name);
+  inp.value = '';
+  renderProductMasterList();
+  inp.focus();
+}
+
+function deleteProductFromMaster(idx) {
+  if (!window.productMaster) return;
+  const name = window.productMaster[idx];
+  if (!confirm('"' + name + '"을 삭제하시겠습니까?')) return;
+  window.productMaster.splice(idx, 1);
+  renderProductMasterList();
+}
+
+function importProductMasterExcel(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'binary'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1});
+      if (!window.productMaster) window.productMaster = [];
+      let added = 0;
+      rows.forEach(function(row) {
+        const name = (row[0] || '').toString().trim();
+        if (name && !window.productMaster.includes(name)) {
+          window.productMaster.push(name);
+          added++;
+        }
+      });
+      showToast(added + '개 상품 등록됨');
+      renderProductMasterList();
+    } catch(err) {
+      showToast('파일 읽기 오류: ' + err.message);
+    }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function saveProductMasterAndClose() {
+  if (typeof syncToFirebase === 'function') syncToFirebase();
+  showToast('상품 DB 저장됨 (' + (window.productMaster||[]).length + '개)');
+  const m = document.getElementById('productMasterModal');
+  if (m) m.remove();
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   🗂 구역별 상품 배치 모달
+══════════════════════════════════════════════════════════════════ */
+function openZoneProductsModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  // 열기 전 salesGroups 스냅샷 저장 (저장 시 복원용)
+  if (window.salesGroups && Object.keys(window.salesGroups).length > 0) {
+    window._savedSalesGroupsBeforePM = JSON.parse(JSON.stringify(window.salesGroups));
+    if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
+    _safeSaveGroups(currentStore, window.salesGroups);
+  }
+  const existing = document.getElementById('zoneProductsModal');
+  if (existing) { existing.remove(); }
+
+  const modal = document.createElement('div');
+  modal.id = 'zoneProductsModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
+
+  const curMon = window.currentSalesMonth;
+  const yr = new Date().getFullYear();
+  const monthKey = (curMon !== null && curMon !== undefined)
+    ? (yr + '-' + String(curMon+1).padStart(2,'0'))
+    : 'all';
+
+  const monthOptions = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'].map(function(m,i) {
+    var k = yr + '-' + String(i+1).padStart(2,'0');
+    return '<option value="' + k + '"' + (k===monthKey?' selected':'') + '>' + m + ' (' + k + ')</option>';
+  }).join('');
+
+  var pmCount = (window.productMaster||[]).length;
+
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:16px;width:720px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">' +
+      '<div style="background:linear-gradient(135deg,#065f46,#047857);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">' +
+        '<div>' +
+          '<div style="font-size:16px;font-weight:900;color:#fff;">🗂 구역별 상품 배치</div>' +
+          '<div style="font-size:10px;color:#a7f3d0;margin-top:3px;">평당매출 탭의 그룹 구역 단위로 상품을 등록합니다</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+          '<span style="font-size:10px;color:#a7f3d0;">적용 월:</span>' +
+          '<select id="zpMonthKey" onchange="renderZoneProductsBody()" style="font-family:inherit;font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;border:none;background:rgba(255,255,255,.2);color:#fff;cursor:pointer;">' +
+            '<option value="all">📌 전체 공통</option>' + monthOptions +
+          '</select>' +
+          '<button onclick="document.getElementById(\'zoneProductsModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="padding:10px 20px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;flex-shrink:0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:10px;color:#065f46;">' +
+        '<span>💡 <b>평당매출 탭 → 구역 그룹</b> 버튼으로 그룹을 먼저 만들면 그룹 단위로 상품을 배치할 수 있습니다.</span>' +
+        '<span>상품 DB: <b id="zpProductCount">' + pmCount + '개</b></span>' +
+      '</div>' +
+      '<div id="zpBody" style="flex:1;overflow-y:auto;padding:14px 18px;"></div>' +
+      '<div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">' +
+        '<button onclick="saveZoneProductsAndClose()" style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#047857;color:#fff;border:none;border-radius:8px;cursor:pointer;">💾 저장</button>' +
+        '<button onclick="document.getElementById(\'zoneProductsModal\').remove()" style="flex:1;font-family:inherit;font-size:12px;font-weight:700;padding:10px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;border-radius:8px;cursor:pointer;">닫기</button>' +
+      '</div>' +
+    '</div>';
+
+  document.body.appendChild(modal);
+  renderZoneProductsBody();
+}
+
+function renderZoneProductsBody() {
+  var body = document.getElementById('zpBody');
+  if (!body) return;
+  var monthKey = (document.getElementById('zpMonthKey') || {value:'all'}).value;
+  if (!window.zoneProducts) window.zoneProducts = {};
+
+  var groups = window.salesGroups || {};
+  var allZones = typeof zones !== 'undefined' ? zones : [];
+  var groupEntries = Object.entries(groups).filter(function(e){ return (e[1].zoneIds||[]).length > 0; });
+
+  // 그룹에 속하지 않은 구역
+  var groupedZids = new Set();
+  groupEntries.forEach(function(e){ (e[1].zoneIds||[]).forEach(function(zid){ groupedZids.add(zid); }); });
+  var nonSalesNames = new Set(['입구','기둥']);
+  var ungrouped = allZones.filter(function(z){
+    return !nonSalesNames.has(z.name) && z.color !== 'cpillar' && !String(z.color).startsWith('ent') && !groupedZids.has(z.id);
+  });
+
+  if (!groupEntries.length && !ungrouped.length) {
+    body.innerHTML =
+      '<div style="text-align:center;padding:52px 20px;color:#9ca3af;">' +
+        '<div style="font-size:42px;margin-bottom:14px;">🗂</div>' +
+        '<div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:8px;">그룹 구역이 없습니다</div>' +
+        '<div style="font-size:11px;line-height:1.9;color:#9ca3af;">평당매출 탭 상단의 <b style="color:#6d28d9;">구역 그룹</b> 버튼으로<br>구역 그룹을 먼저 만들어주세요.<br><br>그룹 없이도 하단 <b>미그룹 집기</b>에서 개별 배치 가능합니다.</div>' +
+      '</div>';
+    return;
+  }
+
+  var html = '';
+
+  // ① 그룹 구역 카드
+  groupEntries.forEach(function(entry) {
+    var gid = entry[0];
+    var g = entry[1];
+    var color = g.color || '#047857';
+    var label = g.label || gid;
+    var zids = g.zoneIds || [];
+    var zoneNames = zids.map(function(zid){ var z = allZones.find(function(z){ return z.id===zid; }); return z ? z.name : null; }).filter(Boolean);
+    var gpKey = 'group_' + gid;
+    var groupProducts = (window.zoneProducts[gpKey] || {})[monthKey] || [];
+
+    var zoneBadges = zoneNames.map(function(n){
+      return '<span style="font-size:9px;padding:2px 8px;border-radius:10px;background:' + color + '22;color:' + color + ';border:1px solid ' + color + '44;font-weight:700;">' + n + '</span>';
+    }).join('');
+
+    var productTags = groupProducts.length
+      ? groupProducts.map(function(p){
+          var safeP = p.replace(/'/g, "\\'");
+          return '<span style="display:inline-flex;align-items:center;gap:5px;background:' + color + '18;border:2px solid ' + color + ';color:' + color + ';border-radius:20px;padding:5px 13px;font-size:12px;font-weight:700;">' +
+            p +
+            '<button onclick="removeZoneProduct(\'' + gpKey + '\',\'' + safeP + '\',\'' + monthKey + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0;line-height:1;margin-left:2px;">✕</button>' +
+          '</span>';
+        }).join('')
+      : '<span style="font-size:11px;color:#d1d5db;padding:4px 2px;">배치된 상품 없음 — 아래에서 검색하여 추가하세요</span>';
+
+    html +=
+      '<div style="border:2.5px solid ' + color + ';border-radius:14px;margin-bottom:16px;overflow:hidden;">' +
+        // 헤더
+        '<div style="background:' + color + ';padding:12px 16px;display:flex;align-items:center;gap:10px;">' +
+          '<span style="font-size:15px;font-weight:900;color:#fff;flex:1;">' + label + '</span>' +
+          '<span style="font-size:10px;color:rgba(255,255,255,.8);background:rgba(0,0,0,.18);padding:3px 9px;border-radius:10px;">' + zoneNames.length + '개 집기</span>' +
+          '<span style="font-size:10px;color:rgba(255,255,255,.75);">' + groupProducts.length + '개 상품</span>' +
+        '</div>' +
+        // 집기 뱃지
+        '<div style="padding:7px 14px;background:' + color + '12;border-bottom:1px solid ' + color + '30;display:flex;flex-wrap:wrap;gap:4px;">' +
+          zoneBadges +
+        '</div>' +
+        // 상품 태그
+        '<div id="zpTags_' + gpKey + '" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px;min-height:46px;background:#fff;">' +
+          productTags +
+        '</div>' +
+        // 검색창
+        '<div style="padding:8px 14px 12px;background:#fafafa;border-top:1px solid #f1f5f9;">' +
+          '<input id="zpSearch_' + gpKey + '" placeholder="🔍 상품 검색하여 추가..." ' +
+            'oninput="showZpDropdown(\'' + gpKey + '\',\'' + monthKey + '\')" ' +
+            'onkeydown="if(event.key===\'Enter\')zpSelectFirst(\'' + gpKey + '\',\'' + monthKey + '\')" ' +
+            'style="width:100%;font-family:inherit;font-size:12px;padding:8px 13px;border:2px solid ' + color + '66;border-radius:8px;outline:none;box-sizing:border-box;" ' +
+            'autocomplete="off"/>' +
+          '<div id="zpDrop_' + gpKey + '" style="display:none;background:#fff;border:2px solid ' + color + ';border-radius:8px;margin-top:5px;max-height:160px;overflow-y:auto;box-shadow:0 4px 14px rgba(0,0,0,.12);"></div>' +
+        '</div>' +
+      '</div>';
+  });
+
+  // ② 미그룹 집기
+  if (ungrouped.length) {
+    html += '<div style="margin-top:4px;padding-top:14px;border-top:2px dashed #e5e7eb;">';
+    html += '<div style="font-size:10px;font-weight:800;color:#9ca3af;letter-spacing:.5px;margin-bottom:10px;">📋 미그룹 집기 (' + ungrouped.length + '개) — 그룹 미지정 구역</div>';
+    ungrouped.forEach(function(z) {
+      var products = (window.zoneProducts[z.id] || {})[monthKey] || [];
+      var productTags2 = products.length
+        ? products.map(function(p){
+            var safeP = p.replace(/'/g,"\\'");
+            return '<span style="display:inline-flex;align-items:center;gap:4px;background:#f3f4f6;border:1.5px solid #9ca3af;color:#374151;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;">' +
+              p +
+              '<button onclick="removeZoneProduct(\'' + z.id + '\',\'' + safeP + '\',\'' + monthKey + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:0;line-height:1;">✕</button>' +
+            '</span>';
+          }).join('')
+        : '<span style="font-size:10px;color:#d1d5db;padding:4px;">배치된 상품 없음</span>';
+
+      html +=
+        '<div style="border:1.5px solid #e5e7eb;border-radius:10px;margin-bottom:8px;overflow:hidden;">' +
+          '<div style="background:#f8fafc;padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f1f5f9;">' +
+            '<span style="font-size:12px;font-weight:800;color:#374151;flex:1;">' + z.name + '</span>' +
+            '<span style="font-size:9px;color:#9ca3af;">' + products.length + '개 상품</span>' +
+          '</div>' +
+          '<div id="zpTags_' + z.id + '" style="padding:8px 12px;display:flex;flex-wrap:wrap;gap:5px;min-height:36px;background:#fff;">' +
+            productTags2 +
+          '</div>' +
+          '<div style="padding:6px 12px 10px;background:#fafafa;border-top:1px solid #f1f5f9;">' +
+            '<input id="zpSearch_' + z.id + '" placeholder="🔍 상품 검색하여 추가..." ' +
+              'oninput="showZpDropdown(\'' + z.id + '\',\'' + monthKey + '\')" ' +
+              'onkeydown="if(event.key===\'Enter\')zpSelectFirst(\'' + z.id + '\',\'' + monthKey + '\')" ' +
+              'style="width:100%;font-family:inherit;font-size:11px;padding:6px 10px;border:1.5px solid #d1d5db;border-radius:6px;outline:none;box-sizing:border-box;" ' +
+              'autocomplete="off"/>' +
+            '<div id="zpDrop_' + z.id + '" style="display:none;background:#fff;border:1.5px solid #9ca3af;border-radius:8px;margin-top:4px;max-height:130px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.1);"></div>' +
+          '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+function showZpDropdown(zpKey, monthKey) {
+  var inp = document.getElementById('zpSearch_' + zpKey);
+  var drop = document.getElementById('zpDrop_' + zpKey);
+  if (!inp || !drop) return;
+  var q = inp.value.toLowerCase().trim();
+  var pm = window.productMaster || [];
+  var existing = (window.zoneProducts[zpKey] || {})[monthKey] || [];
+  var filtered = pm.filter(function(p){ return (!q || p.toLowerCase().includes(q)) && !existing.includes(p); });
+
+  if (!filtered.length) {
+    drop.style.display = q ? 'block' : 'none';
+    if (q) drop.innerHTML = '<div style="padding:10px 12px;font-size:11px;color:#9ca3af;">검색 결과 없음' + (pm.length===0 ? ' — 📦 상품 DB를 먼저 등록해주세요' : '') + '</div>';
+    return;
+  }
+  drop.style.display = 'block';
+
+  // 그룹 색상 결정
+  var accentColor = '#047857';
+  if (zpKey.startsWith('group_')) {
+    var gid2 = zpKey.replace('group_', '');
+    var gObj = (window.salesGroups || {})[gid2];
+    if (gObj) accentColor = gObj.color || accentColor;
+  }
+
+  drop.innerHTML = filtered.slice(0,25).map(function(p) {
+    var safeP = p.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    return '<div onclick="addZoneProduct(\'' + zpKey + '\',\'' + safeP + '\',\'' + monthKey + '\')" ' +
+      'style="padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:#111827;border-bottom:1px solid #f9fafb;" ' +
+      'onmouseover="this.style.background=\'' + accentColor + '18\'" onmouseout="this.style.background=\'\'">' + p + '</div>';
+  }).join('');
+}
+
+function zpSelectFirst(zpKey, monthKey) {
+  var drop = document.getElementById('zpDrop_' + zpKey);
+  if (!drop) return;
+  var first = drop.querySelector('div');
+  if (first) first.click();
+}
+
+function addZoneProduct(zpKey, productName, monthKey) {
+  if (!window.zoneProducts) window.zoneProducts = {};
+  if (!window.zoneProducts[zpKey]) window.zoneProducts[zpKey] = {};
+  if (!window.zoneProducts[zpKey][monthKey]) window.zoneProducts[zpKey][monthKey] = [];
+  if (!window.zoneProducts[zpKey][monthKey].includes(productName)) {
+    window.zoneProducts[zpKey][monthKey].push(productName);
+  }
+  var inp = document.getElementById('zpSearch_' + zpKey);
+  var drop = document.getElementById('zpDrop_' + zpKey);
+  if (inp) inp.value = '';
+  if (drop) drop.style.display = 'none';
+  refreshZpTags(zpKey, monthKey);
+}
+
+function removeZoneProduct(zpKey, productName, monthKey) {
+  if (!window.zoneProducts || !window.zoneProducts[zpKey] || !window.zoneProducts[zpKey][monthKey]) return;
+  window.zoneProducts[zpKey][monthKey] = window.zoneProducts[zpKey][monthKey].filter(function(p){ return p !== productName; });
+  refreshZpTags(zpKey, monthKey);
+}
+
+function refreshZpTags(zpKey, monthKey) {
+  var tagsEl = document.getElementById('zpTags_' + zpKey);
+  if (!tagsEl) return;
+  var products = (window.zoneProducts[zpKey] || {})[monthKey] || [];
+  var color = '#047857';
+  if (zpKey.startsWith('group_')) {
+    var gid3 = zpKey.replace('group_','');
+    var g3 = (window.salesGroups||{})[gid3];
+    if (g3) color = g3.color || color;
+  } else {
+    color = '#9ca3af';
+  }
+  tagsEl.innerHTML = products.length
+    ? products.map(function(p){
+        var safeP = p.replace(/'/g,"\\'");
+        return '<span style="display:inline-flex;align-items:center;gap:5px;background:' + color + '18;border:2px solid ' + color + ';color:' + color + ';border-radius:20px;padding:5px 13px;font-size:12px;font-weight:700;">' +
+          p +
+          '<button onclick="removeZoneProduct(\'' + zpKey + '\',\'' + safeP + '\',\'' + monthKey + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0;line-height:1;margin-left:2px;">✕</button>' +
+        '</span>';
+      }).join('')
+    : '<span style="font-size:11px;color:#d1d5db;padding:4px 2px;">배치된 상품 없음</span>';
+}
+
+function saveZoneProductsAndClose() {
+  // syncToFirebase 내부에서 _getActiveGroups가 올바른 그룹을 항상 가져옴
+  if (typeof syncToFirebase === 'function') syncToFirebase();
+  showToast('구역별 상품 배치 저장됨');
+  const m = document.getElementById('zoneProductsModal');
+  if (m) m.remove();
+  if (typeof recalcProductSalesColors === 'function') recalcProductSalesColors();
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   📊 상품별 매출 업로드 → 자동 평당매출 계산
+══════════════════════════════════════════════════════════════════ */
+function openProductSalesUploadModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  const existing = document.getElementById('productSalesUploadModal');
+  if (existing) { existing.remove(); }
+
+  const curMon = window.currentSalesMonth;
+  const yr = new Date().getFullYear();
+  const defaultMonth = curMon !== null && curMon !== undefined
+    ? yr + '-' + String(curMon+1).padStart(2,'0')
+    : yr + '-' + String(new Date().getMonth()+1).padStart(2,'0');
+  // 해당 월의 기본 영업일수 (해당 월 마지막 날)
+  const _dm = new Date(defaultMonth + '-01');
+  const defaultDays = new Date(_dm.getFullYear(), _dm.getMonth()+1, 0).getDate();
+
+  const modal = document.createElement('div');
+  modal.id = 'productSalesUploadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
+
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:640px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">
+      <!-- 헤더 -->
+      <div style="background:linear-gradient(135deg,#3730a3,#4f46e5);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div>
+          <div style="font-size:16px;font-weight:900;color:#fff;">📊 상품별 매출 업로드</div>
+          <div style="font-size:10px;color:#c7d2fe;margin-top:3px;">상품명 기준 자동 매핑 → 구역별 평당매출 계산 → 도면 색상 자동 반영</div>
+        </div>
+        <button onclick="document.getElementById('productSalesUploadModal').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>
+      </div>
+
+      <!-- 월 선택 + 영업일수 -->
+      <div style="padding:14px 20px;background:#eef2ff;border-bottom:1px solid #c7d2fe;flex-shrink:0;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <span style="font-size:12px;font-weight:800;color:#3730a3;">📅 매출 기준 월:</span>
+        <input id="psuMonth" type="month" value="${defaultMonth}" onchange="psuAutoFillDays()"
+          style="font-family:inherit;font-size:13px;font-weight:700;padding:5px 10px;border:2px solid #818cf8;border-radius:8px;color:#3730a3;outline:none;"/>
+        <div style="display:flex;align-items:center;gap:6px;background:#fff;border:2px solid #818cf8;border-radius:8px;padding:4px 12px;">
+          <span style="font-size:11px;font-weight:700;color:#3730a3;">📆 영업일수:</span>
+          <input id="psuDays" type="number" min="1" max="31" value="${defaultDays}"
+            style="font-family:inherit;font-size:14px;font-weight:800;color:#3730a3;border:none;outline:none;width:42px;text-align:center;"/>
+          <span style="font-size:11px;color:#6366f1;">일</span>
+        </div>
+        <span style="font-size:10px;color:#6366f1;">월 매출 ÷ 영업일수 = 하루 매출 → 평당매출 계산</span>
+      </div>
+
+      <!-- 엑셀 양식 안내 -->
+      <div style="padding:14px 20px;background:#f8fafc;border-bottom:1px solid #f1f5f9;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+          <span style="font-size:11px;font-weight:800;color:#374151;">📋 엑셀 형식 &nbsp;|&nbsp; B열 매출 단위:</span>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="psuUnit" value="만" checked onchange="renderProductSalesPreview()" style="accent-color:#4f46e5;"/> 만원 <span style="font-size:10px;color:#9ca3af;">(1500 = 1,500만원)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:700;cursor:pointer;">
+            <input type="radio" name="psuUnit" value="원" onchange="renderProductSalesPreview()" style="accent-color:#4f46e5;"/> 원 <span style="font-size:10px;color:#9ca3af;">(15000000 = 1,500만원)</span>
+          </label>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px;color:#374151;">
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
+            <div style="font-weight:800;color:#3730a3;margin-bottom:6px;">A열: 상품명</div>
+            <div style="color:#6b7280;">코카콜라 1.5L<br>오리온 초코파이<br>참이슬 360ml</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px;">
+            <div id="psuUnitLabel" style="font-weight:800;color:#059669;margin-bottom:6px;">B열: 매출액 (만원)</div>
+            <div id="psuUnitExample" style="color:#6b7280;">1500<br>820<br>2100</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button onclick="downloadProductSalesTemplate()" style="font-family:inherit;font-size:11px;font-weight:700;padding:6px 14px;background:#fff;border:1.5px solid #818cf8;color:#4f46e5;border-radius:7px;cursor:pointer;">📥 샘플 템플릿 다운로드</button>
+          <span style="font-size:9px;color:#9ca3af;align-self:center;">1행 = 헤더 (자동 스킵), 2행부터 데이터</span>
+        </div>
+      </div>
+
+      <!-- 드래그&드롭 업로드 -->
+      <div style="padding:16px 20px;flex-shrink:0;">
+        <label id="psuDropZone" for="psuFileInput"
+          style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:2.5px dashed #818cf8;border-radius:12px;padding:24px;cursor:pointer;background:#f5f3ff;transition:all .2s;"
+          ondragover="event.preventDefault();this.style.borderColor='#4f46e5';this.style.background='#eef2ff';"
+          ondragleave="this.style.borderColor='#818cf8';this.style.background='#f5f3ff';"
+          ondrop="event.preventDefault();this.style.borderColor='#818cf8';this.style.background='#f5f3ff';handleProductSalesFile(event.dataTransfer.files[0]);">
+          <div style="font-size:32px;">📊</div>
+          <div style="font-size:13px;font-weight:700;color:#4f46e5;">클릭하거나 파일을 드래그하세요</div>
+          <div style="font-size:10px;color:#818cf8;">.xlsx / .xls / .csv 지원</div>
+        </label>
+        <input id="psuFileInput" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleProductSalesFile(this.files[0])"/>
+      </div>
+
+      <!-- 미리보기 / 결과 -->
+      <div id="psuPreview" style="flex:1;overflow-y:auto;padding:0 20px 8px;display:none;"></div>
+
+      <!-- 하단 -->
+      <div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">
+        <button id="psuApplyBtn" onclick="applyProductSalesData()" disabled
+          style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#94a3b8;color:#fff;border:none;border-radius:8px;cursor:not-allowed;">도면에 적용하기</button>
+        <button onclick="document.getElementById('productSalesUploadModal').remove()" style="flex:1;font-family:inherit;font-size:12px;font-weight:700;padding:10px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;border-radius:8px;cursor:pointer;">닫기</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+}
+
+window._psuParsedRows = [];
+
+function handleProductSalesFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    let rows = [];
+    try {
+      if (ext === 'csv') {
+        const text = e.target.result;
+        rows = text.split('\n').map(l => l.split(',').map(c => c.trim().replace(/^"|"$/g,'')));
+      } else {
+        const wb = XLSX.read(e.target.result, {type:'binary'});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, {header:1});
+      }
+    } catch(err) { showToast('파일 오류: ' + err.message); return; }
+
+    // 헤더 스킵 (1행)
+    const data = rows.slice(1).filter(r => r[0] && String(r[0]).trim());
+    window._psuParsedRows = data.map(r => ({
+      productName: String(r[0]).trim(),
+      sales: parseFloat(String(r[1]).replace(/,/g,'')) || 0
+    }));
+    renderProductSalesPreview();
+  };
+  if (ext === 'csv') reader.readAsText(file, 'utf-8');
+  else reader.readAsBinaryString(file);
+}
+
+function renderProductSalesPreview() {
+  const preview = document.getElementById('psuPreview');
+  const applyBtn = document.getElementById('psuApplyBtn');
+  if (!preview) return;
+  const rows = window._psuParsedRows || [];
+  if (!rows.length) { preview.style.display='none'; return; }
+
+  const pm = window.productMaster || [];
+  const zp = window.zoneProducts || {};
+
+  // 매칭 분석
+  let matched = 0, unmatched = [];
+  rows.forEach(r => {
+    if (pm.includes(r.productName)) matched++;
+    else unmatched.push(r.productName);
+  });
+
+  var opDays = parseInt((document.getElementById('psuDays')||{value:'30'}).value)||30;
+  var unitRadioP = document.querySelector('input[name="psuUnit"]:checked');
+  var isWonP = unitRadioP && unitRadioP.value === '원';
+
+  // 단위 레이블/예시 업데이트
+  var unitLbl = document.getElementById('psuUnitLabel');
+  var unitEx = document.getElementById('psuUnitExample');
+  if (unitLbl) unitLbl.textContent = 'B열: 매출액 (' + (isWonP ? '원' : '만원') + ')';
+  if (unitEx) unitEx.innerHTML = isWonP ? '15000000<br>8200000<br>21000000' : '1500<br>820<br>2100';
+
+  preview.style.display = 'block';
+  preview.innerHTML = `
+    <div style="margin-bottom:10px;padding:10px 14px;border-radius:8px;background:${matched===rows.length?'#ecfdf5':'#fffbeb'};border:1px solid ${matched===rows.length?'#34d399':'#fbbf24'};">
+      <span style="font-size:11px;font-weight:800;color:${matched===rows.length?'#065f46':'#92400e'};">
+        ✅ ${matched}개 매칭 | ⚠️ ${rows.length-matched}개 미매칭
+      </span>
+      ${unmatched.length ? '<div style="font-size:9px;color:#92400e;margin-top:4px;">미매칭: ' + unmatched.slice(0,5).join(', ') + (unmatched.length>5?'...':'') + '</div>' : ''}
+      <div style="font-size:9px;color:#6b7280;margin-top:4px;">월 매출 ÷ <b>${opDays}일</b> = 하루 매출 기준으로 평당매출 계산됩니다.</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <thead><tr style="background:#f8fafc;">
+        <th style="padding:6px 10px;text-align:left;color:#6b7280;font-weight:700;">#</th>
+        <th style="padding:6px 10px;text-align:left;color:#374151;font-weight:700;">상품명</th>
+        <th style="padding:6px 10px;text-align:right;color:#059669;font-weight:700;">월매출(만원)</th>
+        <th style="padding:6px 10px;text-align:right;color:#f97316;font-weight:800;">하루매출(만원)</th>
+        <th style="padding:6px 10px;text-align:left;color:#4f46e5;font-weight:700;">매핑 구역</th>
+        <th style="padding:6px 10px;text-align:center;color:#374151;font-weight:700;">상태</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map((r,i) => {
+          const inDB = pm.includes(r.productName);
+          const salesInMan = isWonP ? r.sales / 10000 : r.sales;
+          const monthlySalesDisp = Math.round(salesInMan).toLocaleString();
+          const dailySales = Math.round(salesInMan / opDays);
+          const month = (document.getElementById('psuMonth')||{value:'all'}).value;
+          const mappedZones = [];
+          Object.entries(zp).forEach(([zid, monthMap]) => {
+            const products = monthMap[month] || monthMap['all'] || [];
+            if (products.includes(r.productName)) {
+              // 그룹 키인 경우 그룹명으로 표시
+              if (zid.startsWith('group_')) {
+                const gid = zid.replace('group_','');
+                const g = (window.salesGroups||{})[gid];
+                if (g) mappedZones.push('[' + g.label + ']');
+              } else {
+                const z = (typeof zones !== 'undefined' ? zones : []).find(z=>z.id===zid);
+                if (z) mappedZones.push(z.name);
+              }
+            }
+          });
+          return `<tr style="border-bottom:1px solid #f1f5f9;${inDB?'':'opacity:.5'}">
+            <td style="padding:5px 10px;color:#9ca3af;">${i+1}</td>
+            <td style="padding:5px 10px;font-weight:600;color:#111827;">${r.productName}</td>
+            <td style="padding:5px 10px;text-align:right;font-weight:700;color:#059669;">${monthlySalesDisp}만</td>
+            <td style="padding:5px 10px;text-align:right;font-weight:800;color:#f97316;">${dailySales.toLocaleString()}</td>
+            <td style="padding:5px 10px;color:#4f46e5;">${mappedZones.length ? mappedZones.join(', ') : '<span style="color:#d1d5db;">미배치</span>'}</td>
+            <td style="padding:5px 10px;text-align:center;">${inDB ? '✅' : '❌ DB없음'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+
+  if (applyBtn) {
+    applyBtn.disabled = false;
+    applyBtn.style.background = '#4f46e5';
+    applyBtn.style.cursor = 'pointer';
+  }
+}
+
+function applyProductSalesData() {
+  var rows = window._psuParsedRows || [];
+  if (!rows.length) return;
+  var monthVal = (document.getElementById('psuMonth')||{value:''}).value;
+  if (!monthVal) { showToast('적용할 월을 선택해주세요'); return; }
+
+  // ① 영업일수로 나눠서 하루 매출로 변환 후 저장
+  var daysEl = document.getElementById('psuDays');
+  var operatingDays = daysEl ? (parseInt(daysEl.value) || 1) : 1;
+  operatingDays = Math.max(1, Math.min(31, operatingDays));
+
+  // 단위 변환: 원 단위면 만원으로 변환
+  var unitRadio = document.querySelector('input[name="psuUnit"]:checked');
+  var isWon = unitRadio && unitRadio.value === '원';
+
+  if (!window.productSalesData) window.productSalesData = {};
+  if (!window.productSalesData[monthVal]) window.productSalesData[monthVal] = {};
+  rows.forEach(function(r) {
+    var salesInMan = isWon ? r.sales / 10000 : r.sales; // 원이면 만원으로 변환
+    // 월 매출(만원) → 하루 매출(만원)
+    window.productSalesData[monthVal][r.productName] = Math.round(salesInMan / operatingDays);
+  });
+  // 영업일수도 저장 (표시용)
+  window.productSalesData[monthVal].__operatingDays = operatingDays;
+
+  // ② 업로드한 월과 현재 탭 월이 다르면 해당 월로 자동 전환 후 반영
+  var uploadMonthIdx = null;
+  var parts = monthVal.split('-');
+  if (parts.length === 2) uploadMonthIdx = parseInt(parts[1], 10) - 1;
+
+  // salesGroups가 현재 월에만 있을 수 있으므로 해당 월에도 salesGroups 복사
+  if (uploadMonthIdx !== null) {
+    if (!window.monthlySalesStore) window.monthlySalesStore = {};
+    if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
+    var mKey = 'm' + uploadMonthIdx;
+    var existMd = window.monthlySalesStore[currentStore][mKey] || {};
+    // salesGroups가 없으면 현재 활성 그룹 복사
+    if (!existMd.salesGroups || !Object.keys(existMd.salesGroups).length) {
+      window.monthlySalesStore[currentStore][mKey] = Object.assign({}, existMd, {
+        salesGroups: JSON.parse(JSON.stringify(_getActiveGroups(currentStore))),
+        salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
+      });
+    }
+  }
+
+  // ③ 계산 & 도면 반영
+  recalcProductSalesColors(monthVal);
+
+  // ④ 해당 월 탭으로 이동 (다른 월 보고 있었다면)
+  if (uploadMonthIdx !== null && window.currentSalesMonth !== uploadMonthIdx) {
+    if (typeof switchSalesMonth === 'function') {
+      switchSalesMonth(uploadMonthIdx);
+    }
+  }
+
+  if (typeof syncToFirebase === 'function') syncToFirebase();
+
+  var matched = rows.filter(function(r){ return (window.productMaster||[]).includes(r.productName); }).length;
+  showToast('✅ ' + matched + '개 상품 매출 도면 반영 완료!');
+  var m = document.getElementById('productSalesUploadModal');
+  if (m) m.remove();
+}
+
+function downloadProductSalesTemplate() {
+  const pm = window.productMaster || [];
+  const wb = XLSX.utils.book_new();
+  const data = [['상품명','매출액(만원)']];
+  if (pm.length) {
+    pm.forEach(p => data.push([p, '']));
+  } else {
+    data.push(['코카콜라 1.5L', 1500]);
+    data.push(['오리온 초코파이', 820]);
+    data.push(['참이슬 360ml', 2100]);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:30},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws, '상품매출');
+  XLSX.writeFile(wb, '상품매출_' + new Date().toISOString().slice(0,7) + '.xlsx');
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   🎨 상품 매출 → 구역 평당매출 자동 계산 & 도면 색상 반영
+══════════════════════════════════════════════════════════════════ */
+function recalcProductSalesColors(monthKey) {
+  // monthKey 예: '2025-04' 또는 'all'
+  if (!monthKey) {
+    var curMon = window.currentSalesMonth;
+    var yr = new Date().getFullYear();
+    monthKey = (curMon !== null && curMon !== undefined)
+      ? yr + '-' + String(curMon+1).padStart(2,'0')
+      : yr + '-' + String(new Date().getMonth()+1).padStart(2,'0');
+  }
+
+  // 'YYYY-MM' → 월 인덱스(0~11) 변환
+  var targetMonthIdx = null;
+  if (monthKey !== 'all') {
+    var parts = monthKey.split('-');
+    if (parts.length === 2) targetMonthIdx = parseInt(parts[1], 10) - 1; // 0-based
+  }
+
+  var zp = window.zoneProducts || {};
+  var psd = (window.productSalesData || {})[monthKey] || {};
+  var psdAll = {};
+  Object.assign(psdAll, (window.productSalesData || {})['all'] || {}, psd);
+
+  // 대상 월의 기존 salesData/areaData/salesGroups 를 기반으로 작업
+  var baseSalesData = {};
+  var baseAreaData = {};
+  var baseSalesGroups = {};
+  var baseSalesGroupData = {};
+
+  if (targetMonthIdx !== null) {
+    // 기존 저장된 월 데이터 로드 (있으면 유지, 없으면 빈값)
+    if (!window.monthlySalesStore) window.monthlySalesStore = {};
+    if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
+    var existingMd = window.monthlySalesStore[currentStore]['m' + targetMonthIdx] || {};
+    baseSalesData = JSON.parse(JSON.stringify(existingMd.salesData || {}));
+    baseAreaData = JSON.parse(JSON.stringify(existingMd.areaData || {}));
+    baseSalesGroups = JSON.parse(JSON.stringify(existingMd.salesGroups || window.salesGroups || {}));
+    baseSalesGroupData = JSON.parse(JSON.stringify(existingMd.salesGroupData || window.salesGroupData || {}));
+  } else {
+    baseSalesData = JSON.parse(JSON.stringify(window.salesData || {}));
+    baseAreaData = JSON.parse(JSON.stringify(window.areaData || {}));
+    baseSalesGroups = JSON.parse(JSON.stringify(window.salesGroups || {}));
+    baseSalesGroupData = JSON.parse(JSON.stringify(window.salesGroupData || {}));
+  }
+
+  var allZones = typeof zones !== 'undefined' ? zones : [];
+  var groups = baseSalesGroups;
+  var nonSales = new Set(['입구','기둥']);
+
+  // ── ① 그룹 단위 계산 ──
+  Object.entries(groups).forEach(function(entry) {
+    var gid = entry[0];
+    var g = entry[1];
+    var gpKey = 'group_' + gid;
+    var zpGroup = zp[gpKey] || {};
+    var products = zpGroup[monthKey] || zpGroup['all'] || [];
+    if (!products.length) return;
+
+    var totalSales = 0;
+    var mappedCount = 0;
+    products.forEach(function(p) {
+      if (psdAll[p] !== undefined) { totalSales += psdAll[p]; mappedCount++; }
+    });
+    if (mappedCount === 0) return;
+
+    var zids = g.zoneIds || [];
+    var totalArea = 0;
+    zids.forEach(function(zid) {
+      var z = allZones.find(function(zz){ return zz.id === zid; });
+      if (z) totalArea += baseAreaData[zid] || Math.max(1, z.cellCount || 1);
+    });
+    if (totalArea === 0) totalArea = Math.max(1, zids.length);
+
+    zids.forEach(function(zid) {
+      var z = allZones.find(function(zz){ return zz.id === zid; });
+      if (!z) return;
+      var zArea = baseAreaData[zid] || Math.max(1, z.cellCount || 1);
+      baseSalesData[zid] = Math.round(totalSales * (zArea / totalArea));
+      baseAreaData[zid] = zArea;
+    });
+
+    // salesGroupData도 업데이트 (그룹 총매출/평수 기록)
+    var grpTotalArea = 0;
+    zids.forEach(function(zid) {
+      var z = allZones.find(function(zz){ return zz.id === zid; });
+      if (z) grpTotalArea += baseAreaData[zid] || Math.max(1, z.cellCount || 1);
+    });
+    baseSalesGroupData[gid] = { sales: totalSales, area: grpTotalArea };
+  });
+
+  // ── ② 개별 집기 단위 ──
+  allZones.forEach(function(z) {
+    if (nonSales.has(z.name) || z.color === 'cpillar' || String(z.color).startsWith('ent')) return;
+    var zpZone = zp[z.id] || {};
+    var products = zpZone[monthKey] || zpZone['all'] || [];
+    if (!products.length) return;
+    var totalSales = 0, mappedCount = 0;
+    products.forEach(function(p) {
+      if (psdAll[p] !== undefined) { totalSales += psdAll[p]; mappedCount++; }
+    });
+    if (mappedCount === 0) return;
+    var area = baseAreaData[z.id] || Math.max(1, z.cellCount || 1);
+    baseSalesData[z.id] = totalSales;
+    baseAreaData[z.id] = area;
+  });
+
+  // ── ③ 결과를 monthlySalesStore에 저장 (월별 탭이 읽는 곳) ──
+  if (targetMonthIdx !== null) {
+    if (!window.monthlySalesStore) window.monthlySalesStore = {};
+    if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
+    window.monthlySalesStore[currentStore]['m' + targetMonthIdx] = {
+      salesData: baseSalesData,
+      areaData: baseAreaData,
+      salesGroups: baseSalesGroups,
+      salesGroupData: baseSalesGroupData
+    };
+    // 현재 보고 있는 탭이 이 월이면 window.salesData도 즉시 반영
+    if (window.currentSalesMonth === targetMonthIdx) {
+      window.salesData = JSON.parse(JSON.stringify(baseSalesData));
+      window.areaData = JSON.parse(JSON.stringify(baseAreaData));
+      window.salesGroups = JSON.parse(JSON.stringify(baseSalesGroups));
+      window.salesGroupData = JSON.parse(JSON.stringify(baseSalesGroupData));
+    }
+  } else {
+    // 'all' 모드: window.salesData 직접 반영
+    window.salesData = baseSalesData;
+    window.areaData = baseAreaData;
+  }
+
+  // ── ④ 도면 뷰 새로고침 ──
+  var gc = document.getElementById('gc-sales');
+  var panel = document.querySelector('#salesWrap [data-sales-panel]');
+  if (typeof refreshSalesContent === 'function' && gc && panel) {
+    refreshSalesContent(gc, panel);
+  } else if (typeof renderSalesView === 'function') {
+    renderSalesView();
+  }
+}
+
+/* 월 변경 시 영업일수 자동 갱신 */
+function psuAutoFillDays() {
+  var monthVal = (document.getElementById('psuMonth')||{value:''}).value;
+  var daysEl = document.getElementById('psuDays');
+  if (!monthVal || !daysEl) return;
+  var d = new Date(monthVal + '-01');
+  var daysInMonth = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  daysEl.value = daysInMonth;
+  // 미리보기가 이미 열려있으면 재렌더
+  if (window._psuParsedRows && window._psuParsedRows.length > 0) {
+    renderProductSalesPreview();
+  }
+}
+
 
 
 </script>
