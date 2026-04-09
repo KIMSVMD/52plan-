@@ -4979,6 +4979,7 @@ function upd(f,v){
   merged[f] = +v;
   saveMonthZoneOverride(z.id, merged);
   render();
+  syncToFirebase();
   return;
  }
 
@@ -5006,7 +5007,7 @@ function saveMonthZoneOverride(zoneId, fields) {
  if (!monthZoneOverrides[curMonthIdx]) monthZoneOverrides[curMonthIdx] = {};
  const existing = monthZoneOverrides[curMonthIdx][zoneId] || {};
  monthZoneOverrides[curMonthIdx][zoneId] = Object.assign({}, existing, fields);
- syncToFirebase();
+ // syncToFirebase는 render 후에 호출 (render 전 호출 시 위치 틀어짐 방지)
 }
 
 // 현재 월의 특정 구역 오버라이드 삭제
@@ -5178,15 +5179,9 @@ function startPixelDrag(e, startId){
 
  const startPx={};
  movingIds.forEach(id=>{
- const el=document.getElementById('z-'+id);
- // 실제 화면에 렌더된 DOM 위치를 기준으로 시작점 계산 (오버라이드 반영된 위치)
- if(el){
-  startPx[id]={ l:parseFloat(el.style.left)||0, t:parseFloat(el.style.top)||0 };
- } else {
-  const z=zones.find(x=>x.id===id); if(!z) return;
-  const eff=getEffectiveZone(z);
-  startPx[id]={ l:px(eff.col)+8, t:py(eff.row)+8 };
- }
+ const z=zones.find(x=>x.id===id); if(!z) return;
+ const eff=getEffectiveZone(z);
+ startPx[id]={ l:px(eff.col)+8, t:py(eff.row)+8 };
  });
 
  pixelDrag={ startId, movingIds, startMouseX:e.clientX, startMouseY:e.clientY, startPx, moved:false };
@@ -5236,7 +5231,7 @@ function onPixelDragMove(e){
  const finalDx = rawDx + snaps.dx;
  const finalDy = rawDy + snaps.dy;
 
- // DOM 이동
+ // DOM 이동 + 임시 위치 기록 (zones 원본은 End에서만 오버라이드로 저장)
  pixelDrag.movingIds.forEach(id=>{
  const sp=pixelDrag.startPx[id]; if(!sp) return;
  const el=document.getElementById('z-'+id); if(!el) return;
@@ -5244,7 +5239,6 @@ function onPixelDragMove(e){
  const nt=Math.max(8, sp.t+finalDy);
  el.style.left=nl+'px';
  el.style.top =nt+'px';
- // 드래그 중 임시 위치 기록 (zones 원본 수정 안 함)
  if(!pixelDrag.curPos) pixelDrag.curPos={};
  pixelDrag.curPos[id]={
   col:Math.max(0,(nl-8)/(CELL+GAP)),
@@ -5270,15 +5264,13 @@ function onPixelDragEnd(e){
 
  if(moved){
  saveUndoState();
- // 월별 오버라이드에만 저장 (zones 원본은 절대 수정 안 함)
  movingIds.forEach(id=>{
   const pos = curPos[id];
   if (!pos) return;
-  const col = Math.round(pos.col * 2) / 2;
-  const row = Math.round(pos.row * 2) / 2;
-  saveMonthZoneOverride(id, {col, row});
+  saveMonthZoneOverride(id, {col: pos.col, row: pos.row});
  });
  render();
+ syncToFirebase();
  movingIds.forEach(id=>{
  const el=document.getElementById('z-'+id); if(!el) return;
  if(movingIds.size>1){ el.classList.add('multi-sel'); el.classList.remove('sel'); }
@@ -5378,6 +5370,7 @@ function onRE(){
  document.removeEventListener('mouseup',onRE);
  render();
  renderPanel();
+ syncToFirebase();
 }
 
 // ── 일러스트레이터 스타일 핸들/바운딩박스 ──────────────────────────────
@@ -5568,13 +5561,13 @@ function updPosX(v){
  const z=zones.find(x=>x.id===selId);if(!z)return;
  const eff=getEffectiveZone(z);
  saveMonthZoneOverride(z.id,{col:Math.max(0,v),row:eff.row,cols:eff.cols,rows:eff.rows});
- render(); renderPanel();
+ render(); renderPanel(); syncToFirebase();
 }
 function updPosY(v){
  const z=zones.find(x=>x.id===selId);if(!z)return;
  const eff=getEffectiveZone(z);
  saveMonthZoneOverride(z.id,{col:eff.col,row:Math.max(0,v),cols:eff.cols,rows:eff.rows});
- render(); renderPanel();
+ render(); renderPanel(); syncToFirebase();
 }
 function updRotation(deg){
  const z=zones.find(x=>x.id===selId);if(!z)return;
@@ -5742,13 +5735,13 @@ function resizeSel(dc,dr){
  const z=zones.find(x=>x.id===selId);if(!z)return showToast('먼저 구역 선택');
  const eff=getEffectiveZone(z);
  saveMonthZoneOverride(z.id,{col:eff.col,row:eff.row,cols:Math.max(0.5,Math.min(15,eff.cols+dc)),rows:Math.max(0.5,Math.min(10,eff.rows+dr))});
- render();renderPanel();
+ render();renderPanel();syncToFirebase();
 }
 function moveSel(dc,dr){
  const z=zones.find(x=>x.id===selId);if(!z)return showToast('먼저 구역 선택');
  const eff=getEffectiveZone(z);
  saveMonthZoneOverride(z.id,{col:Math.max(0,eff.col+dc),row:Math.max(0,eff.row+dr),cols:eff.cols,rows:eff.rows});
- render();renderPanel();
+ render();renderPanel();syncToFirebase();
 }
 function deleteSel(){ saveUndoState();
  if(!selId)return showToast('먼저 구역 선택');
