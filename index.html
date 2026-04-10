@@ -8688,6 +8688,40 @@ setTimeout(function() {
  }
 }, 8000);
 
+// ── 앱 시작 시 productSalesData 오염 키 자동 정리 ──
+// Firebase에 저장된 기존 오염 키(. # $ / [ ])를 한 번 정리 후 재저장
+(function _autoFixProductSalesData() {
+ function _sk(o) {
+  if (!o || typeof o !== 'object') return o;
+  var r = {};
+  Object.keys(o).forEach(function(k) {
+   var sk = k.replace(/[.#$\/\[\]]/g, '_');
+   r[sk] = (o[k] && typeof o[k] === 'object') ? _sk(o[k]) : o[k];
+  });
+  return r;
+ }
+ function _hasBadKey(o) {
+  if (!o || typeof o !== 'object') return false;
+  return Object.keys(o).some(function(k) {
+   return /[.#$\/\[\]]/.test(k) || _hasBadKey(o[k]);
+  });
+ }
+ // Firebase 데이터 수신 후 실행 (최대 10초 대기)
+ var _fixTries = 0;
+ var _fixTimer = setInterval(function() {
+  _fixTries++;
+  var psd = window.productSalesData || {};
+  if (_hasBadKey(psd)) {
+   console.log('[AUTO-FIX] productSalesData 오염 키 발견 - 정리 후 재저장');
+   window.productSalesData = _sk(psd);
+   if (typeof syncToFirebase === 'function') syncToFirebase();
+   clearInterval(_fixTimer);
+  } else if (_fixTries >= 20) {
+   clearInterval(_fixTimer);
+  }
+ }, 500);
+})();
+
 // ══════════════════════════════════════════
 // 도면 / 운영맵 탭 전환
 // ══════════════════════════════════════════
