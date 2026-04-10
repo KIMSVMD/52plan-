@@ -1440,8 +1440,8 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
   if (Array.isArray(o)) return o.map(_skFix);
   var r = {};
   Object.keys(o).forEach(function(k) {
-   // Firebase 금지문자 모두 제거
-   var sk = k.replace(/[.#$\[\]\/]/g, '_');
+   // Firebase 금지문자 모두 제거 (소괄호, 별표, 공백 포함)
+   var sk = k.replace(/[.#$\[\]\/()*\s]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
    // 빈 키 방지
    if (!sk) sk = '_';
    r[sk] = (o[k] && typeof o[k] === 'object') ? _skFix(o[k]) : o[k];
@@ -1480,7 +1480,7 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
   if (Array.isArray(o)) return o.map(_skLog);
   var r = {};
   Object.keys(o).forEach(function(k) {
-   var sk = k.replace(/[.#$\/\[\]]/g, '_');
+   var sk = k.replace(/[.#$\/\[\]()*\s]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || '_';
    r[sk] = _skLog(o[k]);
   });
   return r;
@@ -8716,7 +8716,7 @@ setTimeout(function() {
   if (!o || typeof o !== 'object') return o;
   var r = {};
   Object.keys(o).forEach(function(k) {
-   var sk = k.replace(/[.#$\/\[\]]/g, '_');
+   var sk = k.replace(/[.#$\/\[\]()*\s]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || '_';
    r[sk] = (o[k] && typeof o[k] === 'object') ? _sk(o[k]) : o[k];
   });
   return r;
@@ -15444,8 +15444,8 @@ function applyProductSalesData() {
   if (!window.productSalesData[monthVal]) window.productSalesData[monthVal] = {};
   rows.forEach(function(r) {
     var salesInMan = isWon ? r.sales / 10000 : r.sales;
-    // Firebase 키 금지문자 제거 (. # $ / [ ] → _)
-    var safeKey = r.productName.replace(/[.#$\/\[\]]/g, '_');
+    // Firebase 키 금지문자 제거 (. # $ / [ ] ( ) * 공백 → _)
+    var safeKey = r.productName.replace(/[.#$\/\[\]()*\s]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || '_';
     window.productSalesData[monthVal][safeKey] = Math.round(salesInMan / operatingDays);
   });
   // 영업일수도 저장 (표시용)
