@@ -6541,7 +6541,20 @@ window._getSavePayload = function(store) {
  monthlySales: saveMonthlySales,
     productMaster: JSON.parse(JSON.stringify(window.productMaster || [])),
     zoneProducts: JSON.parse(JSON.stringify(window.zoneProducts || {})),
-    productSalesData: JSON.parse(JSON.stringify(window.productSalesData || {})),
+    productSalesData: (function() {
+     // Firebase 키 금지문자(. # $ / [ ]) 치환
+     function _sanitizeKeys(obj) {
+      if (!obj || typeof obj !== 'object') return obj;
+      var result = {};
+      Object.keys(obj).forEach(function(k) {
+       var safeKey = k.replace(/[.#$\/\[\]]/g, '_');
+       result[safeKey] = (typeof obj[k] === 'object' && obj[k] !== null)
+        ? _sanitizeKeys(obj[k]) : obj[k];
+      });
+      return result;
+     }
+     return _sanitizeKeys(JSON.parse(JSON.stringify(window.productSalesData || {})));
+    })(),
  monthZoneOverrides: JSON.parse(JSON.stringify(monthZoneOverrides)),
  savedAt: Date.now()
  };
