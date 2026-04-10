@@ -1434,25 +1434,20 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  : { name: store, zones: [], userOverrides: {}, seasonOverrides: {},
  catRegions: [], canvasRotation: 0, textRotation: 0, catTagPos: 'tl',
  savedAt: Date.now() };
- // Firebase 전송 전 JSON 정제 (undefined 제거) + productSalesData 키 재sanitize
- function _deepSanitize(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
+ // productSalesData 키 sanitize (Firebase 금지문자 제거)
+ function _skFix(o) {
+  if (!o || typeof o !== 'object') return o;
   var r = {};
-  Object.keys(obj).forEach(function(k) {
+  Object.keys(o).forEach(function(k) {
    var sk = k.replace(/[.#$\/\[\]]/g, '_');
-   var v = obj[k];
-   if (v === undefined) return;
-   r[sk] = (v && typeof v === 'object') ? _deepSanitize(v) : v;
+   r[sk] = (o[k] && typeof o[k] === 'object') ? _skFix(o[k]) : o[k];
   });
   return r;
  }
- const safePayload = JSON.parse(JSON.stringify(payload, function(k, v) {
-  return v === undefined ? null : v;
- }));
- safePayload.productSalesData = _deepSanitize(safePayload.productSalesData || {});
- _myLastSavedAt[store] = safePayload.savedAt;
- console.log('[FIREBASE SET]', store, '| canvasRotation:', safePayload.canvasRotation);
- await set(ref(db, 'plan2026/' + store), safePayload);
+ payload.productSalesData = _skFix(payload.productSalesData || {});
+ _myLastSavedAt[store] = payload.savedAt;
+ console.log('[FIREBASE SET]', store, '| canvasRotation:', payload.canvasRotation);
+ await set(ref(db, 'plan2026/' + store), payload);
  console.log('[FIREBASE SET 완료]', store);
  syncUI('saved', '저장됨 ');
  } catch(e) {
@@ -1465,7 +1460,19 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  window._firebaseSaveLog = async function(logEntry) {
  try {
  const logKey = 'log_' + Date.now() + '_' + Math.floor(Math.random()*9999);
- await set(ref(db, 'plan2026/_logs/' + logKey), logEntry);
+ // logEntry 키 sanitize (상품명 등 Firebase 금지문자 제거)
+ function _skLog(o) {
+  if (!o || typeof o !== 'object') return o;
+  if (Array.isArray(o)) return o.map(_skLog);
+  var r = {};
+  Object.keys(o).forEach(function(k) {
+   var sk = k.replace(/[.#$\/\[\]]/g, '_');
+   r[sk] = _skLog(o[k]);
+  });
+  return r;
+ }
+ const safeEntry = _skLog(logEntry);
+ await set(ref(db, 'plan2026/_logs/' + logKey), safeEntry);
 
  // 2주(14일) 이상 지난 로그 자동 삭제
  const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
