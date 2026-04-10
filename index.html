@@ -1209,13 +1209,7 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  if (data.labelOffsets) { window.storeLabelOffsetsMap = window.storeLabelOffsetsMap||{}; window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets)); }
  if (data.monthlySales) {
    var _loadedMonthly = JSON.parse(JSON.stringify(data.monthlySales));
-   var _masterSG = data.salesGroups || {};
-   // 각 월에 salesGroups 없으면 최상위 salesGroups로 백필
-   Object.keys(_loadedMonthly).forEach(function(mk) {
-     if (!_loadedMonthly[mk].salesGroups || !Object.keys(_loadedMonthly[mk].salesGroups).length) {
-       _loadedMonthly[mk].salesGroups = JSON.parse(JSON.stringify(_masterSG));
-     }
-   });
+   // 각 월 데이터는 해당 월에 저장된 그룹만 사용 (전역 백필 제거 — 월간 오염 방지)
    window.monthlySalesStore[store] = _loadedMonthly;
  }
  // 현재 지점이면 활성 변수에도 즉시 적용
@@ -1244,6 +1238,14 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
     if (data.salesGroups && Object.keys(data.salesGroups).length > 0) {
       if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
       window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
+    }
+    // 문제 유형 선택 복원
+    if (data.issueSelections) {
+      if (!window._issueSelectionsStore) window._issueSelectionsStore = {};
+      window._issueSelectionsStore[store] = JSON.parse(JSON.stringify(data.issueSelections));
+      if (store === (window.currentStore || 'gs')) {
+        window._issueSelections = JSON.parse(JSON.stringify(data.issueSelections));
+      }
     }
  }
  }
@@ -1357,15 +1359,9 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
  if (data.labelOffsets) { window.storeLabelOffsetsMap = window.storeLabelOffsetsMap||{}; window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets)); }
  if (data.monthlySales) {
-   var _loadedMonthly = JSON.parse(JSON.stringify(data.monthlySales));
-   var _masterSG = data.salesGroups || {};
-   // 각 월에 salesGroups 없으면 최상위 salesGroups로 백필
-   Object.keys(_loadedMonthly).forEach(function(mk) {
-     if (!_loadedMonthly[mk].salesGroups || !Object.keys(_loadedMonthly[mk].salesGroups).length) {
-       _loadedMonthly[mk].salesGroups = JSON.parse(JSON.stringify(_masterSG));
-     }
-   });
-   window.monthlySalesStore[store] = _loadedMonthly;
+   var _loadedMonthly2 = JSON.parse(JSON.stringify(data.monthlySales));
+   // 각 월 데이터는 해당 월에 저장된 그룹만 사용 (전역 백필 제거 — 월간 오염 방지)
+   window.monthlySalesStore[store] = _loadedMonthly2;
  }
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
  window.areaData = JSON.parse(JSON.stringify(data.areaData || {}));
@@ -6613,6 +6609,7 @@ window._getSavePayload = function(store) {
      return _sanitizeKeys(JSON.parse(JSON.stringify(window.productSalesData || {})));
     })(),
  monthZoneOverrides: JSON.parse(JSON.stringify(monthZoneOverrides)),
+ issueSelections: JSON.parse(JSON.stringify((window._issueSelectionsStore && window._issueSelectionsStore[store]) || {})),
  savedAt: Date.now()
  };
  console.log('[PAYLOAD]', store, '| canvasRotation:', payload.canvasRotation, '| textRotation:', payload.textRotation, '| catTagPos:', payload.catTagPos);
@@ -9759,56 +9756,43 @@ function renderSalesMonthNav() {
 /* ── 월 전환: 이전 월 저장 → 새 월 데이터 로드 → 도면 위치 유지한 채 내용만 갱신 ── */
 function switchSalesMonth(monthIdx) {
  const prev = window.currentSalesMonth;
- // 이전 월 데이터 항상 저장 (그룹 포함) — 단, 빈 월에 현재 데이터를 덮어쓰지 않음
+ // 이전 월 데이터 저장 — salesData/areaData/salesGroupData에 실제 데이터 있을 때만 덮어씀
  if (prev !== null && prev !== undefined) {
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
  if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
  const prevKey = _salesMonthKey(prev);
- // 항상 저장: salesGroups(그룹 구조)는 매출 데이터 유무와 무관하게 반드시 보존
  const existingPrev = window.monthlySalesStore[currentStore][prevKey];
- // salesGroups는 _getActiveGroups로 항상 올바른 값 사용 (window.salesGroups 비어있어도 폴백)
- var _switchGroups = _getActiveGroups(currentStore);
- const hasAnyData = Object.keys(window.salesData||{}).length > 0
- || Object.keys(window.salesGroupData||{}).length > 0
- || Object.keys(_switchGroups).length > 0;
- if (!existingPrev || hasAnyData) {
- window.monthlySalesStore[currentStore][prevKey] = {
- salesData: JSON.parse(JSON.stringify(window.salesData || {})),
- areaData: JSON.parse(JSON.stringify(window.areaData || {})),
- salesGroups: JSON.parse(JSON.stringify(_switchGroups)),
- salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
- };
- } else {
- window.monthlySalesStore[currentStore][prevKey] = Object.assign(
- {}, existingPrev,
- { salesGroups: JSON.parse(JSON.stringify(_switchGroups)) }
- );
+ // 실제 매출 데이터가 있을 때만 저장 (그룹 구조만 있는 경우는 저장 안 함)
+ const hasSalesData = Object.keys(window.salesData||{}).length > 0
+   || Object.keys(window.salesGroupData||{}).length > 0;
+ if (hasSalesData) {
+   window.monthlySalesStore[currentStore][prevKey] = {
+   salesData: JSON.parse(JSON.stringify(window.salesData || {})),
+   areaData: JSON.parse(JSON.stringify(window.areaData || {})),
+   salesGroups: JSON.parse(JSON.stringify(window.salesGroups || {})),
+   salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
+   };
+ } else if (existingPrev) {
+   // 매출 데이터 없으면 기존 저장값 유지 (그룹 구조만 갱신)
+   window.monthlySalesStore[currentStore][prevKey] = Object.assign(
+   {}, existingPrev,
+   { salesGroups: JSON.parse(JSON.stringify(window.salesGroups || {})) }
+   );
  }
  }
  window.currentSalesMonth = monthIdx;
  const md = getSalesMonthData(monthIdx);
  window.salesData = JSON.parse(JSON.stringify(md.salesData));
  window.areaData = JSON.parse(JSON.stringify(md.areaData));
- // 종합 탭(null)에서는 그룹 표시 안 함 — 월별 그룹은 해당 월에서만 표시
+ // 종합 탭(null)에서는 그룹 표시 안 함
  if (monthIdx === null || monthIdx === undefined) {
    window.salesGroups = {};
    window.salesGroupData = {};
  } else {
-   // md.salesGroups가 있으면 사용, 없으면 storeSalesGroupsMap 폴백
+   // 해당 월에 저장된 그룹만 사용 — 다른 월/전역 그룹 폴백 없음 (데이터 오염 방지)
    var _loadedGroups = md.salesGroups || {};
-   if (!Object.keys(_loadedGroups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[currentStore]) {
-     _loadedGroups = window.storeSalesGroupsMap[currentStore];
-   }
    window.salesGroups = JSON.parse(JSON.stringify(_loadedGroups));
    window.salesGroupData = JSON.parse(JSON.stringify(md.salesGroupData || {}));
-   // 이 월 monthlySalesStore에 그룹 백필
-   if (Object.keys(_loadedGroups).length > 0 && window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
-     var _mk = _salesMonthKey(monthIdx);
-     if (!window.monthlySalesStore[currentStore][_mk]) window.monthlySalesStore[currentStore][_mk] = {};
-     if (!window.monthlySalesStore[currentStore][_mk].salesGroups || !Object.keys(window.monthlySalesStore[currentStore][_mk].salesGroups).length) {
-       window.monthlySalesStore[currentStore][_mk].salesGroups = JSON.parse(JSON.stringify(_loadedGroups));
-     }
-   }
  }
 
  // 도면이 이미 렌더된 경우: 위치 유지하며 색상·패널만 갱신
@@ -12526,27 +12510,158 @@ function renderImproveTab(container, metrics, avgPerSales) {
  mg.appendChild(mc('평당효율', sep+'%', seC, false));
  card.appendChild(mg);
 
- // ③ 분석 박스: 원인 + 개선방향 통합
- if (r.reasons.length || r.actions.length) {
- const actBorderCol = r.severity==='high'?'#dc2626':r.severity==='mid'?'#eab308':'#005233';
- const act = document.createElement('div');
- act.style.cssText = 'padding:8px 12px 10px;background:#fffbeb;border-left:3px solid '+actBorderCol+';';
- let html = '';
- if (r.reasons.length) {
- html += '<div style="font-size:8px;color:#92400e;font-weight:700;margin-bottom:3px;letter-spacing:.3px;">원인</div>';
- r.reasons.forEach(function(rsn) {
- html += '<div style="font-size:9px;color:#78350f;line-height:1.5;margin-bottom:1px;">• '+rsn+'</div>';
- });
- html += '<div style="height:4px;"></div>';
+ // ③ 문제 유형 + 개선방안 통합 섹션
+ // 구역 데이터 기반 동적 개선방안 생성
+ function getIssueActions(key, r) {
+   const ps = Math.round(r.perSales);
+   const eff = Math.round((r.salesEff||0)*100);
+   const area = Math.round(r.area);
+   const name = r.name;
+   const grade = r.grade;
+   const spEff = Math.round((r.spaceEff||r.effIdx||0)*10)/10;
+
+   if (key === 'product') return [
+     ps < 10
+       ? name+' 구역 평당 '+ps+'만원 — 수요 낮은 품목 즉시 교체 검토'
+       : name+' 구역 평당 '+ps+'만원 — 베스트셀러 비중 확대로 추가 매출 확보 가능',
+     '시즌·행사 연계 상품 전면 배치, 고마진 품목 골든존 우선 진열',
+     grade==='C' ? '저회전 상품 정리 후 인접 고효율 카테고리 품목으로 채움' : '현 구색 유지하되 신상품 테스트 구역으로 활용 검토',
+   ];
+   if (key === 'zoning') return [
+     spEff < 0.8
+       ? name+' 효율지수 '+spEff+' — 인접 고효율 구역과 카테고리 연계 재배치 필요'
+       : name+' 조닝 개선 시 효율지수 '+spEff+'→1.0 이상 목표 가능',
+     '고객 주동선 분석 후 구역 위치 재조정 — 입구·엔드캡 근접 이동 검토',
+     '관련 카테고리 인접 배치로 연계 구매 유도 (예: 축산↔양념, 채소↔과일)',
+   ];
+   if (key === 'display') return [
+     ps < 15
+       ? name+' 평당 '+ps+'만원 — 골든존 재정비·POP 교체로 단기 매출 개선 가능'
+       : name+' 진열 최적화로 평당 '+(ps+5)+'만원 목표 설정 권장',
+     '페이싱 확대(전면 진열 2열 이상), 가격표 가독성 개선, 조명 점검',
+     '엔드캡·코너 공간 활용한 특가·번들 진열로 충동구매 유도',
+   ];
+   if (key === 'area') return [
+     area > 3
+       ? name+' '+area+'평 중 저효율 '+(Math.max(1,Math.round(area*0.3)))+'평 인접 구역 이관 검토'
+       : name+' 면적('+area+'평) 대비 집기 수 최적화 — 밀집 배치로 평당 효율 제고',
+     '효율지수 '+spEff+' — 목표 1.0 달성을 위한 면적·매출 균형 재설정',
+     '집기 수 조정 후 남은 공간에 고회전 품목 추가 배치',
+   ];
+   if (key === 'price') return [
+     ps < 10
+       ? name+' 평당 '+ps+'만원 — 경쟁사 대비 가격 경쟁력 점검 및 특가 행사 도입'
+       : name+' 묶음·세트 구성으로 객단가 '+Math.round(ps*1.2)+'만원 목표 설정',
+     '핵심 품목 한정 특가 + POP 강조로 가격 매력도 제고',
+     '멤버십·쿠폰 연계 프로모션으로 재방문 유도 및 구매 빈도 증가',
+   ];
+   if (key === 'operation') return [
+     eff < 50
+       ? name+' 평당효율 '+eff+'% — 발주·진열 담당자 책임 구역 재지정 필요'
+       : name+' 운영 개선으로 평당효율 '+eff+'%→70% 목표',
+     '결품·회전율 일일 점검 체계 구축, 안전재고 기준 재설정',
+     '진열 상태 주 2회 이상 점검 — 흐트러진 진열 즉시 복구 기준 마련',
+   ];
+   return ['개선방안을 선택하세요'];
  }
- if (r.actions.length) {
- html += '<div style="font-size:8px;color:#166534;font-weight:700;margin-bottom:3px;letter-spacing:.3px;">개선 방향</div>';
- r.actions.forEach(function(a, i) {
- html += '<div style="font-size:9.5px;color:#14532d;font-weight:'+(i===0?'800':'600')+';line-height:1.6;">→ '+a+'</div>';
- });
- }
- act.innerHTML = html;
- card.appendChild(act);
+
+ const ISSUE_TYPES = [
+   { key:'product',   label:'상품 문제',     bg:'#fff7ed', col:'#c2410c', activeBg:'#ea580c' },
+   { key:'zoning',    label:'조닝 문제',     bg:'#f5f3ff', col:'#6d28d9', activeBg:'#7c3aed' },
+   { key:'display',   label:'진열 문제',     bg:'#eff6ff', col:'#1d4ed8', activeBg:'#2563eb' },
+   { key:'area',      label:'면적 비효율',   bg:'#fdf4ff', col:'#7e22ce', activeBg:'#9333ea' },
+   { key:'price',     label:'가격/프로모션', bg:'#fff1f2', col:'#be123c', activeBg:'#e11d48' },
+   { key:'operation', label:'운영 문제',     bg:'#f8fafc', col:'#374151', activeBg:'#4b5563' },
+ ];
+
+ const issueKey = 'issue_' + r.zids.join('_');
+ window._issueSelections = window._issueSelections || {};
+ const curIssues = window._issueSelections[issueKey] || {};
+ window._issueSelections[issueKey] = curIssues;
+
+ const selectedTypes = ISSUE_TYPES.filter(it => curIssues[it.key]);
+
+ if (isViewer) {
+   // ── 열람자: 관리자가 선택한 것만 표시 ──
+   if (selectedTypes.length > 0) {
+     const viewSection = document.createElement('div');
+     viewSection.style.cssText = 'padding:10px 12px 4px;border-top:2px solid #f1f5f9;background:#f8fafc;';
+
+     selectedTypes.forEach(function(it) {
+       const acts = getIssueActions(it.key, r);
+       const box = document.createElement('div');
+       box.style.cssText = 'margin-bottom:8px;padding:10px;background:'+it.bg+';border-left:3px solid '+it.activeBg+';border-radius:0 6px 6px 0;';
+       let html = '<div style="display:inline-flex;align-items:center;gap:5px;margin-bottom:8px;background:'+it.activeBg+';color:#fff;padding:3px 10px;border-radius:20px;">';
+       html += '<span style="font-size:10px;font-weight:900;">'+it.label+'</span></div><br>';
+       acts.forEach(function(a, i) {
+         html += '<div style="font-size:10px;font-weight:'+(i===0?'800':'600')+';color:#111827;line-height:1.6;margin-bottom:'+(i<acts.length-1?'3px':'0')+';display:flex;gap:5px;">';
+         html += '<span style="color:'+it.activeBg+';font-weight:900;flex-shrink:0;">'+(i+1)+'.</span><span>'+a+'</span></div>';
+       });
+       box.innerHTML = html;
+       viewSection.appendChild(box);
+     });
+
+     card.appendChild(viewSection);
+   }
+ } else {
+   // ── 관리자: 큰 버튼 그리드 + 선택 시 개선방안 즉시 표시 ──
+   const issueSection = document.createElement('div');
+   issueSection.style.cssText = 'padding:12px 12px 8px;border-top:2px solid #f1f5f9;background:#f8fafc;';
+
+   const titleRow = document.createElement('div');
+   titleRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;';
+   titleRow.innerHTML =
+     '<span style="font-size:10px;font-weight:900;color:#374151;">⚠️ 문제 유형 선택</span>'+
+     '<span style="font-size:8px;color:#9ca3af;">복수 선택 · 자동 저장</span>';
+   issueSection.appendChild(titleRow);
+
+   const btnGrid = document.createElement('div');
+   btnGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;';
+
+   const actionArea = document.createElement('div');
+
+   function renderActions() {
+     actionArea.innerHTML = '';
+     ISSUE_TYPES.filter(it => curIssues[it.key]).forEach(function(it) {
+       const acts = getIssueActions(it.key, r);
+       const box = document.createElement('div');
+       box.style.cssText = 'margin-bottom:6px;padding:10px;background:'+it.bg+';border-left:3px solid '+it.activeBg+';border-radius:0 6px 6px 0;';
+       let html = '<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px;">';
+       html += '<span style="font-size:10px;font-weight:900;color:'+it.activeBg+';">'+it.label+' 개선방안</span></div>';
+       acts.forEach(function(a, i) {
+         html += '<div style="font-size:10px;font-weight:'+(i===0?'800':'600')+';color:#111827;line-height:1.6;margin-bottom:'+(i<acts.length-1?'3px':'0')+';display:flex;gap:5px;">';
+         html += '<span style="color:'+it.activeBg+';font-weight:900;flex-shrink:0;">'+(i+1)+'.</span><span>'+a+'</span></div>';
+       });
+       box.innerHTML = html;
+       actionArea.appendChild(box);
+     });
+   }
+
+   ISSUE_TYPES.forEach(function(it) {
+     const isOn = !!curIssues[it.key];
+     const btn = document.createElement('button');
+     btn.style.cssText = 'font-family:inherit;font-size:10px;font-weight:800;padding:9px 4px;border-radius:8px;border:2px solid '+(isOn?it.activeBg:it.col+'44')+';background:'+(isOn?it.activeBg:'#fff')+';color:'+(isOn?'#fff':it.col)+';cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;min-height:52px;';
+     btn.innerHTML = '<span style="font-size:10px;font-weight:900;text-align:center;line-height:1.3;">'+it.label+'</span>';
+     btn.onclick = function(e) {
+       e.stopPropagation();
+       curIssues[it.key] = !curIssues[it.key];
+       const on = curIssues[it.key];
+       btn.style.background = on ? it.activeBg : '#fff';
+       btn.style.color = on ? '#fff' : it.col;
+       btn.style.borderColor = on ? it.activeBg : it.col+'44';
+       renderActions();
+       if (!window._issueSelectionsStore) window._issueSelectionsStore = {};
+       if (!window._issueSelectionsStore[currentStore]) window._issueSelectionsStore[currentStore] = {};
+       window._issueSelectionsStore[currentStore][issueKey] = curIssues;
+       if (typeof syncToFirebase === 'function') syncToFirebase();
+     };
+     btnGrid.appendChild(btn);
+   });
+
+   issueSection.appendChild(btnGrid);
+   renderActions();
+   issueSection.appendChild(actionArea);
+   card.appendChild(issueSection);
  }
 
  container.appendChild(card);
@@ -12554,7 +12669,6 @@ function renderImproveTab(container, metrics, avgPerSales) {
 
  renderGroup(needFix, '️', '개선 필요', '#fee2e2', '#dc2626');
  renderGroup(watchOut, '', '효율 주의', '#fef3c7', '#d97706');
- renderGroup(goodOnes, '', '고효율 유지', '#e6f2ed', '#005233');
 }
 
 function renderListTab(container, metrics, maxPerSales) {
