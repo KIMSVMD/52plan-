@@ -1245,6 +1245,14 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
       window._issueSelectionsStore[store] = JSON.parse(JSON.stringify(data.issueSelections));
       if (store === (window.currentStore || 'gs')) {
         window._issueSelections = JSON.parse(JSON.stringify(data.issueSelections));
+        // 개선 탭이 열려있으면 즉시 재렌더 (타이밍 문제 해결)
+        if (window._currentSalesPanelTab === 'tab-improve') {
+          var _gc = document.getElementById('gc-sales');
+          var _panel = document.querySelector('#salesWrap [data-sales-panel]');
+          if (_gc && _panel && typeof refreshSalesContent === 'function') {
+            setTimeout(function(){ refreshSalesContent(_gc, _panel); }, 50);
+          }
+        }
       }
     }
  }
@@ -6561,18 +6569,10 @@ window._getSavePayload = function(store) {
 
  // ── 월별 평당매출 데이터 ──
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
- // monthlySalesStore 저장 시 각 월에 salesGroups 항상 포함 (없으면 현재 그룹으로 채움)
- var _masterGroups = isCurrent
-   ? _getActiveGroups(store)
-   : ((window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {});
  var _rawMonthly = window.monthlySalesStore[store] || {};
  var saveMonthlySales = {};
  Object.keys(_rawMonthly).forEach(function(mk) {
-   var md = _rawMonthly[mk];
-   var mdGroups = md.salesGroups || {};
-   saveMonthlySales[mk] = Object.assign({}, md, {
-     salesGroups: Object.keys(mdGroups).length > 0 ? mdGroups : JSON.parse(JSON.stringify(_masterGroups))
-   });
+   saveMonthlySales[mk] = JSON.parse(JSON.stringify(_rawMonthly[mk]));
  });
 
  const payload = {
@@ -10018,6 +10018,11 @@ function renderSalesView() {
  wrap._rendering = true;
  setTimeout(function() { if(wrap) wrap._rendering = false; }, 200);
 
+ // issueSelections 최신화 (Firebase 로드 후 스토어에 있으면 반영)
+ if (window._issueSelectionsStore && window._issueSelectionsStore[currentStore]) {
+   window._issueSelections = JSON.parse(JSON.stringify(window._issueSelectionsStore[currentStore]));
+ }
+
  // jumpToMonth 패치 (평당매출 탭 진입 시 한 번만)
  _patchJumpToMonthForSales();
 
@@ -13111,18 +13116,17 @@ function deleteSalesMonthData() {
  const key = 'm' + mo;
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
  if (!window.monthlySalesStore[store]) window.monthlySalesStore[store] = {};
+
+ // 해당 월만 완전히 비움 (다른 월 데이터 건드리지 않음)
  window.monthlySalesStore[store][key] = { salesData:{}, areaData:{}, salesGroups:{}, salesGroupData:{} };
 
- // 현재 활성 데이터도 초기화
+ // 현재 활성 데이터만 초기화 (storeSalesGroupsMap 등 전체 초기화 금지)
  window.salesData = {};
  window.areaData = {};
  window.salesGroups = {};
  window.salesGroupData = {};
- window.storeSalesDataMap[store] = {};
- window.storeSalesGroupsMap[store] = {};
- window.storeSalesGroupDataMap[store] = {};
 
- saveSalesMonthData(mo);
+ // Firebase에 해당 월만 덮어씀
  syncToFirebase();
  if (typeof switchSalesMonth === 'function') switchSalesMonth(mo);
  showToast(mName + ' 데이터 삭제 완료');
