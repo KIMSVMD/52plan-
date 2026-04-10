@@ -1434,17 +1434,31 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  : { name: store, zones: [], userOverrides: {}, seasonOverrides: {},
  catRegions: [], canvasRotation: 0, textRotation: 0, catTagPos: 'tl',
  savedAt: Date.now() };
- // productSalesData 키 sanitize (Firebase 금지문자 제거)
+ // productSalesData 키 강제 sanitize - 모든 비안전 문자 제거
  function _skFix(o) {
   if (!o || typeof o !== 'object') return o;
+  if (Array.isArray(o)) return o.map(_skFix);
   var r = {};
   Object.keys(o).forEach(function(k) {
-   var sk = k.replace(/[.#$\/\[\]]/g, '_');
+   // Firebase 금지문자 모두 제거
+   var sk = k.replace(/[.#$\[\]\/]/g, '_');
+   // 빈 키 방지
+   if (!sk) sk = '_';
    r[sk] = (o[k] && typeof o[k] === 'object') ? _skFix(o[k]) : o[k];
   });
   return r;
  }
  payload.productSalesData = _skFix(payload.productSalesData || {});
+ // 검증
+ var _badKeys = [];
+ Object.keys(payload.productSalesData).forEach(function(m) {
+  Object.keys(payload.productSalesData[m] || {}).forEach(function(k) {
+   if (/[.#$\[\]\/]/.test(k)) _badKeys.push(m + '/' + k);
+  });
+ });
+ if (_badKeys.length > 0) {
+  console.error('[FIREBASE] 여전히 오염된 키:', _badKeys);
+ }
  _myLastSavedAt[store] = payload.savedAt;
  console.log('[FIREBASE SET]', store, '| canvasRotation:', payload.canvasRotation);
  await set(ref(db, 'plan2026/' + store), payload);
@@ -7057,10 +7071,10 @@ function doSyncSave() {
  });
  }
  window._firebaseSave(currentStore);
- // 로그 저장
- if (typeof window._firebaseSaveLog === 'function') {
- window._firebaseSaveLog(logEntry);
- }
+ // 로그 저장 (비활성화 - productSalesData 오염 키 문제로 인해 임시 중단)
+ // if (typeof window._firebaseSaveLog === 'function') {
+ // window._firebaseSaveLog(logEntry);
+ // }
  showToast(' [' + branch + ' ' + name + '] 서버 동기화 완료');
  } else {
  showToast(' Firebase 연결 안됨');
