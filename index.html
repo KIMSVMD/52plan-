@@ -9681,20 +9681,16 @@ function getSalesMonthData(monthIdx) {
  }
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
  if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
- const _mKey = _salesMonthKey(monthIdx);
- const _mStore = window.monthlySalesStore[currentStore];
- const md = _mStore[_mKey] || {};
- // salesGroups: 해당 월에 키가 명시적으로 저장된 경우(빈 {}이라도) 그대로 사용 — 삭제 의도 존중
- const monthHasSalesGroupsKey = _mStore[_mKey] && Object.prototype.hasOwnProperty.call(_mStore[_mKey], 'salesGroups');
- const resolvedGroups = monthHasSalesGroupsKey
-   ? md.salesGroups
-   : ((window.storeSalesGroupsMap && window.storeSalesGroupsMap[currentStore] && Object.keys(window.storeSalesGroupsMap[currentStore]).length > 0)
+ const md = window.monthlySalesStore[currentStore][_salesMonthKey(monthIdx)] || {};
+ // salesGroups: 해당 월에 없으면 전역 storeSalesGroupsMap → window.salesGroups 순으로 폴백
+ const fallbackGroups =
+   (window.storeSalesGroupsMap && window.storeSalesGroupsMap[currentStore] && Object.keys(window.storeSalesGroupsMap[currentStore]).length > 0)
      ? window.storeSalesGroupsMap[currentStore]
-     : (window.salesGroups && Object.keys(window.salesGroups).length > 0 ? window.salesGroups : {}));
+     : (window.salesGroups && Object.keys(window.salesGroups).length > 0 ? window.salesGroups : {});
  return {
  salesData: md.salesData || {},
  areaData: md.areaData || {},
- salesGroups: JSON.parse(JSON.stringify(resolvedGroups || {})),
+ salesGroups: (md.salesGroups && Object.keys(md.salesGroups).length > 0) ? md.salesGroups : JSON.parse(JSON.stringify(fallbackGroups)),
  salesGroupData: md.salesGroupData || {}
  };
 }
@@ -11644,7 +11640,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  groupCol.id = 'salesGroupSidePanel';
  const hasEdit = (typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode && isAdmin && !isViewer;
  groupCol.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;transition:width .2s ease,border .2s ease;border-left:' +
- (hasEdit ? '2px solid #6366f1' : 'none') + ';width:' + (hasEdit ? '170px' : '0') + ';flex-shrink:0;background:#0f172a;';
+ (hasEdit ? '2px solid #6366f1' : 'none') + ';width:' + (hasEdit ? '220px' : '0') + ';flex-shrink:0;background:#0f172a;';
 
  outerFlex.appendChild(analysisCol);
  outerFlex.appendChild(groupCol);
@@ -11657,87 +11653,116 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
 
  // 제목 바
  const hd = document.createElement('div');
- hd.style.cssText = 'flex-shrink:0;padding:10px 10px 8px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;';
- hd.innerHTML = '<span style="font-size:10px;font-weight:800;color:#a5b4fc;letter-spacing:.3px;"> 그룹 지정</span>';
+ hd.style.cssText = 'flex-shrink:0;padding:12px 12px 10px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;';
+ hd.innerHTML = '<span style="font-size:12px;font-weight:900;color:#e2e8f0;letter-spacing:.2px;"> 그룹 지정</span>';
  const doneBtn = document.createElement('button');
- doneBtn.style.cssText = 'font-family:inherit;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;border:1px solid #005233;background:transparent;color:#4ade80;cursor:pointer;';
- doneBtn.textContent = ' 완료';
+ doneBtn.style.cssText = 'font-family:inherit;font-size:11px;font-weight:800;padding:4px 10px;border-radius:6px;border:1.5px solid #22c55e;background:rgba(34,197,94,.15);color:#4ade80;cursor:pointer;';
+ doneBtn.textContent = '✓ 완료';
  doneBtn.onclick = function() { if(typeof toggleSalesGroupEdit==='function') toggleSalesGroupEdit(); };
  hd.appendChild(doneBtn);
  groupCol.appendChild(hd);
 
  // 힌트
  const hint = document.createElement('div');
- hint.style.cssText = 'flex-shrink:0;padding:6px 10px;font-size:9px;color:#475569;border-bottom:1px solid #1e293b;line-height:1.5;';
+ hint.style.cssText = 'flex-shrink:0;padding:7px 12px;font-size:10px;color:#64748b;border-bottom:1px solid #1e293b;line-height:1.5;background:#0a0f1a;';
  hint.textContent = '그룹 선택 후 도면 구역 클릭으로 배정';
  groupCol.appendChild(hint);
 
  // 그룹 목록 (스크롤)
  const listWrap = document.createElement('div');
- listWrap.style.cssText = 'flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px;';
+ listWrap.style.cssText = 'flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:5px;';
 
  const entries = Object.entries(window.salesGroups || {});
  if (!entries.length) {
- const empty = document.createElement('div');
- empty.style.cssText = 'padding:16px 0;text-align:center;font-size:9px;color:#334155;';
- empty.textContent = '그룹 없음';
- listWrap.appendChild(empty);
+   const empty = document.createElement('div');
+   empty.style.cssText = 'padding:20px 0;text-align:center;font-size:11px;color:#475569;';
+   empty.textContent = '그룹 없음';
+   listWrap.appendChild(empty);
  } else {
- entries.forEach(function(_e) {
- var gid = _e[0], g = _e[1];
- var isActive = (typeof salesGroupActiveId !== 'undefined') && salesGroupActiveId === gid;
- var row = document.createElement('div');
- row.style.cssText = 'display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;background:' +
- (isActive ? '#312e81' : '#1e293b') + ';border:1.5px solid ' + (isActive ? '#6366f1' : '#334155') + ';cursor:pointer;';
- row.onmouseover = function(){ if(!isActive) row.style.background='#1e293b'; };
- row.onmouseout = function(){ if(!isActive) row.style.background='#1e293b'; };
- var dot = document.createElement('div');
- dot.style.cssText = 'width:9px;height:9px;border-radius:2px;background:'+g.color+';flex-shrink:0;';
- // 넘버 뱃지
- if (g.number) {
-   var numBadge = document.createElement('span');
-   numBadge.style.cssText = 'font-size:8px;font-weight:900;padding:1px 5px;border-radius:3px;background:'+g.color+';color:#fff;flex-shrink:0;';
-   numBadge.textContent = g.number;
-   row.appendChild(dot);
-   row.appendChild(numBadge);
- } else {
-   row.appendChild(dot);
- }
- var lbl = document.createElement('span');
- lbl.style.cssText = 'flex:1;font-size:10px;font-weight:700;color:'+(isActive?'#c7d2fe':'#64748b')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;';
- lbl.textContent = g.label;
- var cntEl = document.createElement('span');
- cntEl.style.cssText = 'font-size:8px;color:#334155;flex-shrink:0;';
- cntEl.textContent = (g.zoneIds||[]).length+'개';
- var actRow = document.createElement('div');
- actRow.style.cssText = 'display:flex;gap:3px;flex-shrink:0;';
- // 넘버 수정 버튼
- var numBtn = document.createElement('button');
- numBtn.style.cssText = 'font-size:8px;padding:1px 4px;border-radius:3px;border:1px solid #334155;background:transparent;color:#94a3b8;cursor:pointer;font-family:inherit;';
- numBtn.textContent = '#';
- numBtn.title = '넘버 수정';
- numBtn.onclick = (function(id, grp){ return function(e){
-   e.stopPropagation();
-   var newNum = prompt('넘버를 입력하세요 (예: 1, 1-1, 2 등)\n비워두면 표시 안 됨', grp.number || '');
-   if (newNum === null) return;
-   grp.number = newNum;
-   _safeSaveGroups(currentStore, window.salesGroups);
-   if (typeof syncToFirebase === 'function') syncToFirebase();
-   if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
- }; })(gid, g);
- var selBtn = document.createElement('button');
- selBtn.style.cssText = 'font-size:8px;padding:1px 5px;border-radius:3px;border:1px solid '+(isActive?'#818cf8':'#475569')+';background:'+(isActive?'#4f46e5':'transparent')+';color:'+(isActive?'#fff':'#64748b')+';cursor:pointer;font-family:inherit;';
- selBtn.textContent = isActive ? '' : '선택';
- selBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
- var delBtn = document.createElement('button');
- delBtn.style.cssText = 'font-size:8px;padding:1px 4px;border-radius:3px;border:1px solid #334155;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;';
- delBtn.textContent = '';
- delBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); if(typeof deleteSalesGroup==='function') deleteSalesGroup(id); }; })(gid);
- actRow.appendChild(numBtn); actRow.appendChild(selBtn); actRow.appendChild(delBtn);
- row.appendChild(lbl); row.appendChild(cntEl); row.appendChild(actRow);
- row.onclick = (function(id){ return function(){ if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
- listWrap.appendChild(row);
- });
+   entries.forEach(function(_e) {
+     var gid = _e[0], g = _e[1];
+     var isActive = (typeof salesGroupActiveId !== 'undefined') && salesGroupActiveId === gid;
+
+     var row = document.createElement('div');
+     row.style.cssText = [
+       'display:flex;flex-direction:column;gap:6px;',
+       'padding:9px 10px;border-radius:8px;cursor:pointer;',
+       'background:' + (isActive ? 'linear-gradient(135deg,#1e1b4b,#1a1060)' : '#1e293b') + ';',
+       'border:2px solid ' + (isActive ? g.color : '#2d3748') + ';',
+       'transition:border-color .12s, background .12s;'
+     ].join('');
+     row.onmouseover = function(){ if(!isActive){ row.style.borderColor=g.color+'88'; row.style.background='#253347'; } };
+     row.onmouseout = function(){ if(!isActive){ row.style.borderColor='#2d3748'; row.style.background='#1e293b'; } };
+
+     // 상단 행: 색상 바 + 라벨 + 선택버튼
+     var topRow = document.createElement('div');
+     topRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+
+     // 색상 블록 (크게)
+     var colorBar = document.createElement('div');
+     colorBar.style.cssText = [
+       'width:14px;height:36px;border-radius:4px;flex-shrink:0;',
+       'background:'+g.color+';',
+       'box-shadow:0 0 6px '+g.color+'88;'
+     ].join('');
+     topRow.appendChild(colorBar);
+
+     // 라벨 + 구역수
+     var labelCol = document.createElement('div');
+     labelCol.style.cssText = 'flex:1;min-width:0;';
+     labelCol.innerHTML =
+       '<div style="font-size:13px;font-weight:900;color:' + (isActive ? '#fff' : '#cbd5e1') + ';' +
+       'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;margin-bottom:3px;">' + g.label + '</div>' +
+       '<div style="font-size:10px;color:' + g.color + ';font-weight:700;">' +
+       (g.number ? '<span style="background:'+g.color+'33;padding:1px 5px;border-radius:3px;margin-right:4px;">'+g.number+'</span>' : '') +
+       (g.zoneIds||[]).length + '개 구역</div>';
+     topRow.appendChild(labelCol);
+
+     // 선택 버튼
+     var selBtn = document.createElement('button');
+     selBtn.style.cssText = [
+       'font-family:inherit;font-size:10px;font-weight:800;',
+       'padding:4px 8px;border-radius:6px;flex-shrink:0;cursor:pointer;',
+       'border:1.5px solid ' + (isActive ? g.color : '#475569') + ';',
+       'background:' + (isActive ? g.color : 'transparent') + ';',
+       'color:' + (isActive ? '#fff' : '#94a3b8') + ';',
+       'transition:all .12s;'
+     ].join('');
+     selBtn.textContent = isActive ? '✓ 선택됨' : '선택';
+     selBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
+     topRow.appendChild(selBtn);
+
+     row.appendChild(topRow);
+
+     // 하단 행: # 수정 + 삭제 버튼
+     var btnRow = document.createElement('div');
+     btnRow.style.cssText = 'display:flex;gap:5px;padding-left:22px;';
+
+     var numBtn = document.createElement('button');
+     numBtn.style.cssText = 'font-family:inherit;font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;border:1px solid #334155;background:transparent;color:#64748b;cursor:pointer;flex:1;';
+     numBtn.textContent = '# 넘버 수정';
+     numBtn.onclick = (function(id, grp){ return function(e){
+       e.stopPropagation();
+       var newNum = prompt('넘버를 입력하세요 (예: 1, 1-1, 2 등)\n비워두면 표시 안 됨', grp.number || '');
+       if (newNum === null) return;
+       grp.number = newNum;
+       _safeSaveGroups(currentStore, window.salesGroups);
+       if (typeof syncToFirebase === 'function') syncToFirebase();
+       if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
+     }; })(gid, g);
+
+     var delBtn = document.createElement('button');
+     delBtn.style.cssText = 'font-family:inherit;font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;border:1px solid #ef444433;background:transparent;color:#ef4444;cursor:pointer;';
+     delBtn.textContent = '🗑 삭제';
+     delBtn.onclick = (function(id){ return function(e){ e.stopPropagation(); if(typeof deleteSalesGroup==='function') deleteSalesGroup(id); }; })(gid);
+
+     btnRow.appendChild(numBtn);
+     btnRow.appendChild(delBtn);
+     row.appendChild(btnRow);
+
+     row.onclick = (function(id){ return function(){ if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
+     listWrap.appendChild(row);
+   });
  }
  groupCol.appendChild(listWrap);
 
@@ -11751,59 +11776,6 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  addBtn.onmouseout = function(){ addBtn.style.borderColor='#334155'; addBtn.style.color='#475569'; };
  addBtn.onclick = function(){ if(typeof addSalesGroup==='function') addSalesGroup(); };
  addWrap.appendChild(addBtn);
-
- // ── 다른 월로 복사 UI ──
- var _curMonCopy = window.currentSalesMonth;
- if (_curMonCopy !== null && _curMonCopy !== undefined) {
-   // 구분선
-   var cpDivider = document.createElement('div');
-   cpDivider.style.cssText = 'height:1px;background:#1e293b;margin:6px 0 4px;';
-   addWrap.appendChild(cpDivider);
-
-   var cpLabel = document.createElement('div');
-   cpLabel.style.cssText = 'font-size:8px;color:#475569;letter-spacing:.3px;margin-bottom:4px;';
-   cpLabel.textContent = '다른 월로 그룹 복사';
-   addWrap.appendChild(cpLabel);
-
-   var cpRow = document.createElement('div');
-   cpRow.style.cssText = 'display:flex;gap:4px;align-items:center;';
-
-   var cpSel = document.createElement('select');
-   cpSel.style.cssText = 'flex:1;font-family:inherit;font-size:9px;padding:4px 5px;border-radius:5px;border:1.5px solid #334155;background:#0f172a;color:#94a3b8;cursor:pointer;';
-   MONTHS.forEach(function(m) {
-     if (m.idx === _curMonCopy) return; // 현재 월 제외
-     var opt = document.createElement('option');
-     opt.value = m.idx;
-     opt.textContent = m.label;
-     cpSel.appendChild(opt);
-   });
-   cpRow.appendChild(cpSel);
-
-   var cpBtn = document.createElement('button');
-   cpBtn.style.cssText = 'font-family:inherit;font-size:9px;font-weight:700;padding:4px 8px;border-radius:5px;border:1.5px solid #6366f1;background:transparent;color:#818cf8;cursor:pointer;white-space:nowrap;flex-shrink:0;';
-   cpBtn.textContent = '복사';
-   cpBtn.title = '선택한 월에 현재 월 그룹 구조를 붙여넣기';
-   cpBtn.onmouseover = function(){ cpBtn.style.background='rgba(99,102,241,.15)'; cpBtn.style.color='#a5b4fc'; };
-   cpBtn.onmouseout = function(){ cpBtn.style.background='transparent'; cpBtn.style.color='#818cf8'; };
-   cpBtn.onclick = function() {
-     var tgt = parseInt(cpSel.value, 10);
-     if (typeof copySalesGroupsToMonth === 'function') copySalesGroupsToMonth(tgt);
-   };
-   cpRow.appendChild(cpBtn);
-   addWrap.appendChild(cpRow);
- }
-
- // ── 현재 월 그룹 전체 삭제 버튼 ──
- var _monLblDel = (typeof MONTHS!=='undefined' && MONTHS[window.currentSalesMonth]) ? MONTHS[window.currentSalesMonth].label : '이달';
- var delAllBtn = document.createElement('button');
- delAllBtn.style.cssText = 'width:100%;font-family:inherit;font-size:9px;font-weight:700;padding:5px;border-radius:5px;border:1.5px solid #1e293b;background:transparent;color:#ef4444;cursor:pointer;margin-top:6px;';
- delAllBtn.textContent = '🗑 '+_monLblDel+' 그룹 전체 삭제';
- delAllBtn.title = '현재 월의 그룹 구역만 삭제. 다른 월은 영향받지 않습니다.';
- delAllBtn.onmouseover = function(){ delAllBtn.style.borderColor='#ef4444'; delAllBtn.style.background='rgba(239,68,68,.08)'; };
- delAllBtn.onmouseout = function(){ delAllBtn.style.borderColor='#1e293b'; delAllBtn.style.background='transparent'; };
- delAllBtn.onclick = function(){ if(typeof clearAllSalesGroups==='function') clearAllSalesGroups(); };
- addWrap.appendChild(delAllBtn);
-
  groupCol.appendChild(addWrap);
  }
 
@@ -11815,7 +11787,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  const panel = document.getElementById('salesGroupSidePanel');
  if (!panel) return;
  const on = (typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode && isAdmin && !isViewer;
- panel.style.width = on ? '170px' : '0';
+ panel.style.width = on ? '220px' : '0';
  panel.style.borderLeft = on ? '2px solid #6366f1' : 'none';
  if (on) renderGroupSidePanel();
  else panel.innerHTML = '';
@@ -13016,45 +12988,6 @@ function deleteSalesGroup(gid) {
  if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
-// ── 현재 월의 그룹 구역 전체 삭제 ──
-function clearAllSalesGroups() {
-  var curMon = window.currentSalesMonth;
-  if (curMon === null || curMon === undefined) { showToast('종합 탭에서는 삭제할 수 없습니다. 월을 선택해주세요.'); return; }
-  var monLabel = (typeof MONTHS !== 'undefined' && MONTHS[curMon]) ? MONTHS[curMon].label : (curMon+1)+'월';
-  var groups = window.salesGroups || {};
-  var count = Object.keys(groups).length;
-  if (count === 0) { showToast(monLabel+' 그룹 구역이 없습니다'); return; }
-  if (!confirm(monLabel+' 그룹 구역 '+count+'개를 모두 삭제할까요?\n다른 월의 그룹은 영향받지 않습니다.')) return;
-  // 현재 활성 데이터 초기화
-  Object.keys(groups).forEach(function(gid) {
-    var g = groups[gid];
-    (g.zoneIds||[]).forEach(function(zid) {
-      if (window.salesData) delete window.salesData[zid];
-      if (window.areaData) delete window.areaData[zid];
-    });
-  });
-  window.salesGroups = {};
-  window.salesGroupData = {};
-  salesGroupActiveId = null;
-  // 해당 월 monthlySalesStore에 빈 salesGroups 명시적 저장 (hasOwnProperty로 폴백 차단)
-  if (!window.monthlySalesStore) window.monthlySalesStore = {};
-  if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
-  var mKey = _salesMonthKey(curMon);
-  var existing = window.monthlySalesStore[currentStore][mKey] || {};
-  window.monthlySalesStore[currentStore][mKey] = {
-    salesData: JSON.parse(JSON.stringify(window.salesData || {})),
-    areaData: JSON.parse(JSON.stringify(window.areaData || {})),
-    salesGroups: {},
-    salesGroupData: {}
-  };
-  if (typeof window._firebaseSave === 'function') window._firebaseSave(currentStore);
-  var _gcS = document.getElementById('gc-sales');
-  var _tbl = document.querySelector('#salesWrap [data-sales-panel]');
-  if (_gcS && _tbl) { refreshSalesContent(_gcS, _tbl); } else if (typeof renderSalesView === 'function') { renderSalesView(); }
-  if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
-  showToast('✅ '+monLabel+' 그룹 구역 전체 삭제 완료');
-}
-
 // 그룹 데이터 완전 삭제 헬퍼 (모달 삭제 버튼과 공유)
 function _purgeGroupData(gid, g) {
  var zids = (g && g.zoneIds) || [];
@@ -13092,36 +13025,6 @@ function _purgeGroupData(gid, g) {
 }
 
 let _sgClickHandlers = [];
-// ── 현재 월 그룹 구조를 대상 월로 복사 ──
-function copySalesGroupsToMonth(targetMonthIdx) {
-  var srcMon = window.currentSalesMonth;
-  if (srcMon === null || srcMon === undefined) { showToast('복사할 원본 월을 먼저 선택해주세요'); return; }
-  if (targetMonthIdx === null || targetMonthIdx === undefined) { showToast('복사할 대상 월을 선택해주세요'); return; }
-  if (srcMon === targetMonthIdx) { showToast('같은 월입니다'); return; }
-  var srcLabel = MONTHS[srcMon].label;
-  var tgtLabel = MONTHS[targetMonthIdx].label;
-  var groups = window.salesGroups || {};
-  if (Object.keys(groups).length === 0) { showToast(srcLabel+' 그룹이 없습니다'); return; }
-  if (!confirm(srcLabel+' 그룹 구역 설정을 '+tgtLabel+'로 복사할까요?\n('+tgtLabel+' 매출·면적 데이터는 유지됩니다)')) return;
-
-  if (!window.monthlySalesStore) window.monthlySalesStore = {};
-  if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
-  var tgtKey = _salesMonthKey(targetMonthIdx);
-  var existing = window.monthlySalesStore[currentStore][tgtKey] || {};
-
-  // 그룹 구조(색상·라벨·카테고리·zoneIds)만 복사, 매출·면적은 대상 월 것 유지
-  window.monthlySalesStore[currentStore][tgtKey] = {
-    salesData: JSON.parse(JSON.stringify(existing.salesData || {})),
-    areaData: JSON.parse(JSON.stringify(existing.areaData || {})),
-    salesGroups: JSON.parse(JSON.stringify(groups)),
-    salesGroupData: JSON.parse(JSON.stringify(existing.salesGroupData || {}))
-  };
-
-  if (typeof window._firebaseSave === 'function') window._firebaseSave(currentStore);
-  showToast('✅ '+srcLabel+' → '+tgtLabel+' 그룹 복사 완료');
-  if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
-}
-
 function addSalesGroupClickListeners() {
  removeSalesGroupClickListeners();
  const zbEls = document.querySelectorAll('#gc-sales .zb');
