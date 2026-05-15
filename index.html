@@ -15963,13 +15963,15 @@ function renderMainZoneOverlay(){
  }
 
  [1, 2, 3].forEach(rank => {
- const group = zones.filter(z => z.mainRank === rank);
+ // getEffectiveZone()을 사용해 월별 override(위치·mainRank 변경) 반영
+ const effZones = zones.map(z => getEffectiveZone(z)).filter(z => z && z.mainRank === rank);
+ const group = effZones;
  if(!group.length) return;
 
  const color = RANK_COLOR[rank];
  const snap = makeSnap();
 
- // ── 각 셀의 픽셀 rect ──
+ // ── 각 셀의 픽셀 rect (override된 col/row/cols/rows 사용) ──
  const rects = group.map(z => ({
  x1: snap(px(z.col) + GPAD - PAD),
  y1: snap(py(z.row) + GPAD - PAD),
