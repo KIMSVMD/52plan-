@@ -22,6 +22,7 @@
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
 :root{
  --bg:#f0ede6;--surface:#fff;--border:#d8d0c0;
@@ -389,8 +390,26 @@ body.sales-view-active #salesMonthNav { display: block; }
 .multi-edit-btn{width:100%;padding:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;margin-top:4px;}
 .multi-edit-btn:hover{background:#5b21b6;}
 .multi-clear-btn{width:100%;padding:5px;background:#f3f4f6;color:#6b7280;border:1.5px solid #e5e7eb;border-radius:5px;font-family:inherit;font-size:10px;font-weight:600;cursor:pointer;margin-top:3px;}
-.zb.hl{animation:zbhl 1.8s ease-out forwards;}
-@keyframes zbhl{0%{box-shadow:0 0 0 4px #fbbf24,0 0 30px rgba(251,191,36,.7);}100%{box-shadow:none;}}
+.zb.hl{animation:zbhl 2.8s ease-out forwards;position:relative;z-index:200;}
+@keyframes zbhl{
+ 0%{box-shadow:0 0 0 6px #fbbf24,0 0 0 12px rgba(251,191,36,.4),0 0 40px 8px rgba(251,191,36,.6);outline:3px solid #fbbf24;}
+ 30%{box-shadow:0 0 0 6px #f97316,0 0 0 16px rgba(249,115,22,.35),0 0 50px 12px rgba(249,115,22,.5);outline:3px solid #f97316;}
+ 60%{box-shadow:0 0 0 5px #fbbf24,0 0 0 12px rgba(251,191,36,.3),0 0 35px 6px rgba(251,191,36,.4);outline:3px solid #fbbf24;}
+ 100%{box-shadow:none;outline:none;}
+}
+.ai-pin-overlay{
+ position:absolute;top:-28px;left:50%;transform:translateX(-50%);
+ background:#fbbf24;color:#000;font-size:10px;font-weight:800;
+ padding:2px 7px;border-radius:20px;white-space:nowrap;
+ box-shadow:0 2px 8px rgba(0,0,0,.4);z-index:300;pointer-events:none;
+ animation:pinBounce 0.5s ease-out;
+}
+.ai-pin-overlay::after{
+ content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
+ border:5px solid transparent;border-top-color:#fbbf24;
+}
+@keyframes pinBounce{0%{transform:translateX(-50%) scale(0.5) translateY(-10px);opacity:0;}70%{transform:translateX(-50%) scale(1.1) translateY(2px);}100%{transform:translateX(-50%) scale(1) translateY(0);opacity:1;}}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 .zi{padding:6px 7px 5px;flex:1;display:flex;flex-direction:column;gap:2px;position:relative;overflow:hidden;}
 .znum{position:absolute;top:2px;right:5px;font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;font-size:15px;font-weight:900;opacity:.09;}
 .zpri{position:absolute;top:4px;left:5px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;color:white;}
@@ -572,7 +591,7 @@ body.sales-view-active #salesMonthNav { display: block; }
 .ai-go{font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;font-size:12px;font-weight:700;padding:8px 18px;background:var(--gmid);color:white;border:none;border-radius:6px;cursor:pointer;}
 .ai-go:hover{background:var(--green);}
 .ai-go:disabled{background:#333;cursor:not-allowed;color:#555;}
-.ai-x{background:none;border:none;color:rgba(255,255,255,.35);font-size:20px;cursor:pointer;padding:2px 8px;}
+.ai-x{background:none;border:1.5px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);font-size:16px;cursor:pointer;padding:4px 10px;border-radius:6px;flex-shrink:0;}
 .ai-x:hover{color:white;}
 .ai-body{padding:10px 16px 14px;overflow-y:auto;max-height:220px;}
 .ai-idle{font-size:11px;color:rgba(255,255,255,.3);line-height:1.7;}
@@ -2267,18 +2286,7 @@ body.viewer-mode #salesMonthNav > div > button{
  option.textContent = info.name;
  select.appendChild(option);
  }
- // 2) 개별 저장 버튼 직접 추가 (이미 있으면 스킵)
- const container = document.getElementById('individualSaveContainer');
- if (container && !container.querySelector('button[data-store="'+code+'"]')) {
- const btn = document.createElement('button');
- btn.setAttribute('data-store', code);
- btn.style.cssText = 'width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;color:#f0f0f0;transition:background .08s;';
- btn.textContent = info.name;
- btn.onmouseover = function() { this.style.background = 'rgba(255,255,255,.12)'; this.style.color='#fff'; };
- btn.onmouseout = function() { this.style.background = 'none'; this.style.color='#f0f0f0'; };
- btn.onclick = (function(c) { return function() { saveStore(c); closeSaveDrop(); }; })(code);
- container.appendChild(btn);
- }
+
  };
  setTimeout(addDropdown, 200);
 
@@ -2696,19 +2704,14 @@ window.onerror = function(msg, src, line, col, err) {
  <button class="sdrop-item" onclick="exportCurrentStoreExcel();closeSaveDrop()" style="color:#60a5fa;">
  현재 지점 엑셀
  </button>
+ <button class="sdrop-item" onclick="saveStore(currentStore);closeSaveDrop()" style="color:#86efac;">
+ 현재 지점 JSON
+ </button>
  <button class="sdrop-item" onclick="saveAll();closeSaveDrop()" style="color:#d1d5db;">
  전체 JSON 저장
  </button>
  </div>
- <div style="border-top:1px solid #1e1e1e;padding:8px 0;" id="individualSaveContainer">
- <div class="sdrop-label" style="color:#bbb;">개별 저장</div>
- <button data-store="gs" onclick="saveStore('gs');closeSaveDrop()" class="sdrop-item">강서점</button>
- <button data-store="bd" onclick="saveStore('bd');closeSaveDrop()" class="sdrop-item">분당점</button>
- <button data-store="gn" onclick="saveStore('gn');closeSaveDrop()" class="sdrop-item">강남점</button>
- <button data-store="sp" onclick="saveStore('sp');closeSaveDrop()" class="sdrop-item">송파점</button>
- <button data-store="pc" onclick="saveStore('pc');closeSaveDrop()" class="sdrop-item">평촌점</button>
- <button data-store="rdw" onclick="saveStore('rdw');closeSaveDrop()" class="sdrop-item">구의점</button>
- </div>
+
  </div>
  </div>
  </div>
@@ -3489,7 +3492,7 @@ window.onerror = function(msg, src, line, col, err) {
  <input class="ai-inp" id="aiInp" placeholder="신상품명 입력 예: 제주 한라봉 2kg, 프리미엄 딸기, 수입 망고..." onkeydown="if(event.key==='Enter')doAsk()"/>
  <button class="ai-go" id="aiGo" onclick="doAsk()">추천받기 </button>
  </div>
- <button class="ai-x" onclick="closeAI()"></button>
+ <button class="ai-x" onclick="closeAI()">✕ 닫기</button>
  </div>
  <div class="ai-body" id="aiBody">
  <div class="ai-idle">신상품 이름 입력 후 <strong>추천받기</strong> → 현재 도면 분석 → <strong>최적 자리 3곳</strong> 추천</div>
@@ -3788,15 +3791,21 @@ const COLORS=[
 // Undo 히스토리 (Ctrl+Z)
 // ═══════════════════════════════════════════
 const UNDO_MAX = 20;
-const REDO_MAX = 10;
+const REDO_MAX = 20;
 let undoHistory = [];
 let redoHistory = [];
 
 function saveUndoState() {
- const snapshot = JSON.stringify({
-  zones: zones,
-  monthZoneOverrides: monthZoneOverrides
- });
+ let snapshot;
+ try {
+  snapshot = JSON.stringify({
+   zones: zones,
+   monthZoneOverrides: monthZoneOverrides
+  });
+ } catch(e) {
+  console.error('[saveUndoState] JSON 직렬화 실패:', e);
+  return; // 스냅샷 저장 불가 시 조용히 건너뜀
+ }
  if (undoHistory.length > 0 && undoHistory[undoHistory.length - 1] === snapshot) return;
  undoHistory.push(snapshot);
  if (undoHistory.length > UNDO_MAX) undoHistory.shift();
@@ -3804,7 +3813,14 @@ function saveUndoState() {
 }
 
 function _restoreState(snapshot) {
- const state = JSON.parse(snapshot);
+ let state;
+ try {
+  state = JSON.parse(snapshot);
+ } catch(e) {
+  console.error('[_restoreState] 스냅샷 파싱 실패:', e);
+  showToast('⚠️ 되돌리기 데이터 손상 - 건너뜁니다');
+  return;
+ }
  // zones 복원
  const restoredZones = state.zones || state; // 구버전 호환 (zones만 있던 경우)
  zones.length = 0;
@@ -3892,7 +3908,8 @@ function getMonthZoneOverrideAt(zoneId, monthIdx) {
 function getEffectiveZone(z) {
  const ovr = getMonthZoneOverride(z.id);
  if (!ovr) return z;
- if (ovr._hidden) return null; // 이 달 이후 삭제된 집기
+ if (ovr._hidden === true) return null;  // 이 달 이전에 없던 집기
+ if (ovr._hidden === false) return z;    // 이 달부터 새로 생긴 집기 (위치 오버라이드 없음)
  return Object.assign({}, z, ovr);
 }
 
@@ -3900,7 +3917,8 @@ function getEffectiveZone(z) {
 function getEffectiveZoneAt(z, monthIdx) {
  const ovr = getMonthZoneOverrideAt(z.id, monthIdx);
  if (!ovr) return z;
- if (ovr._hidden) return null;
+ if (ovr._hidden === true) return null;
+ if (ovr._hidden === false) return z;
  return Object.assign({}, z, ovr);
 }
 
@@ -5802,9 +5820,11 @@ function upd(f,v){
 
  // 위치/크기 필드: zones 원본은 건드리지 않고 월별 오버라이드에만 저장
  if(['col','row','cols','rows'].includes(f)){
-  // 현재 적용 중인 오버라이드(또는 원본)에서 나머지 필드를 가져와 합산
-  const eff = getEffectiveZone(z)||z;
-  const merged = {col:eff.col, row:eff.row, cols:eff.cols, rows:eff.rows};
+  // 현재 월 오버라이드만 참조 (이전 월 캐스케이딩 금지) → 없으면 zones 원본
+  // getEffectiveZone은 이전 월까지 탐색하므로 위치/크기 변경 시에는 사용하지 않음
+  const _curOvr = (monthZoneOverrides[curMonthIdx] && monthZoneOverrides[curMonthIdx][z.id]) || null;
+  const _base = _curOvr ? Object.assign({}, z, _curOvr) : z;
+  const merged = {col:_base.col, row:_base.row, cols:_base.cols, rows:_base.rows};
   merged[f] = +v;
   saveMonthZoneOverride(z.id, merged);
   render();
@@ -5862,14 +5882,15 @@ function clearMonthZoneOverrides() {
 }
 
 // 선택된 구역의 현재 월 오버라이드만 삭제 (이 구역만 기본 위치로)
-function resetSelZoneThisMonth() {
+async function resetSelZoneThisMonth() {
  if (!selId) { showToast('먼저 구역을 선택하세요'); return; }
  const mo = MONTHS[curMonthIdx]?.label || (curMonthIdx+1)+'월';
  const z = zones.find(x=>x.id===selId);
  const ovr = getMonthZoneOverride(selId);
  if (!ovr) { showToast(mo+': 이 구역은 변경된 위치가 없습니다'); return; }
  // 이 구역의 현재 월 오버라이드만 삭제
- if (!confirm(`"${z?.name}" 구역의 ${mo} 위치 변경을 취소할까요?`)) return;
+ const confirmed = await showResetConfirm(z?.name, mo);
+ if (!confirmed) return;
  removeMonthZoneOverride(selId);
  showToast(`✅ "${z?.name}" ${mo} 위치 초기화`);
 }
@@ -6012,6 +6033,7 @@ function startPixelDrag(e, startId){
  movingIds.forEach(id=>{
  const z=zones.find(x=>x.id===id); if(!z) return;
  const eff=getEffectiveZone(z)||z;
+ if(!eff) return; // _hidden 집기 드래그 방지
  startPx[id]={ l:px(eff.col)+8, t:py(eff.row)+8 };
  });
 
@@ -6098,7 +6120,12 @@ function onPixelDragEnd(e){
  movingIds.forEach(id=>{
   const pos = curPos[id];
   if (!pos) return;
-  saveMonthZoneOverride(id, {col: pos.col, row: pos.row});
+  // cols/rows도 함께 저장해야 이전 월 캐스케이딩 값과 섞이지 않음
+  const z = zones.find(x=>x.id===id);
+  const eff = z ? getEffectiveZone(z) : null;
+  const cols = eff ? eff.cols : (pos.cols || 1);
+  const rows = eff ? eff.rows : (pos.rows || 1);
+  saveMonthZoneOverride(id, {col: pos.col, row: pos.row, cols: cols, rows: rows});
  });
  render();
  syncToFirebase();
@@ -6294,23 +6321,24 @@ function getMultiSelArray(){
 function matchSize(mode){
  const arr = getMultiSelArray();
  if(arr.length < 2) return showToast('Ctrl+클릭으로 2개 이상 선택 후 사용하세요');
- const base = arr[0]; // 첫 번째가 기준
+ const baseZ = arr[0];
+ const base = getEffectiveZone(baseZ) || baseZ;
  saveUndoState();
- // 도면 회전각에 따라 화면 가로/세로 ↔ 도면 cols/rows 축 교환
  const rot = ((storeRotations[currentStore] || 0) % 360 + 360) % 360;
  const swapAxes = (rot === 90 || rot === 270);
  arr.slice(1).forEach(z=>{
- // 화면 기준 '가로' = 회전 없을 때 cols, 90°/270° 회전 시 rows
- if(mode==='both'||mode==='width') {
- if(swapAxes) z.rows = base.rows; else z.cols = base.cols;
- }
- // 화면 기준 '세로' = 회전 없을 때 rows, 90°/270° 회전 시 cols
- if(mode==='both'||mode==='height') {
- if(swapAxes) z.cols = base.cols; else z.rows = base.rows;
- }
+  const eff = getEffectiveZone(z) || z;
+  const ovr = { col: eff.col, row: eff.row, cols: eff.cols, rows: eff.rows };
+  if(mode==='both'||mode==='width') {
+   if(swapAxes) ovr.rows = base.rows; else ovr.cols = base.cols;
+  }
+  if(mode==='both'||mode==='height') {
+   if(swapAxes) ovr.cols = base.cols; else ovr.rows = base.rows;
+  }
+  saveMonthZoneOverride(z.id, ovr);
  });
- render(); restoreMultiSel(arr);
- showToast(` ${arr.length-1}개 집기 크기 맞추기 완료`);
+ render(); restoreMultiSel(arr); syncToFirebase();
+ showToast(`✅ ${arr.length-1}개 집기 크기 맞추기 완료`);
 }
 
 /** 단일 선택 집기를 기준으로 — 다중 선택된 것들에 크기 복사 */
@@ -6332,6 +6360,7 @@ function matchFromSingle(mode){
  saveUndoState();
  targets.forEach(z=>{
  const eff = getEffectiveZone(z) || z;
+ if(!eff) return; // _hidden 집기 스킵
  const ovr = {col:eff.col, row:eff.row, cols:eff.cols, rows:eff.rows};
  if(mode==='both'||mode==='width') ovr.cols = base.cols;
  if(mode==='both'||mode==='height') ovr.rows = base.rows;
@@ -6348,22 +6377,26 @@ function matchFromSingle(mode){
 function alignEdge(dir){
  const arr = getMultiSelArray();
  if(arr.length < 2) return showToast('Ctrl+클릭으로 2개 이상 선택 후 사용하세요');
- const base = arr[0];
+ const baseZ = arr[0];
+ const base = getEffectiveZone(baseZ) || baseZ;
  const bW = base.cols*CELL+(base.cols-1)*GAP;
  const bH = base.rows*ROW +(base.rows-1)*GAP;
  saveUndoState();
  arr.slice(1).forEach(z=>{
- const zW = z.cols*CELL+(z.cols-1)*GAP;
- const zH = z.rows*ROW +(z.rows-1)*GAP;
- if(dir==='left') z.col = base.col;
- if(dir==='right') z.col = base.col + (bW-zW)/(CELL+GAP);
- if(dir==='top') z.row = base.row;
- if(dir==='bottom') z.row = base.row + (bH-zH)/(ROW+GAP);
- if(dir==='centerH') z.col = base.col + (bW/2 - zW/2)/(CELL+GAP);
- if(dir==='centerV') z.row = base.row + (bH/2 - zH/2)/(ROW+GAP);
+  const eff = getEffectiveZone(z) || z;
+  const ovr = { col: eff.col, row: eff.row, cols: eff.cols, rows: eff.rows };
+  const zW = eff.cols*CELL+(eff.cols-1)*GAP;
+  const zH = eff.rows*ROW +(eff.rows-1)*GAP;
+  if(dir==='left')    ovr.col = base.col;
+  if(dir==='right')   ovr.col = base.col + (bW-zW)/(CELL+GAP);
+  if(dir==='top')     ovr.row = base.row;
+  if(dir==='bottom')  ovr.row = base.row + (bH-zH)/(ROW+GAP);
+  if(dir==='centerH') ovr.col = base.col + (bW/2 - zW/2)/(CELL+GAP);
+  if(dir==='centerV') ovr.row = base.row + (bH/2 - zH/2)/(ROW+GAP);
+  saveMonthZoneOverride(z.id, ovr);
  });
- render(); restoreMultiSel(arr);
- showToast(` ${arr.length-1}개 집기 정렬 완료`);
+ render(); restoreMultiSel(arr); syncToFirebase();
+ showToast(`✅ ${arr.length-1}개 집기 정렬 완료`);
 }
 
 /** 가로 간격 균등 배분 */
@@ -6371,20 +6404,22 @@ function distributeH(){
  const arr = getMultiSelArray();
  if(arr.length < 3) return showToast('3개 이상 선택해야 간격 균등 배분이 가능합니다');
  saveUndoState();
- // col 기준 정렬
- arr.sort((a,b)=>a.col-b.col);
- const first = arr[0], last = arr[arr.length-1];
- const totalW = arr.reduce((s,z)=>s+(z.cols*CELL+(z.cols-1)*GAP),0);
+ // 각 집기의 유효(오버라이드 적용) 위치 기준으로 정렬
+ const effArr = arr.map(z => ({ z, eff: getEffectiveZone(z) || z }));
+ effArr.sort((a,b) => a.eff.col - b.eff.col);
+ const first = effArr[0].eff, last = effArr[effArr.length-1].eff;
+ const totalW = effArr.reduce((s,{eff})=>s+(eff.cols*CELL+(eff.cols-1)*GAP),0);
  const span = (px(last.col)+8 + last.cols*CELL+(last.cols-1)*GAP) - (px(first.col)+8);
- const gap = (span - totalW) / (arr.length-1);
+ const gap = (span - totalW) / (effArr.length-1);
  let cursor = px(first.col)+8;
- arr.forEach((z,i)=>{
- const zW = z.cols*CELL+(z.cols-1)*GAP;
- z.col = Math.max(0, (cursor-8)/(CELL+GAP));
- cursor += zW + gap;
+ effArr.forEach(({z, eff})=>{
+  const zW = eff.cols*CELL+(eff.cols-1)*GAP;
+  const newCol = Math.max(0, (cursor-8)/(CELL+GAP));
+  saveMonthZoneOverride(z.id, { col: newCol, row: eff.row, cols: eff.cols, rows: eff.rows });
+  cursor += zW + gap;
  });
- render(); restoreMultiSel(arr);
- showToast(` ${arr.length}개 집기 간격 균등 배분`);
+ render(); restoreMultiSel(arr); syncToFirebase();
+ showToast(`✅ ${arr.length}개 집기 간격 균등 배분`);
 }
 
 function restoreMultiSel(arr){
@@ -6395,13 +6430,13 @@ function restoreMultiSel(arr){
 }
 function updPosX(v){
  const z=zones.find(x=>x.id===selId);if(!z)return;
- const eff=getEffectiveZone(z)||z;
+ const eff=getEffectiveZone(z)||z;if(!eff)return;
  saveMonthZoneOverride(z.id,{col:Math.max(0,v),row:eff.row,cols:eff.cols,rows:eff.rows});
  render(); renderPanel(); syncToFirebase();
 }
 function updPosY(v){
  const z=zones.find(x=>x.id===selId);if(!z)return;
- const eff=getEffectiveZone(z)||z;
+ const eff=getEffectiveZone(z)||z;if(!eff)return;
  saveMonthZoneOverride(z.id,{col:eff.col,row:Math.max(0,v),cols:eff.cols,rows:eff.rows});
  render(); renderPanel(); syncToFirebase();
 }
@@ -6569,13 +6604,13 @@ function shrinkCanvas(dir) {
 
 function resizeSel(dc,dr){
  const z=zones.find(x=>x.id===selId);if(!z)return showToast('먼저 구역 선택');
- const eff=getEffectiveZone(z)||z;
+ const eff=getEffectiveZone(z)||z;if(!eff)return showToast('숨겨진 집기는 수정 불가');
  saveMonthZoneOverride(z.id,{col:eff.col,row:eff.row,cols:Math.max(0.5,Math.min(15,eff.cols+dc)),rows:Math.max(0.5,Math.min(10,eff.rows+dr))});
  render();renderPanel();syncToFirebase();
 }
 function moveSel(dc,dr){
  const z=zones.find(x=>x.id===selId);if(!z)return showToast('먼저 구역 선택');
- const eff=getEffectiveZone(z)||z;
+ const eff=getEffectiveZone(z)||z;if(!eff)return showToast('숨겨진 집기는 수정 불가');
  saveMonthZoneOverride(z.id,{col:Math.max(0,eff.col+dc),row:Math.max(0,eff.row+dr),cols:eff.cols,rows:eff.rows});
  render();renderPanel();syncToFirebase();
 }
@@ -7017,6 +7052,16 @@ document.addEventListener('DOMContentLoaded', function() {
  
  saveUndoState(); // Undo 저장
  zones.push(newZone);
+ // 현재 달 이전 월: _hidden / 현재 달: _hidden:false 로 명시 (거슬러올라가기 방지)
+ if (typeof curMonthIdx !== 'undefined') {
+  for (var _m2 = 0; _m2 < curMonthIdx; _m2++) {
+   if (!monthZoneOverrides[_m2]) monthZoneOverrides[_m2] = {};
+   monthZoneOverrides[_m2][id] = { _hidden: true };
+  }
+  // 현재 달에 _hidden:false 명시 — 이전 달 _hidden이 올라오는 것 차단
+  if (!monthZoneOverrides[curMonthIdx]) monthZoneOverrides[curMonthIdx] = {};
+  monthZoneOverrides[curMonthIdx][id] = { _hidden: false };
+ }
  
  // 미리보기 제거
  if (drawPreview) { drawPreview.remove(); drawPreview = null; }
@@ -7025,7 +7070,8 @@ document.addEventListener('DOMContentLoaded', function() {
  // 새 구역 선택 및 렌더링
  selZone(id);
  render();
- showToast(` ${drawMode.type} 추가 (${cols}×${rows})`);
+ var _drawLabel = (typeof MONTHS !== 'undefined' && MONTHS[curMonthIdx]) ? MONTHS[curMonthIdx].label : (curMonthIdx+1)+'월';
+ showToast(_drawLabel + '부터 표시: ' + drawMode.type + ' (' + cols + '×' + rows + ')');
  });
 });
 
@@ -7044,7 +7090,19 @@ function addZone(){
  if (!GS_LINK_NUM_TO_ID[gsLinkVal]) GS_LINK_NUM_TO_ID[gsLinkVal] = id;
  }
  zones.push(newZone);
- closeModal();selZone(id);render();showToast(` '${name}' 추가`);
+ // 현재 달 이전 월: _hidden / 현재 달: _hidden:false 로 명시 (거슬러올라가기 방지)
+ if (typeof curMonthIdx !== 'undefined') {
+  for (var _m = 0; _m < curMonthIdx; _m++) {
+   if (!monthZoneOverrides[_m]) monthZoneOverrides[_m] = {};
+   monthZoneOverrides[_m][id] = { _hidden: true };
+  }
+  // 현재 달에 _hidden:false 명시 — 이전 달 _hidden이 올라오는 것 차단
+  if (!monthZoneOverrides[curMonthIdx]) monthZoneOverrides[curMonthIdx] = {};
+  monthZoneOverrides[curMonthIdx][id] = { _hidden: false };
+ }
+ closeModal();selZone(id);render();
+ var _addedLabel = (typeof MONTHS !== 'undefined' && MONTHS[curMonthIdx]) ? MONTHS[curMonthIdx].label : (curMonthIdx+1)+'월';
+ showToast(`✅ '${name}' 추가 (${_addedLabel}부터 표시)`);
  document.getElementById('mN').value='';document.getElementById('mP').value='';
 }
 
@@ -8437,31 +8495,92 @@ async function doAsk(){
  const btn=document.getElementById('aiGo');
  btn.disabled=true;btn.textContent='분석 중...';
  const body=document.getElementById('aiBody');
- body.innerHTML='<div class="ai-loading"><div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div><span style="margin-left:7px">현재 도면+시즌 분석 중...</span></div>';
+ body.innerHTML='<div class="ai-loading"><div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div><span style="margin-left:7px">카테고리 매칭 분석 중...</span></div>';
 
  const curWk=getCurWk();
  const wkOvr=getWkData(getCurWkId());
- const zoneCtx=zones.map(z=>{
- const ovr=wkOvr[z.id];
- return `[${z.id}] ${z.name}(${z.type}) 현재:"${ovr?.prod||z.prod||'없음'}"`;
+ const salData=window.salesData||{};
+ const variableIds=typeof VARIABLE_IDS!=='undefined'?VARIABLE_IDS:new Set();
+
+ // 카테고리 매핑 (zone color/category → 한글 카테고리명)
+ const CAT_LABEL={'fruit':'과일','veg':'채소','meat':'축산','fish':'수산','food':'가공식품','':'기타'};
+ const COLOR_CAT={'cbr3':'과일/청과','cg1':'채소/버섯','cn4':'채소/나물','cb1':'냉장/수산','cn6':'축산/냉장','cgr2':'곡류/견과','cgr3':'양곡','cc':'냉동','cw':'로컬/특산'};
+
+ // 신상품 카테고리 추론 (키워드 기반)
+ const p=product.toLowerCase();
+ let productCat='과일';
+ if(/상추|깻잎|배추|양배추|브로콜리|시금치|냉이|달래|봄동|대파|쪽파|양파|마늘|고추|파프리카|오이|애호박|가지|당근|무|연근|토란|고구마|감자|버섯|나물|채소|샐러드|깐마늘/.test(p)) productCat='채소';
+ else if(/딸기|블루베리|베리|사과|배|감귤|오렌지|한라봉|천혜향|레드향|만감|포도|샤인|청포도|바나나|키위|망고|자몽|레몬|아보카도|복숭아|자두|살구|체리|수박|참외|멜론|토마토|방울토마토|과일/.test(p)) productCat='과일';
+ else if(/버섯|새송이|팽이|표고|양송이|맛타리|느타리/.test(p)) productCat='채소/버섯';
+ else if(/돈육|한우|닭|계육|소고기|삼겹|목살|불고기|갈비|축산/.test(p)) productCat='축산';
+ else if(/생선|갈치|고등어|조기|명태|오징어|새우|전복|수산|초밥|해산/.test(p)) productCat='수산';
+
+ // 구역 컨텍스트 (카테고리 포함)
+ const zoneCtx=zones.filter(z=>z.color!=='cpillar').map(z=>{
+  const ovr=wkOvr[z.id];
+  const prod=ovr?.prod||z.prod||'없음';
+  const sales=salData[z.id]||0;
+  const area=(z.cols||1)*(z.rows||1);
+  const perSales=sales>0?Math.round(sales/area):0;
+  const isVar=variableIds.has&&variableIds.has(z.id);
+  const varMark=isVar?'[변동가능]':'';
+  // 카테고리 레이블
+  const cat=z.category?CAT_LABEL[z.category]||z.category:COLOR_CAT[z.color]||'';
+  const salesStr=sales>0?` 매출효율:${perSales.toLocaleString()}원/평`:'';
+  return `${varMark}[${z.id}] ${z.name}(${z.type}) 카테고리:${cat} 현재:"${prod}"${salesStr}`;
  }).join('\n');
 
- const prompt=`당신은 마트 농산 MD 전문가입니다.
-현재 주차: ${curWk?.label} (${curWk?.dates}), 테마: ${curWk?.theme}
-신상품: "${product}"
+ // 이전 주차 유사상품 이력
+ const histCtx=[];
+ try{
+  const allWkData=typeof userOverrides!=='undefined'?userOverrides:{};
+  Object.entries(allWkData).forEach(([wk,wkd])=>{
+   Object.entries(wkd||{}).forEach(([zid,info])=>{
+    if(info?.prod&&info.prod.includes(product.slice(0,3))){
+     const z=zones.find(x=>x.id===zid);
+     if(z) histCtx.push(`${wk}주차: ${z.name}(카테:${z.category||''})에 "${info.prod}" 배치`);
+    }
+   });
+  });
+ }catch(e){}
 
-현재 구역 배치:
+ // 매출 분석
+ const withSales=zones.filter(z=>salData[z.id]>0).map(z=>{
+  const area=(z.cols||1)*(z.rows||1);
+  return {name:z.name,perSales:Math.round(salData[z.id]/area)};
+ }).sort((a,b)=>b.perSales-a.perSales);
+ const hasSales=withSales.length>0;
+ const topZones=withSales.slice(0,4).map(z=>`${z.name}(${z.perSales.toLocaleString()}원/평)`).join(', ');
+ const lowZones=withSales.slice(-3).map(z=>`${z.name}(${z.perSales.toLocaleString()}원/평)`).join(', ');
+
+ const prompt=`당신은 마트 농산 MD 배치 전문가입니다. 신상품을 올바른 카테고리 구역에 배치해야 합니다.
+
+■ 신상품 정보
+- 상품명: "${product}"
+- 상품 카테고리: ${productCat}
+- 시즌: ${curWk?.label||'현재주차'} (${curWk?.dates||''}), 테마: ${curWk?.theme||'시즌'}
+
+■ 구역 현황 (카테고리 명시됨 — 반드시 카테고리가 맞는 구역에 배치할 것)
 ${zoneCtx}
 
-이 신상품 최적 배치 구역 TOP3를 JSON으로만 응답:
-{"product":"${product}","recommendations":[{"rank":1,"zoneId":"구역id","zoneName":"구역이름","reason":"이유25자","strategy":"전략35자","score":95},{"rank":2,"zoneId":"구역id","zoneName":"구역이름","reason":"이유","strategy":"전략","score":80},{"rank":3,"zoneId":"구역id","zoneName":"구역이름","reason":"이유","strategy":"전략","score":65}]}`;
+${hasSales?`■ 매출 효율\n- 상위: ${topZones}\n- 하위: ${lowZones}`:''}
+${histCtx.length>0?`\n■ 과거 유사상품 배치 이력\n${histCtx.slice(0,4).join('\n')}`:''}
+
+■ 배치 원칙 (반드시 준수)
+1. 카테고리 일치가 최우선: "${productCat}" 상품은 반드시 카테고리:"${productCat}" 구역 또는 인접 구역에 배치
+2. [변동가능] 구역 우선 추천
+3. 같은 카테고리 내에서 매출 효율이 낮은 구역 선호 (개선 여지)
+4. 카테고리가 맞지 않는 구역은 절대 추천하지 말 것 (예: 채소를 과일 매대에 배치 금지)
+
+JSON으로만 응답 (마크다운 없이):
+{"product":"${product}","recommendations":[{"rank":1,"zoneId":"실제존재하는구역id","zoneName":"구역이름","reason":"카테고리 매칭 근거와 배치 이유 25자이내","strategy":"진열 전략 35자이내","score":95},{"rank":2,"zoneId":"실제존재하는구역id","zoneName":"구역이름","reason":"이유","strategy":"전략","score":78},{"rank":3,"zoneId":"실제존재하는구역id","zoneName":"구역이름","reason":"이유","strategy":"전략","score":60}]}`;
 
  let result=null;
  try{
- const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:700,messages:[{role:'user',content:prompt}]})});
- const data=await res.json();
- result=JSON.parse((data.content?.[0]?.text||'').replace(/```json|```/g,'').trim());
- }catch{result=fallbackRec(product);}
+  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+  const data=await res.json();
+  result=JSON.parse((data.content?.[0]?.text||'').replace(/```json|```/g,'').trim());
+ }catch(e){result=fallbackRec(product);}
 
  renderAIResult(result,product);
  if(!aiHistArr.includes(product))aiHistArr.unshift(product);
@@ -8472,21 +8591,32 @@ ${zoneCtx}
 function renderAIResult(data,product){
  const body=document.getElementById('aiBody');
  const recs=data.recommendations||[];
- const badges=['ab1','ab2','ab3'],labels=['최우선','차선','대안'];
+ const badges=['ab1','ab2','ab3'];
+ const isVw=typeof isViewer!=='undefined'&&isViewer;
+ const rankLabel=['🥇 1위','🥈 2위','🥉 3위'];
  body.innerHTML=
- `<div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px">"<strong style="color:rgba(255,255,255,.85)">${product}</strong>" — ${getCurWk()?.label} 배치 추천</div>`+
- `<div class="ai-cards">${recs.map((r,i)=>{
- var safeZone = r.zoneId.split("'").join('');
- var safeProd = product.split("'").join('').split('"').join('');
- return '<div class="ai-card'+(i===0?' rank1':'')+'" onclick="hlZone(\'' +safeZone+ '\')">'
- +'<div><span class="ai-badge '+badges[i]+'">'+labels[i]+'</span></div>'
- +'<div class="ai-card-zone">'+r.zoneName+'</div>'
- +'<div class="ai-card-why">'+r.reason+'</div>'
- +'<div class="ai-card-strat">'+r.strategy+'</div>'
- +'<button class="ai-apply" onclick="event.stopPropagation();applyRec(\'' +safeZone+ '\',\'' +safeProd+ '\')">이 자리에 배치</button>'
- +'</div>';
- }).join('')}</div>`+
- `<div class="ai-hist" id="aiHist"></div>`;
+  `<div style="font-size:11px;color:rgba(255,255,255,.4);margin-bottom:8px">"<strong style="color:rgba(255,255,255,.9)">${product}</strong>" — ${getCurWk()?.label||''} 배치 추천</div>`+
+  (isVw
+   ?`<div style="font-size:10px;color:#fbbf24;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);border-radius:6px;padding:6px 10px;margin-bottom:10px;">👁 열람 모드 — 위치 확인만 가능합니다. 핀 표시로 추천 구역을 확인하세요.</div>`
+   :`<div style="font-size:10px;color:#93c5fd;background:rgba(59,130,246,.1);border-radius:6px;padding:6px 10px;margin-bottom:10px;">📌 카드 클릭 → 도면 위치 확인 → 확정 버튼으로 배치</div>`
+  )+
+  `<div class="ai-cards">${recs.map((r,i)=>{
+   var safeZone = r.zoneId.split("'").join('');
+   var safeProd = product.split("'").join('').split('"').join('');
+   const actionBtn=isVw
+    ?`<button class="ai-apply" onclick="event.stopPropagation();hlZone('${safeZone}')" style="background:rgba(55,65,81,.8);border:1px solid rgba(255,255,255,.15);font-size:11px;">📍 도면에서 위치 확인</button>`
+    :`<button class="ai-apply" onclick="event.stopPropagation();confirmRec('${safeZone}','${safeProd}')" style="background:#1d4ed8;font-size:11px;">✅ 이 자리에 배치 확정</button>`;
+   return `<div class="ai-card${i===0?' rank1':''}" onclick="hlZone('${safeZone}')">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+     <span class="ai-badge ${badges[i]}">${rankLabel[i]}</span>
+    </div>
+    <div class="ai-card-zone">${r.zoneName}</div>
+    <div class="ai-card-why">${r.reason}</div>
+    <div class="ai-card-strat">${r.strategy}</div>
+    ${actionBtn}
+   </div>`;
+  }).join('')}</div>`+
+  `<div class="ai-hist" id="aiHist"></div>`;
  renderAIHist();
 }
 
@@ -8495,30 +8625,219 @@ function renderAIHist(){
  el.innerHTML=`<span class="ai-hl">최근:</span>`+aiHistArr.map(h=>`<button class="ai-chip" onclick="document.getElementById('aiInp').value='${h.replace(/'/g,"\\'")}';doAsk()">${h}</button>`).join('');
 }
 
+// 현재 AI 핀 오버레이 제거 헬퍼
+function _clearAiPin(){
+ document.querySelectorAll('.ai-pin-overlay').forEach(e=>e.remove());
+ document.querySelectorAll('.zb.hl-ai').forEach(e=>e.classList.remove('hl-ai'));
+}
 function hlZone(id){
  selZone(id);
  const el=document.getElementById('z-'+id);
- if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1900);}
+ if(!el) return;
+ el.scrollIntoView({behavior:'smooth',block:'center'});
+ // 기존 hl 제거 후 재적용 (재클릭 시 재시작)
+ el.classList.remove('hl');
+ void el.offsetWidth; // reflow
+ el.classList.add('hl');
+ setTimeout(()=>el.classList.remove('hl'),2900);
+ // 핀 말풍선 표시 (구역명 표시)
+ _clearAiPin();
+ const z=zones.find(x=>x.id===id);
+ if(z){
+  el.style.position='relative';
+  const pin=document.createElement('div');
+  pin.className='ai-pin-overlay';
+  pin.textContent='📍 '+( z.name||id);
+  el.appendChild(pin);
+  setTimeout(()=>pin.remove(),3500);
+ }
 }
+// AI 추천 확인 모달 표시 (도면 위치 먼저 하이라이트 후 확인 요청)
+function confirmRec(zoneId, product){
+ if(typeof isViewer!=='undefined'&&isViewer){
+  hlZone(zoneId);
+  showToast('👁 열람 모드: 위치만 확인 가능합니다');
+  return;
+ }
+ const z=zones.find(x=>x.id===zoneId);
+ if(!z){showToast('⚠️ 해당 구역이 현재 지점에 없습니다');return;}
+
+ // 도면에서 먼저 위치 하이라이트 (AI 패널 닫아서 도면이 잘 보이게)
+ const aiPanel=document.getElementById('aiPanel');
+ const wasOpen=aiPanel&&aiPanel.classList.contains('open');
+ if(wasOpen) aiPanel.classList.remove('open'); // 패널 잠시 닫기
+
+ hlZone(zoneId);
+
+ // 1.2초 후 확인 모달 표시 (하이라이트 확인할 시간)
+ setTimeout(()=>{
+  // AI 패널 다시 열기
+  if(wasOpen) aiPanel.classList.add('open');
+
+  // 확인 UI를 aiBody 안에 삽입 (도면 위를 덮지 않음)
+  const body=document.getElementById('aiBody');
+  if(!body) return;
+
+  const curProd=getWkData(getCurWkId())[zoneId]?.prod||z.prod||'없음';
+  const prev=document.getElementById('aiInlineConfirm');
+  if(prev) prev.remove();
+
+  const div=document.createElement('div');
+  div.id='aiInlineConfirm';
+  div.style.cssText='margin-top:10px;background:#1a2a3a;border:2px solid #3b82f6;border-radius:12px;padding:14px;animation:fadeInUp .25s ease-out;';
+  div.innerHTML=`
+   <div style="font-size:12px;color:#93c5fd;font-weight:700;margin-bottom:6px;">📍 배치 위치 확인</div>
+   <div style="color:#e8e8e8;font-size:12px;line-height:1.6;margin-bottom:10px;">
+    <strong style="color:#60a5fa">${z.name}</strong> 구역에<br>
+    <strong style="color:#fff">"${product}"</strong>을(를) 배치합니다.<br>
+    <span style="font-size:10px;color:#6b7280;">현재 배치: ${curProd}</span>
+   </div>
+   <div style="display:flex;gap:8px;">
+    <button onclick="document.getElementById('aiInlineConfirm').remove();hlZone('${zoneId}');"
+     style="flex:1;padding:9px;background:#374151;border:none;border-radius:8px;color:#ccc;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">
+     ↩ 다시 확인
+    </button>
+    <button onclick="document.getElementById('aiInlineConfirm').remove();applyRec('${zoneId}','${product.replace(/'/g,"\\'")}');"
+     style="flex:2;padding:9px;background:#2563eb;border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">
+     ✅ 확인 · 배치 완료
+    </button>
+   </div>`;
+  body.insertAdjacentElement('afterbegin', div);
+  div.scrollIntoView({behavior:'smooth',block:'nearest'});
+ }, 1200);
+}
+
 function applyRec(zoneId,product){
- const z=zones.find(x=>x.id===zoneId);if(!z)return;
- if(!confirm(`"${product}"을\n"${z.name}" 구역에 배치할까요?\n(${getCurWk()?.label})`))return;
+ const z=zones.find(x=>x.id===zoneId);
+ if(!z){showToast('⚠️ 해당 구역이 현재 지점에 없습니다');return;}
+ if(typeof isViewer!=='undefined'&&isViewer){showToast('👁 열람 모드에서는 배치를 변경할 수 없습니다');return;}
  const wkId=getCurWkId();
  if(!userOverrides[wkId])userOverrides[wkId]={};
- userOverrides[wkId][zoneId]={prod:'🆕 '+product,status:'planned',note:'신상품 입고'};
+ userOverrides[wkId][zoneId]={prod:'🆕 '+product,status:'planned',note:'AI 추천 배치'};
  render();applyScale();renderNav();selZone(zoneId);
- showToast(`"${product}" → ${z.name}`);
+ showToast(`✅ "${product}" → ${z.name} 배치 완료`);
  closeAI();
 }
 
 function fallbackRec(product){
+ // ── 1. 상품 키워드 → 예상 카테고리 분류 ──
  const p=product.toLowerCase();
- let recs;
- if(p.includes('딸기')||p.includes('블루베리'))recs=[{rank:1,zoneId:'1딸기',zoneName:'1번 딸기·블루베리',reason:'베리류 전용 구역',strategy:'기존 딸기 존 확대 병행',score:96},{rank:2,zoneId:'2한라봉',zoneName:'2번 한라봉',reason:'입구 인접 고노출',strategy:'시즌 핵심 입구 승격',score:78},{rank:3,zoneId:'샐러드',zoneName:'샐러드',reason:'냉장 구역 인접',strategy:'냉장 케이스 신선 강조',score:60}];
- else if(p.includes('한라봉')||p.includes('천혜향')||p.includes('감귤')||p.includes('오렌지'))recs=[{rank:1,zoneId:'2한라봉',zoneName:'2번 한라봉',reason:'만감류 전용 구역',strategy:'기존 만감류 존 확대',score:95},{rank:2,zoneId:'3감귤',zoneName:'3번 감귤',reason:'감귤류 인접 카테고리',strategy:'감귤 존 옆 신규 POP',score:80},{rank:3,zoneId:'6수입과일',zoneName:'6번 수입과일',reason:'수입 감귤 프리미엄',strategy:'수입과일 존 프리미엄 라인',score:68}];
- else if(p.includes('참외')||p.includes('수박'))recs=[{rank:1,zoneId:'1딸기',zoneName:'1번 딸기',reason:'시즌 핵심 구역 교체',strategy:'봄여름 시즌 전환 배치',score:92},{rank:2,zoneId:'7간편과일',zoneName:'7번 간편과일',reason:'소포장 테스트 적합',strategy:'소포장 간편과일 코너',score:76},{rank:3,zoneId:'4사과배',zoneName:'4번 사과·배',reason:'국산 과일 존 인접',strategy:'봄과일 존으로 전환',score:62}];
- else recs=[{rank:1,zoneId:'6수입과일',zoneName:'6번 수입과일',reason:'신규 프리미엄 상품 적합',strategy:'수입과일 존 신규 POP 배치',score:80},{rank:2,zoneId:'4사과배',zoneName:'4번 사과·배',reason:'국산 과일 카테고리',strategy:'국산 과일 존 병행',score:68},{rank:3,zoneId:'7간편과일',zoneName:'7번 간편과일',reason:'소포장 테스트 최적',strategy:'소포장 소량 테스트 후 확대',score:60}];
- return{product,recommendations:recs};
+ let targetCat=null; // 'fruit'|'veg'|'mushroom'|'citrus'|'berry'|'melon'|'root'
+ let targetKeywords=[]; // zone name/prod에서 찾을 키워드
+
+ if(/딸기|블루베리|베리/.test(p)){
+  targetCat='fruit'; targetKeywords=['딸기','베리','블루베리','과일'];
+ } else if(/한라봉|천혜향|레드향|만감|감귤|오렌지|자몽|레몬|키위|자몽/.test(p)){
+  targetCat='fruit'; targetKeywords=['감귤','오렌지','만감','한라봉','천혜향','과일','수입과일'];
+ } else if(/사과|배[^추]|단감|곶감/.test(p)){
+  targetCat='fruit'; targetKeywords=['사과','배','단감','과일'];
+ } else if(/참외|수박|복숭아|체리|포도|샤인|망고|아보카도|바나나|토마토/.test(p)){
+  targetCat='fruit'; targetKeywords=['참외','수박','복숭아','포도','과일','시즌'];
+ } else if(/상추|깻잎|샐러드|유러피안|양상추|배추|양배추|브로콜리|시금치/.test(p)){
+  targetCat='veg'; targetKeywords=['상추','샐러드','배추','채소','엽채','나물'];
+ } else if(/대파|쪽파|파[^인파]|양파|마늘|깐마늘/.test(p)){
+  targetCat='veg'; targetKeywords=['대파','파','양파','마늘','채소'];
+ } else if(/고추|파프리카|오이|애호박|가지/.test(p)){
+  targetCat='veg'; targetKeywords=['고추','파프리카','오이','애호박','채소'];
+ } else if(/당근|무|배추|콜라비|브로콜리|연근|우엉/.test(p)){
+  targetCat='veg'; targetKeywords=['당근','무','배추','제주','채소'];
+ } else if(/고구마|감자|밤|도토리/.test(p)){
+  targetCat='veg'; targetKeywords=['고구마','감자','밤','채소'];
+ } else if(/버섯|새송이|팽이|표고|양송이|느타리|맛타리/.test(p)){
+  targetCat='veg'; targetKeywords=['버섯','새송이','팽이','표고','양송이'];
+ } else if(/냉이|달래|봄동|미나리|나물/.test(p)){
+  targetCat='veg'; targetKeywords=['냉이','달래','봄동','미나리','나물','시즌채소'];
+ } else {
+  // 기타: 과일 구역 폴백
+  targetCat='fruit'; targetKeywords=['과일','시즌'];
+ }
+
+ // ── 2. 카테고리에 맞는 구역 점수 계산 ──
+ const wkOvr=getWkData(getCurWkId());
+ const variableIds=typeof VARIABLE_IDS!=='undefined'?VARIABLE_IDS:new Set();
+ const COLOR_FRUIT=['cbr3'];
+ const COLOR_VEG=['cg1','cn4'];
+
+ function zoneScore(z){
+  if(z.color==='cpillar'||z.type?.includes('입구')||z.type?.includes('기둥')) return -999;
+  const name=(z.name||'').toLowerCase();
+  const prod=(wkOvr[z.id]?.prod||z.prod||'').toLowerCase();
+  let score=0;
+
+  // ① 카테고리 color 매칭 (+40)
+  if(targetCat==='fruit'&&COLOR_FRUIT.includes(z.color)) score+=40;
+  else if(targetCat==='veg'&&COLOR_VEG.includes(z.color)) score+=40;
+  // zone.category 필드 매칭 (+30)
+  if(z.category==='fruit'&&targetCat==='fruit') score+=30;
+  if(z.category==='veg'&&targetCat==='veg') score+=30;
+
+  // ② zone name/prod에 관련 키워드 포함 (+25 per hit)
+  targetKeywords.forEach(kw=>{
+   if(name.includes(kw)||prod.includes(kw)) score+=25;
+  });
+
+  // ③ 변동가능 구역 우선 (+15)
+  if(variableIds.has&&variableIds.has(z.id)) score+=15;
+
+  // ④ 순위 구역 (p1/p2) — 과일이면 +10, 채소면 감점
+  if(z.pri==='p1') score+=(targetCat==='fruit'?10:-5);
+  if(z.pri==='p2') score+=(targetCat==='fruit'?7:-3);
+
+  // ⑤ 현재 배치 상품이 동일 카테고리면 +10 (인접 추천 강화)
+  if(targetCat==='fruit'&&/딸기|사과|배|감귤|오렌지|포도|복숭아|참외|수박|키위|망고|바나나|블루베리/.test(prod)) score+=10;
+  if(targetCat==='veg'&&/상추|배추|무|당근|파|양파|마늘|버섯|고추|고구마|감자|나물|채소/.test(prod)) score+=10;
+
+  return score;
+ }
+
+ // ── 3. 상위 3개 선택 ──
+ const scored=zones
+  .map(z=>({z,s:zoneScore(z)}))
+  .filter(x=>x.s>0)
+  .sort((a,b)=>b.s-a.s);
+
+ // 중복 방지: 같은 name 그룹에서 최고 1개만 (다양성 확보)
+ const seen=new Set();
+ const top=[];
+ for(const {z} of scored){
+  const key=(z.name||z.id).replace(/\d+/g,'').trim();
+  if(!seen.has(key)){seen.add(key);top.push(z);}
+  if(top.length>=3) break;
+ }
+ // 부족하면 scored에서 보충
+ if(top.length<3){
+  for(const {z} of scored){
+   if(!top.includes(z)){top.push(z);}
+   if(top.length>=3) break;
+  }
+ }
+ // 그래도 부족하면 zones 폴백
+ while(top.length<3) top.push(zones[top.length]||zones[0]);
+
+ // ── 4. 추천 이유 생성 ──
+ function makeReason(z,rank){
+  const name=z.name||z.id;
+  const cat=z.category||(COLOR_FRUIT.includes(z.color)?'fruit':COLOR_VEG.includes(z.color)?'veg':'');
+  if(cat==='fruit'&&targetCat==='fruit') return `${name} — 과일 매대, 카테고리 일치`;
+  if(cat==='veg'&&targetCat==='veg') return `${name} — 채소 조닝, 카테고리 일치`;
+  const prod=wkOvr[z.id]?.prod||z.prod||'';
+  if(prod) return `${name} 옆 — 현재 "${prod}"와 인접 배치`;
+  return `${name} — ${rank===1?'주력':'대안'} 구역`;
+ }
+ function makeStrategy(z,rank){
+  if(rank===1) return '정면 위치에 가격 POP 부착, 시즌 연출';
+  if(rank===2) return '기존 상품과 연계 크로스 진열';
+  return '소량 테스트 진열 후 반응 확인';
+ }
+
+ return{product,recommendations:top.slice(0,3).map((z,i)=>({
+  rank:i+1,
+  zoneId:z.id,
+  zoneName:z.name||z.id,
+  reason:makeReason(z,i+1),
+  strategy:makeStrategy(z,i+1),
+  score:[96,78,60][i]
+ }))};
 }
 
 // ═══════════ INIT ═══════════
@@ -8771,161 +9090,182 @@ function doRenameStore() {
 // ── 엑셀 내보내기 ──
 function exportCurrentStoreExcel() {
  if (typeof ExcelJS === 'undefined') {
- showToast(' ExcelJS 로딩 중... 잠시 후 다시 시도하세요');
- return;
+  showToast(' ExcelJS 로딩 중... 잠시 후 다시 시도하세요'); return;
  }
 
- // Firebase 지점 포함 전체 데이터 소스
+ // ── 데이터 준비
  var allNames = window.storeNames || storeNames;
  var allSnaps = window.storeZonesSnapshot || storeZonesSnapshot;
- var allOvrs = window.storeUserOverrides || storeUserOverrides;
- var cs = currentStore;
+ var cs       = currentStore;
+ var storeName = allNames[cs] || cs;
 
- const storeName = allNames[cs] || cs;
+ // monthZoneOverrides 적용
+ var rawZones = (zones && zones.length > 0) ? zones : (allSnaps[cs] || []);
+ var exportZones = rawZones.map(function(z) {
+  var ovr = getMonthZoneOverride(z.id);
+  if (ovr && ovr._hidden) return null;
+  return ovr ? Object.assign({}, z, ovr) : Object.assign({}, z);
+ }).filter(Boolean).filter(function(z) {
+  return !(z.color && z.color.startsWith('ent')) && z.type !== '입구';
+ });
 
- // 현재 지점 zones: 전역 zones 배열 (switchStore로 이미 로드됨)
- var exportZones = zones;
- if (!exportZones || exportZones.length === 0) {
- var snap = allSnaps[cs];
- if (snap && snap.length > 0) exportZones = snap;
- }
+ if (!exportZones.length) { showToast(' 도면 데이터가 없습니다'); return; }
 
- if (!exportZones || exportZones.length === 0) {
- showToast('️ ' + storeName + ' 도면 데이터가 없습니다. 지점을 선택 후 다시 시도하세요.');
- return;
- }
+ var wk = WEEKS[curWkIdx];
+ var wkLabel = wk ? wk.id : '';
+ var currentOverrides = (userOverrides && userOverrides[wkLabel]) || {};
 
- // 현재 지점 overrides
- var exportOverrides = userOverrides;
+ var now = new Date();
+ var ymd = now.getFullYear()
+  + ('0'+(now.getMonth()+1)).slice(-2)
+  + ('0'+now.getDate()).slice(-2)
+  + '_' + ('0'+now.getHours()).slice(-2)
+  + ('0'+now.getMinutes()).slice(-2);
 
- const now = new Date();
- const ymd = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2)
- + '_' + ('0'+now.getHours()).slice(-2) + ('0'+now.getMinutes()).slice(-2);
- const wk = WEEKS[curWkIdx];
- const wkLabel = wk ? wk.id : '';
- const currentOverrides = exportOverrides[wkLabel] || {};
+ showToast(' 엑셀 도면 생성 중...');
 
- showToast(' 도면 엑셀 생성 중...');
+ // ── 사이트 렌더링 공식 (CELL=72, ROW=46, GAP=3)
+ // left   = col  * 75px
+ // top    = row  * 49px
+ // width  = cols * 75 - 3px
+ // height = rows * 49 - 3px
+ //
+ // 엑셀 단위 환산 (Microsoft 공식, Calibri 11pt 기준):
+ //   col width(char) = (px - 5) / 7   →  역: px = char*7 + 5
+ //   row height(pt)  = px * 0.75
+ //
+ // GRID=2 서브그리드: 셀 1칸 = 0.5 격자 = 37.5px × 24.5px
+ //   col width = (37.5 - 5) / 7 = 4.643 char
+ //   row height = 24.5 * 0.75   = 18.375 pt
 
- // ── 색상 코드 → ARGB 매핑 ──
- const colorMap = {
- cbr3: 'FFFFF9C4', cb1: 'FFBBDEFB', cn4: 'FFC8E6C9', cn6: 'FFB3E5FC',
- cgr1: 'FFF1F8E9', cgr2: 'FFFFF8E1', cgr3: 'FFE8F5E9', cg1: 'FFE0F2F1',
- cw: 'FFFAFAFA', cc: 'FFE8EAF6', cpillar: 'FF424242',
+ var GRID    = 2;
+ var COL_W   = 4.643;   // char per 서브그리드 칸
+ var ROW_H   = 18.375;  // pt   per 서브그리드 칸
+
+ // ── 색상 매핑
+ var colorMap = {
+  cbr3:'FFFFF9C4', cb1:'FFBBDEFB', cn4:'FFC8E6C9', cn6:'FFB3E5FC',
+  cgr1:'FFF1F8E9', cgr2:'FFFFF8E1', cgr3:'FFE8F5E9', cg1:'FFE0F2F1',
+  cw:'FFFFFFFF',   cc:'FFE8EAF6',  cpillar:'FF424242',
  };
- function getARGB(colorKey) {
- if (!colorKey) return 'FFF8F9FA';
- if (colorKey.startsWith('custom_')) {
- const hex = colorKey.replace('custom_#','').replace('custom_','');
- return 'FF' + (hex.length === 6 ? hex.toUpperCase() : 'F5F5F5');
- }
- if (colorKey.startsWith('ent')) return 'FFA5D6A7';
- return colorMap[colorKey] || 'FFF5F5F5';
+ function getARGB(k) {
+  if (!k) return 'FFFFFFFF';
+  if (k.startsWith('custom_')) {
+   var hex = k.replace('custom_#','').replace('custom_','');
+   return 'FF' + (hex.length===6 ? hex.toUpperCase() : 'F5F5F5');
+  }
+  return colorMap[k] || 'FFF5F5F5';
  }
 
- const scale = 2;
- let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
- exportZones.forEach(z => {
- const c = Math.round(z.col * scale), r = Math.round(z.row * scale);
- const c2 = Math.round((z.col + (z.cols||1)) * scale);
- const r2 = Math.round((z.row + (z.rows||1)) * scale);
- if (c < minC) minC = c; if (r < minR) minR = r;
- if (c2 > maxC) maxC = c2; if (r2 > maxR) maxR = r2;
+ // ── 그리드 범위 계산
+ var minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
+ exportZones.forEach(function(z) {
+  var c  = z.col              * GRID;
+  var r  = z.row              * GRID;
+  var c2 = (z.col+(z.cols||1))* GRID;
+  var r2 = (z.row+(z.rows||1))* GRID;
+  if (c  < minC) minC = c;  if (r  < minR) minR = r;
+  if (c2 > maxC) maxC = c2; if (r2 > maxR) maxR = r2;
+ });
+ minC = Math.floor(minC); minR = Math.floor(minR);
+ maxC = Math.ceil(maxC);  maxR = Math.ceil(maxR);
+
+ var TOTAL_COLS = maxC - minC;
+ var TOTAL_ROWS = maxR - minR;
+
+ // ── ExcelJS 워크북
+ var wb = new ExcelJS.Workbook();
+ var ws = wb.addWorksheet('도면', { views: [{ showGridLines: false }] });
+
+ for (var ci = 1; ci <= TOTAL_COLS + 1; ci++) ws.getColumn(ci).width  = COL_W;
+ for (var ri = 1; ri <= TOTAL_ROWS + 1; ri++) ws.getRow(ri).height = ROW_H;
+
+ // ── 렌더링
+ exportZones.forEach(function(z) {
+  var ov    = currentOverrides[z.id] || {};
+  var raw   = (ov.prod || z.prod || z.name || '').trim();
+  if (/^[.\s]*$/.test(raw)) raw = (z.name || '').trim();
+  if (/^[.\s]*$/.test(raw)) raw = '';
+  var label = raw;
+
+  // 서브그리드 좌표 (1-based)
+  var c1 = Math.round(z.col              * GRID) - minC + 1;
+  var r1 = Math.round(z.row              * GRID) - minR + 1;
+  var c2 = Math.round((z.col+(z.cols||1))* GRID) - minC;
+  var r2 = Math.round((z.row+(z.rows||1))* GRID) - minR;
+  var cSpan = c2 - c1 + 1;
+  var rSpan = r2 - r1 + 1;
+
+  if (c1 < 1) c1 = 1;
+  if (r1 < 1) r1 = 1;
+  if (c2 > TOTAL_COLS) c2 = TOTAL_COLS;
+  if (r2 > TOTAL_ROWS) r2 = TOTAL_ROWS;
+  cSpan = Math.max(1, c2 - c1 + 1);
+  rSpan = Math.max(1, r2 - r1 + 1);
+
+  var argb    = getARGB(z.color);
+  var isDark  = (z.color === 'cpillar');
+  var isWhite = (z.color === 'cw');
+  var fontClr = isDark ? 'FFFFFFFF' : 'FF1a1a1a';
+  // cw(흰/벽): 회색 테두리로 구분, 일반: 색상 테두리
+  var bdrClr  = isDark ? 'FFFFFFFF' : (isWhite ? 'FFAAAAAA' : 'FF666666');
+  var bdrStyle = 'thin';
+
+  // 내부 셀 전체 채색 + 외곽 테두리
+  for (var dr = 0; dr < rSpan; dr++) {
+   for (var dc = 0; dc < cSpan; dc++) {
+    var cell = ws.getCell(r1+dr, c1+dc);
+    cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:argb } };
+    var isTop  = (dr === 0),      isBot = (dr === rSpan-1);
+    var isLeft = (dc === 0),      isRt  = (dc === cSpan-1);
+    cell.border = {
+     top:    isTop  ? { style:bdrStyle, color:{ argb:bdrClr } } : { style:'none' },
+     bottom: isBot  ? { style:bdrStyle, color:{ argb:bdrClr } } : { style:'none' },
+     left:   isLeft ? { style:bdrStyle, color:{ argb:bdrClr } } : { style:'none' },
+     right:  isRt   ? { style:bdrStyle, color:{ argb:bdrClr } } : { style:'none' },
+    };
+   }
+  }
+
+  // 병합
+  if (cSpan > 1 || rSpan > 1) {
+   try { ws.mergeCells(r1, c1, r1+rSpan-1, c1+cSpan-1); } catch(e) {}
+  }
+
+  // 텍스트
+  var tc = ws.getCell(r1, c1);
+  tc.value     = label;
+  tc.font      = { name:'Malgun Gothic', size:7, bold:true, color:{ argb:fontClr } };
+  tc.alignment = { wrapText:true, horizontal:'center', vertical:'middle' };
  });
 
- const COLS = maxC - minC + 1;
- const ROWS = maxR - minR + 1;
-
- const wb = new ExcelJS.Workbook();
- const ws = wb.addWorksheet('도면', { views: [{ showGridLines: false }] });
-
- // 열/행 크기 설정
- for (let c = 1; c <= COLS + 1; c++) ws.getColumn(c).width = 4.2;
- for (let r = 1; r <= ROWS + 1; r++) ws.getRow(r).height = 16;
-
- // 빈 배경 초기화
- for (let r = 0; r <= ROWS; r++) {
- for (let c = 0; c <= COLS; c++) {
- const cell = ws.getCell(r + 1, c + 1);
- cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
- cell.border = {
- top: { style: 'hair', color: { argb: 'FFD0D0D0' } },
- bottom: { style: 'hair', color: { argb: 'FFD0D0D0' } },
- left: { style: 'hair', color: { argb: 'FFD0D0D0' } },
- right: { style: 'hair', color: { argb: 'FFD0D0D0' } },
- };
- }
- }
-
- // 구역 렌더링
- exportZones.forEach(z => {
- const ov = currentOverrides[z.id] || {};
- const label = (ov.prod || z.prod || '').trim();
- const c0 = Math.round(z.col * scale) - minC;
- const r0 = Math.round(z.row * scale) - minR;
- const cSpan = Math.max(1, Math.round((z.cols||1) * scale));
- const rSpan = Math.max(1, Math.round((z.rows||1) * scale));
- const argb = getARGB(z.color);
- const isDark = z.color === 'cpillar';
- const fontColor = isDark ? 'FFFFFFFF' : 'FF212121';
- const borderColor = isDark ? 'FFFFFFFF' : 'FF757575';
-
- // 모든 내부 셀 채색
- for (let dr = 0; dr < rSpan; dr++) {
- for (let dc = 0; dc < cSpan; dc++) {
- const cell = ws.getCell(r0 + dr + 1, c0 + dc + 1);
- const isTop = dr === 0, isBottom = dr === rSpan - 1;
- const isLeft = dc === 0, isRight = dc === cSpan - 1;
- cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
- cell.border = {
- top: { style: isTop ? 'medium' : 'hair', color: { argb: isTop ? borderColor : 'FFCCCCCC' } },
- bottom: { style: isBottom ? 'medium' : 'hair', color: { argb: isBottom ? borderColor : 'FFCCCCCC' } },
- left: { style: isLeft ? 'medium' : 'hair', color: { argb: isLeft ? borderColor : 'FFCCCCCC' } },
- right: { style: isRight ? 'medium' : 'hair', color: { argb: isRight ? borderColor : 'FFCCCCCC' } },
- };
- }
- }
-
- // 텍스트 (좌상단 셀)
- const topCell = ws.getCell(r0 + 1, c0 + 1);
- topCell.value = label;
- topCell.font = { size: 7, bold: true, color: { argb: fontColor } };
- topCell.alignment = { wrapText: true, horizontal: 'center', vertical: 'middle' };
-
- // 병합
- if (cSpan > 1 || rSpan > 1) {
- ws.mergeCells(r0 + 1, c0 + 1, r0 + rSpan, c0 + cSpan);
- }
+ // ── 주차별 배치 시트
+ var ws2 = wb.addWorksheet('주차별배치');
+ ws2.addRow(['주차','구역ID','구역명','배치상품','상태','비고']);
+ Object.keys(userOverrides).sort().forEach(function(wkId) {
+  var wkOv = userOverrides[wkId];
+  Object.keys(wkOv).forEach(function(zid) {
+   var ov = wkOv[zid];
+   var z  = exportZones.find(function(x){ return x.id===zid; }) || {};
+   ws2.addRow([wkId, zid, z.name||zid, ov.prod||'', ov.status||'', ov.note||'']);
+  });
  });
+ ws2.columns = [8,16,16,20,10,20].map(function(w,i){ return { width:w, key:String(i) }; });
 
- // 주차별 배치 시트
- const ws2 = wb.addWorksheet('주차별배치');
- ws2.addRow(['주차', '구역ID', '구역명', '배치상품', '상태', '비고']);
- Object.keys(exportOverrides).sort().forEach(wkId => {
- const wkOv = exportOverrides[wkId];
- Object.keys(wkOv).forEach(zoneId => {
- const ov = wkOv[zoneId];
- const z = exportZones.find(z => z.id === zoneId) || {};
- ws2.addRow([wkId, zoneId, z.name || zoneId, ov.prod || '', ov.status || '', ov.note || '']);
- });
- });
- ws2.columns = [8,16,16,20,10,20].map((w,i) => ({ width: w, key: String(i) }));
-
- // 다운로드
- wb.xlsx.writeBuffer().then(buffer => {
- const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
- const a = document.createElement('a');
- a.href = URL.createObjectURL(blob);
- a.download = '킴스클럽_' + storeName + '_도면_' + ymd + '.xlsx';
- document.body.appendChild(a); a.click(); document.body.removeChild(a);
- setTimeout(() => URL.revokeObjectURL(a.href), 1000);
- showToast(' ' + storeName + ' 도면 엑셀 저장 완료!');
- }).catch(e => {
- showToast(' 엑셀 생성 오류: ' + e.message);
- console.error(e);
+ // ── 다운로드
+ wb.xlsx.writeBuffer().then(function(buf) {
+  var blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  var a    = document.createElement('a');
+  a.href   = URL.createObjectURL(blob);
+  a.download = '킴스클럽_' + storeName + '_도면_' + ymd + '.xlsx';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  showToast(' ' + storeName + ' 도면 엑셀 저장 완료!');
+ }).catch(function(e) {
+  showToast(' 엑셀 생성 오류: ' + e.message);
+  console.error(e);
  });
 }
-
 function openAddStoreModal() {
  document.getElementById('addStoreModal').classList.add('open');
  document.getElementById('newStoreCode').value = '';
@@ -9077,26 +9417,7 @@ function deleteCurrentStore() {
  showToast('️ ' + name + ' 삭제됨');
 }
 
-function updateSaveDropdown() {
- const container = document.getElementById('individualSaveContainer');
- if (!container) return;
- 
- // 기존 버튼들 제거 (첫번째 라벨 제외)
- const label = container.querySelector('div');
- container.innerHTML = '';
- container.appendChild(label);
- 
- // 모든 지점 버튼 추가
- Object.keys(storeMap).forEach(code => {
- const btn = document.createElement('button');
- btn.style.cssText = 'width:100%;text-align:left;padding:7px 14px;border:none;background:none;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;color:#f0f0f0;transition:background .08s;';
- btn.textContent = storeNames[code] || code;
- btn.onmouseover = function() { this.style.background = 'rgba(255,255,255,.12)'; this.style.color='#fff'; };
- btn.onmouseout = function() { this.style.background = 'none'; this.style.color='#f0f0f0'; };
- btn.onclick = function() { saveStore(code); closeSaveDrop(); };
- container.appendChild(btn);
- });
-}
+function updateSaveDropdown() {}
 
 function switchStore(store) {
  if (currentStore === store) return;
@@ -17267,5 +17588,64 @@ function psuAutoFillDays() {
  };
 })();
 
+</script>
+<!-- ── 원위치 확인 모달 ── -->
+<div id="resetConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;">
+ <div style="background:#1c1c1e;border:1px solid #3a3a3c;border-radius:16px;width:min(340px,90vw);padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6);">
+  <!-- 상단 경고 아이콘 영역 -->
+  <div style="background:#2c1a1a;padding:24px 24px 16px;text-align:center;border-bottom:1px solid #3a3a3c;">
+   <div style="font-size:36px;margin-bottom:8px;">↩️</div>
+   <div style="color:#ff6b6b;font-size:13px;font-weight:700;letter-spacing:.5px;">위치 초기화</div>
+  </div>
+  <!-- 본문 -->
+  <div style="padding:20px 24px;">
+   <p id="resetConfirmMsg" style="color:#e8e8e8;font-size:14px;line-height:1.6;text-align:center;margin:0 0 6px;"></p>
+   <p style="color:#ff9f43;font-size:12px;text-align:center;margin:0;background:rgba(255,159,67,.1);border-radius:8px;padding:8px 12px;">
+    ⚠️ 이 작업은 되돌릴 수 없습니다
+   </p>
+  </div>
+  <!-- 버튼 -->
+  <div style="display:flex;border-top:1px solid #3a3a3c;">
+   <button id="resetConfirmCancel"
+    style="flex:1;padding:14px;background:transparent;border:none;border-right:1px solid #3a3a3c;color:#aaa;font-size:15px;cursor:pointer;font-family:inherit;transition:background .15s;"
+    onmouseover="this.style.background='#2c2c2e'" onmouseout="this.style.background='transparent'">
+    취소
+   </button>
+   <button id="resetConfirmOk"
+    style="flex:1;padding:14px;background:transparent;border:none;color:#ff6b6b;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s;"
+    onmouseover="this.style.background='#2c1a1a'" onmouseout="this.style.background='transparent'">
+    원위치로 돌리기
+   </button>
+  </div>
+ </div>
+</div>
+
+<script>
+function showResetConfirm(zoneName, monthLabel) {
+ return new Promise(resolve => {
+  const modal = document.getElementById('resetConfirmModal');
+  const msg   = document.getElementById('resetConfirmMsg');
+  const okBtn = document.getElementById('resetConfirmOk');
+  const cancelBtn = document.getElementById('resetConfirmCancel');
+
+  msg.innerHTML = `<strong style="color:#fff">"${zoneName}"</strong> 구역의<br><strong style="color:#ffd43b">${monthLabel}</strong> 위치 변경을 취소할까요?`;
+  modal.style.display = 'flex';
+
+  function cleanup(result) {
+   modal.style.display = 'none';
+   okBtn.removeEventListener('click', onOk);
+   cancelBtn.removeEventListener('click', onCancel);
+   modal.removeEventListener('click', onBackdrop);
+   resolve(result);
+  }
+  function onOk()      { cleanup(true);  }
+  function onCancel()  { cleanup(false); }
+  function onBackdrop(e) { if (e.target === modal) cleanup(false); }
+
+  okBtn.addEventListener('click', onOk);
+  cancelBtn.addEventListener('click', onCancel);
+  modal.addEventListener('click', onBackdrop);
+ });
+}
 </script>
 </body>
