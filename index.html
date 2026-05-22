@@ -1701,8 +1701,8 @@ body.viewer-mode #salesMonthNav > div > button{
  const r = ref(db, 'plan2026/' + store);
  onValue(r, snap => {
  const data = snap.val();
- // 내가 방금 저장한 데이터가 수신된 경우 무시 (savedAt 비교)
- if (data && _myLastSavedAt[store] && data.savedAt === _myLastSavedAt[store]) {
+ // 내가 방금 저장한 데이터가 수신된 경우 무시 (2초 이내면 내 것으로 간주)
+ if (data && _myLastSavedAt[store] && Math.abs((data.savedAt||0) - _myLastSavedAt[store]) < 2000) {
  return;
  }
 
@@ -1716,7 +1716,7 @@ body.viewer-mode #salesMonthNav > div > button{
  if (data.zones && Array.isArray(data.zones) && typeof storeZonesSnapshot !== 'undefined') {
  storeZonesSnapshot[store] = data.zones.map(z => Object.assign({}, z));
  if (store === 'gs' && typeof currentStore !== 'undefined' && currentStore !== 'gs') {
- if (typeof render === 'function') setTimeout(function(){ render(); renderNav(); }, 0);
+ if (typeof render === 'function') setTimeout(function(){ if(!window._isDraggingOrResizing){ render(); renderNav(); } }, 0);
  }
  }
  if (typeof currentStore !== 'undefined' && store === currentStore) {
@@ -1751,7 +1751,7 @@ body.viewer-mode #salesMonthNav > div > button{
  if (typeof catRegions !== 'undefined') catRegions[store] = _cr;
  if (window.catRegions) window.catRegions[store] = _cr;
  }
- if (typeof render === 'function' && !window._isSwitchingStore) { render(); renderPanel(); renderNav(); }
+ if (typeof render === 'function' && !window._isSwitchingStore) { if(!window._isDraggingOrResizing){ render(); renderPanel(); renderNav(); } }
  if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
  }
  // 모든 지점 catRegions 항상 저장 (currentStore 여부 무관)
@@ -1903,7 +1903,7 @@ body.viewer-mode #salesMonthNav > div > button{
  if (store === (window.currentStore || 'gs')) {
  if (window._appReady && data) {
  // 타임아웃 오발로 하드코딩 데이터가 먼저 렌더된 경우 → Firebase 데이터로 강제 재렌더
- if (typeof render === 'function' && !window._isSwitchingStore) { render(); renderPanel(); renderNav(); }
+ if (typeof render === 'function' && !window._isSwitchingStore) { if(!window._isDraggingOrResizing){ render(); renderPanel(); renderNav(); } }
  if (typeof applyScale === 'function') { applyScale(); requestAnimationFrame(function(){ applyScale(); }); }
  if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
  } else if (typeof window._renderOnReady === 'function') {
@@ -1956,7 +1956,7 @@ body.viewer-mode #salesMonthNav > div > button{
  }
  // 지점 전환 중이면 렌더 스킵 (switchStore가 전환 완료 후 직접 render() 호출)
  if (window._isSwitchingStore) { syncUI('saved', ' 동기화됨'); return; }
- render(); renderPanel(); renderNav();
+ if(!window._isDraggingOrResizing){ render(); renderPanel(); renderNav(); }
  if (typeof applyScale === 'function') { applyScale(); requestAnimationFrame(function(){ applyScale(); }); }
  if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
  // 운영맵이 열려있으면 운영맵도 갱신 (중복 호출은 renderOmap 내 innerHTML='' 초기화로 안전)
@@ -2321,7 +2321,7 @@ body.viewer-mode #salesMonthNav > div > button{
  Object.assign(seasonOverrides, data);
  }
  // 화면 갱신
- if (typeof render === 'function') render();
+ if (typeof render === 'function') { if(!window._isDraggingOrResizing){ render(); } }
  if (typeof renderWkSummary === 'function') renderWkSummary();
  if (typeof renderSeasonSummary === 'function') {
  const cw = typeof getCurWk === 'function' ? getCurWk() : null;
@@ -2466,7 +2466,7 @@ body.viewer-mode #salesMonthNav > div > button{
  // 열람자면 화면 갱신
  if (typeof isViewer !== 'undefined' && isViewer) {
  if (typeof renderNav === 'function') renderNav();
- if (typeof render === 'function') render();
+ if (typeof render === 'function') { if(!window._isDraggingOrResizing){ render(); } }
  }
  }
  });
@@ -3909,7 +3909,11 @@ function getEffectiveZone(z) {
  const ovr = getMonthZoneOverride(z.id);
  if (!ovr) return z;
  if (ovr._hidden === true) return null;  // 이 달 이전에 없던 집기
- if (ovr._hidden === false) return z;    // 이 달부터 새로 생긴 집기 (위치 오버라이드 없음)
+ if (ovr._hidden === false) {
+  // 이 달부터 새로 생긴 집기 — col/row 오버라이드가 있으면 적용, 없으면 z 원본
+  const { _hidden, ...rest } = ovr;
+  return Object.keys(rest).length > 0 ? Object.assign({}, z, rest) : z;
+ }
  return Object.assign({}, z, ovr);
 }
 
@@ -3918,7 +3922,10 @@ function getEffectiveZoneAt(z, monthIdx) {
  const ovr = getMonthZoneOverrideAt(z.id, monthIdx);
  if (!ovr) return z;
  if (ovr._hidden === true) return null;
- if (ovr._hidden === false) return z;
+ if (ovr._hidden === false) {
+  const { _hidden, ...rest } = ovr;
+  return Object.keys(rest).length > 0 ? Object.assign({}, z, rest) : z;
+ }
  return Object.assign({}, z, ovr);
 }
 
@@ -4507,7 +4514,9 @@ function render(){
  toggleMultiSel(z.id); return;
  }
  e.preventDefault(); e.stopPropagation();
- if(!multiSelIds.has(z.id)){ multiSelIds.clear(); selZone(z.id); }
+ // 패널 input 포커스 해제 — 포커스 있으면 mousedown이 드래그로 안 넘어감
+ if(document.activeElement && (document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA')) document.activeElement.blur();
+ if(!multiSelIds.has(z.id)){ multiSelIds.clear(); selZone(z.id, true); }
  startPixelDrag(e, z.id);
  });
  el.addEventListener('click',e=>{
@@ -5205,14 +5214,24 @@ function openDetailPanel() {
  }
 }
 
-function selZone(id){
- selId=id; render(); applyScale(); renderPanel(); renderWkSummary(); if(!isViewer) openDetailPanel();
+function selZone(id, skipRender){
+ selId=id;
+ if(!skipRender){
+  // render() 전체 대신 .sel 클래스만 교체 — DOM 재생성 없이 선택 표시
+  document.querySelectorAll('.zb').forEach(el=>{
+   const zid=el.id.replace('z-','');
+   el.classList.toggle('sel', zid===id);
+   el.classList.remove('multi-sel');
+  });
+  applyScale();
+ }
+ renderPanel(); renderWkSummary(); if(!isViewer) openDetailPanel();
  requestAnimationFrame(updateBoundingBox);
  const z=zones.find(x=>x.id===id);
  if(z){
- document.getElementById('tbHint').textContent=`선택: ${z.name} — ${getCurWk()?.label}`;
- const b = document.getElementById('textRotBadge');
- if(b) b.textContent = (z.textRot || 0) + '°';
+  document.getElementById('tbHint').textContent=`선택: ${z.name} — ${getCurWk()?.label}`;
+  const b = document.getElementById('textRotBadge');
+  if(b) b.textContent = (z.textRot || 0) + '°';
  }
 }
 document.getElementById('gc').addEventListener('click',()=>{
@@ -6023,6 +6042,8 @@ function calcGuides(movingIds, testPos){ return calcSnapGuides(movingIds, testPo
  · Shift: 수평 또는 수직으로 고정
  ===================================================== */
 let pixelDrag = null;
+// pixelDrag/resizing을 window에 노출 — Firebase 모듈 스코프에서 접근 가능하도록
+Object.defineProperty(window, '_isDraggingOrResizing', { get: function(){ return !!(pixelDrag || resizing); } });
 
 function startPixelDrag(e, startId){
  const gc=document.getElementById('gc');
@@ -6614,11 +6635,13 @@ function moveSel(dc,dr){
  saveMonthZoneOverride(z.id,{col:Math.max(0,eff.col+dc),row:Math.max(0,eff.row+dr),cols:eff.cols,rows:eff.rows});
  render();renderPanel();syncToFirebase();
 }
-function deleteSel(){ saveUndoState();
- if(!selId)return showToast('먼저 구역 선택');
- const _delZone = zones.find(z=>z.id===selId);
- if(!confirm(`'${_delZone?.name}' 삭제?\n(${MONTHS[curMonthIdx]?.label || (curMonthIdx+1)+'월'} 이후부터 사라집니다. 이전 달은 유지됩니다.)`))return;
+function deleteSel(){
+ // confirm 전에 selId 캡처 (confirm 다이얼로그 중 포커스 이벤트로 selId가 null되는 것 방지)
  const _delZid = selId;
+ if(!_delZid)return showToast('먼저 구역 선택');
+ const _delZone = zones.find(z=>z.id===_delZid);
+ if(!confirm(`'${_delZone?.name}' 삭제?\n(${MONTHS[curMonthIdx]?.label || (curMonthIdx+1)+'월'} 이후부터 사라집니다. 이전 달은 유지됩니다.)`))return;
+ saveUndoState();
 
  // 현재 달 이후만 숨김 처리 (zones 원본 유지 — 이전 달은 그대로 보임)
  saveMonthZoneOverride(_delZid, {_hidden: true});
@@ -7068,7 +7091,7 @@ document.addEventListener('DOMContentLoaded', function() {
  drawStart = null;
  
  // 새 구역 선택 및 렌더링
- selZone(id);
+ selZone(id, true); // render는 아래에서 한 번만
  render();
  var _drawLabel = (typeof MONTHS !== 'undefined' && MONTHS[curMonthIdx]) ? MONTHS[curMonthIdx].label : (curMonthIdx+1)+'월';
  showToast(_drawLabel + '부터 표시: ' + drawMode.type + ' (' + cols + '×' + rows + ')');
@@ -7100,7 +7123,7 @@ function addZone(){
   if (!monthZoneOverrides[curMonthIdx]) monthZoneOverrides[curMonthIdx] = {};
   monthZoneOverrides[curMonthIdx][id] = { _hidden: false };
  }
- closeModal();selZone(id);render();
+ closeModal();selZone(id, true);render();
  var _addedLabel = (typeof MONTHS !== 'undefined' && MONTHS[curMonthIdx]) ? MONTHS[curMonthIdx].label : (curMonthIdx+1)+'월';
  showToast(`✅ '${name}' 추가 (${_addedLabel}부터 표시)`);
  document.getElementById('mN').value='';document.getElementById('mP').value='';
@@ -7411,10 +7434,19 @@ window._getSavePayload = function(store) {
 // ── Firebase 실시간 동기화 저장 ──
 function syncToFirebase(){
  if (typeof isViewer !== 'undefined' && isViewer) { console.log('[syncToFirebase] 열람모드 - 저장 차단'); return; }
+ // 드래그·리사이즈 중이면 조작 끝난 뒤로 저장 지연 (레이스 컨디션 방지)
+ if (pixelDrag || resizing) {
+   if (syncToFirebase._pending) clearTimeout(syncToFirebase._pending);
+   syncToFirebase._pending = setTimeout(function(){ syncToFirebase._pending=null; syncToFirebase(); }, 300);
+   return;
+ }
  if(typeof window._firebaseSave === 'function'){
  // storeZonesSnapshot 최신화
  storeUserOverrides[currentStore] = JSON.parse(JSON.stringify(userOverrides));
  storeZonesSnapshot[currentStore] = zones.map(z => Object.assign({}, z));
+ // storeMonthZoneOverrides 최신화 (삭제/이동 후 지점전환·새로고침 시 유실 방지)
+ if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
+ window.storeMonthZoneOverrides[currentStore] = JSON.parse(JSON.stringify(monthZoneOverrides));
  // 평당매출 스냅샷 최신화
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
  if (!window.storeSalesDataMap) window.storeSalesDataMap = {};
@@ -7441,8 +7473,6 @@ function syncToFirebase(){
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
  window._firebaseSave(currentStore);
- var _syncName = (window.storeNames || storeNames)[currentStore] || currentStore;
- showToast(' [' + _syncName + '] 서버에 동기화 중...');
  } else {
  showToast(' Firebase 연결 안됨 - 페이지 새로고침 후 다시 시도하세요');
  console.error('_firebaseSave 함수를 찾을 수 없습니다');
@@ -8464,7 +8494,9 @@ document.addEventListener('keydown',e=>{
  if((e.ctrlKey||e.metaKey)&&e.key==='c'){e.preventDefault();copyZone();return;}
  if((e.ctrlKey||e.metaKey)&&e.key==='v'){e.preventDefault();pasteZone();return;}
  if((e.ctrlKey||e.metaKey)&&e.key==='d'){e.preventDefault();dupeZone();return;}
- if(!selId&&multiSelIds.size===0)return;
+ // selId를 즉시 캡처 — 이후 이벤트로 null이 되기 전에 보존
+ const _kSelId = selId;
+ if(!_kSelId&&multiSelIds.size===0)return;
  if(e.key==='ArrowLeft'||e.key==='ArrowRight'||e.key==='ArrowUp'||e.key==='ArrowDown'){
  e.preventDefault();
  // 도면 회전각 보정: 화면 방향키 → 도면 좌표 델타 변환
@@ -8478,7 +8510,12 @@ document.addEventListener('keydown',e=>{
  const _kDelta = (_kMap[_kRot]||_kMap[0])[e.key];
  moveSel(_kDelta[0], _kDelta[1]);
  }
- if(e.key==='Delete'||e.key==='Backspace')deleteSel();
+ if(e.key==='Delete'||e.key==='Backspace'){
+ // 입력창 포커스 해제 후 삭제
+ if(document.activeElement&&(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='TEXTAREA'||document.activeElement.tagName==='SELECT')) document.activeElement.blur();
+ if(!selId && _kSelId){ selId = _kSelId; } // 날아간 selId 복원
+ deleteSel();
+ }
 });
 
 // ═══════════ TOAST ═══════════
