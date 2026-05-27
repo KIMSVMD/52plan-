@@ -1693,6 +1693,10 @@ body.viewer-mode #salesMonthNav > div > button{
  canvasRotation: data.canvasRotation !== undefined ? Number(data.canvasRotation) : 0,
  textRotation: data.textRotation !== undefined ? Number(data.textRotation) : 0,
  catTagPos: data.catTagPos !== undefined ? String(data.catTagPos) : 'tl',
+ canvasOffsetR: data.canvasOffsetR !== undefined ? Number(data.canvasOffsetR) : 0,
+ canvasOffsetC: data.canvasOffsetC !== undefined ? Number(data.canvasOffsetC) : 0,
+ canvasExtraR: data.canvasExtraR !== undefined ? Number(data.canvasExtraR) : 0,
+ canvasExtraC: data.canvasExtraC !== undefined ? Number(data.canvasExtraC) : 0,
  };
  }
  function listenStore(store) {
@@ -1780,6 +1784,18 @@ body.viewer-mode #salesMonthNav > div > button{
  if (window.storeTextRot) window.storeTextRot[store] = _rd0.textRotation;
  if (typeof storeCatTagPos !== 'undefined') storeCatTagPos[store] = _rd0.catTagPos;
  if (window.storeCatTagPos) window.storeCatTagPos[store] = _rd0.catTagPos;
+ // canvasOffset 복원
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ window.storeCanvasOffset[store] = { r: _rd0.canvasOffsetR || 0, c: _rd0.canvasOffsetC || 0 };
+ // canvasExtra 복원
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ window.storeCanvasExtra[store] = { r: _rd0.canvasExtraR || 0, c: _rd0.canvasExtraC || 0 };
+ if (store === (window.currentStore || 'gs')) {
+ if (typeof canvasOffsetR !== 'undefined') { canvasOffsetR = _rd0.canvasOffsetR || 0; window.canvasOffsetR = canvasOffsetR; }
+ if (typeof canvasOffsetC !== 'undefined') { canvasOffsetC = _rd0.canvasOffsetC || 0; window.canvasOffsetC = canvasOffsetC; }
+ if (typeof canvasExtraR !== 'undefined') { canvasExtraR = _rd0.canvasExtraR || 0; }
+ if (typeof canvasExtraC !== 'undefined') { canvasExtraC = _rd0.canvasExtraC || 0; }
+ }
  // 현재 지점이면 화면에도 즉시 반영
  if (store === (window.currentStore || 'gs') && typeof applyScale === 'function') {
  applyScale();
@@ -1942,17 +1958,29 @@ body.viewer-mode #salesMonthNav > div > button{
  if (typeof catRegions !== 'undefined') catRegions[store] = _cr;
  if (window.catRegions) window.catRegions[store] = _cr;
  }
- // 회전 복원: _rotData에 저장 후 즉시 직접 적용 (실시간 수신)
+ // 회전 + 캔버스 크기 복원 (data에서 직접 적용)
  _restoreRotation(store, data);
  const _d = window._rotData && window._rotData[store];
  if (_d) {
  storeRotations[store] = _d.canvasRotation;
  storeTextRot[store] = _d.textRotation;
  storeCatTagPos[store] = _d.catTagPos;
- if (store === (window.currentStore || 'gs')) {
- globalTextRot = _d.textRotation || 0;
- catTagPos = _d.catTagPos || 'tl';
  }
+ // canvasOffset/Extra: data에서 직접 복원 (_rotData 경유 없이)
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ const _offR = data.canvasOffsetR !== undefined ? Number(data.canvasOffsetR) : 0;
+ const _offC = data.canvasOffsetC !== undefined ? Number(data.canvasOffsetC) : 0;
+ const _extR = data.canvasExtraR !== undefined ? Number(data.canvasExtraR) : 0;
+ const _extC = data.canvasExtraC !== undefined ? Number(data.canvasExtraC) : 0;
+ window.storeCanvasOffset[store] = { r: _offR, c: _offC };
+ window.storeCanvasExtra[store] = { r: _extR, c: _extC };
+ if (store === (window.currentStore || 'gs')) {
+ if (_d) { globalTextRot = _d.textRotation || 0; catTagPos = _d.catTagPos || 'tl'; }
+ canvasOffsetR = _offR;
+ canvasOffsetC = _offC;
+ canvasExtraR = _extR;
+ canvasExtraC = _extC;
  }
  // 지점 전환 중이면 렌더 스킵 (switchStore가 전환 완료 후 직접 render() 호출)
  if (window._isSwitchingStore) { syncUI('saved', ' 동기화됨'); return; }
@@ -3867,8 +3895,9 @@ document.addEventListener('keydown', function(e) {
 
 const CELL=72,ROW=46,GAP=3;
 let canvasExtraR=0, canvasExtraC=0;
-const px=c=>c*(CELL+GAP);
-const py=r=>r*(ROW+GAP);
+let canvasOffsetR=0, canvasOffsetC=0;
+const px=c=>(c+canvasOffsetC)*(CELL+GAP);
+const py=r=>(r+canvasOffsetR)*(ROW+GAP);
 
 let selId=null, editMode=true, resizing=null, dragId=null;
 let multiSelIds = new Set(); // 다중 선택된 구역 IDs
@@ -4385,8 +4414,8 @@ function jumpToMonth(mi){
 function render(){
  const gc=document.getElementById('gc');
  gc.innerHTML='';
- const maxC=Math.max(...zones.map(z=>z.col+z.cols),22) + canvasExtraC;
- const maxR=Math.max(...zones.map(z=>z.row+z.rows),24) + canvasExtraR;
+ const maxC=Math.max(...zones.map(z=>z.col+z.cols),22) + canvasExtraC + canvasOffsetC;
+ const maxR=Math.max(...zones.map(z=>z.row+z.rows),24) + canvasExtraR + canvasOffsetR;
  gc.style.width=(maxC*(CELL+GAP)+GAP+16)+'px';
  gc.style.height=(maxR*(ROW+GAP)+GAP+16)+'px';
  // 평당매출 탭용 크기 저장 (display:none 상태에서도 style은 유효)
@@ -6106,17 +6135,19 @@ function onPixelDragMove(e){
  const finalDy = rawDy + snaps.dy;
 
  // DOM 이동 + 임시 위치 기록 (zones 원본은 End에서만 오버라이드로 저장)
+ const minLeft = canvasOffsetC * (CELL+GAP) + 8;
+ const minTop  = canvasOffsetR * (ROW+GAP)  + 8;
  pixelDrag.movingIds.forEach(id=>{
  const sp=pixelDrag.startPx[id]; if(!sp) return;
  const el=document.getElementById('z-'+id); if(!el) return;
- const nl=Math.max(8, sp.l+finalDx);
- const nt=Math.max(8, sp.t+finalDy);
+ const nl=Math.max(minLeft, sp.l+finalDx);
+ const nt=Math.max(minTop,  sp.t+finalDy);
  el.style.left=nl+'px';
  el.style.top =nt+'px';
  if(!pixelDrag.curPos) pixelDrag.curPos={};
  pixelDrag.curPos[id]={
-  col:Math.max(0,(nl-8)/(CELL+GAP)),
-  row:Math.max(0,(nt-8)/(ROW+GAP))
+  col:Math.max(0,(nl-8)/(CELL+GAP) - canvasOffsetC),
+  row:Math.max(0,(nt-8)/(ROW+GAP) - canvasOffsetR)
  };
  });
 }
@@ -6562,36 +6593,36 @@ function expandCanvas(dir) {
  // 화면 방향 → 도면 좌표 방향 변환 (회전각 보정)
  dir = _rotateDir(dir);
  if (dir === 'top') {
- zones.forEach(function(z){ z.row += 1; });
+ canvasOffsetR += 1;
  showToast('위쪽에 1행 추가');
- storeZonesSnapshot[currentStore] = zones.map(function(z){ return Object.assign({}, z); });
  } else if (dir === 'bottom') {
  canvasExtraR += 3;
  showToast('아래쪽 3행 확장');
  } else if (dir === 'left') {
- zones.forEach(function(z){ z.col += 1; });
+ canvasOffsetC += 1;
  showToast('왼쪽에 1열 추가');
- storeZonesSnapshot[currentStore] = zones.map(function(z){ return Object.assign({}, z); });
  } else if (dir === 'right') {
  canvasExtraC += 3;
  showToast('오른쪽 3열 확장');
  }
  render();
  applyScale();
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
+ window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
+ if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
 function shrinkCanvas(dir) {
  dir = _rotateDir(dir);
  if (dir === 'top') {
- // 가장 위 구역의 row 확인 — row=0인 구역 없으면 전체 1행 위로
- var minRow = Math.min.apply(null, zones.map(function(z){ return z.row; }));
- if (minRow <= 0) { showToast('️ 최상단 구역이 있어 축소 불가'); return; }
- zones.forEach(function(z){ z.row -= 1; });
+ if (canvasOffsetR <= 0) { showToast('️ 더 이상 위쪽 축소 불가'); return; }
+ canvasOffsetR -= 1;
  showToast('▼ 위쪽 빈 행 제거');
  } else if (dir === 'left') {
- var minCol = Math.min.apply(null, zones.map(function(z){ return z.col; }));
- if (minCol <= 0) { showToast('️ 최좌측 구역이 있어 축소 불가'); return; }
- zones.forEach(function(z){ z.col -= 1; });
+ if (canvasOffsetC <= 0) { showToast('️ 더 이상 왼쪽 축소 불가'); return; }
+ canvasOffsetC -= 1;
  showToast('▶ 왼쪽 빈 열 제거');
  } else if (dir === 'right') {
  // 오른쪽 축소: canvasExtraC 줄이기
@@ -6621,6 +6652,11 @@ function shrinkCanvas(dir) {
  render();
  applyScale();
  storeZonesSnapshot[currentStore] = zones.map(function(z){ return Object.assign({}, z); });
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
+ window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
+ if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
 function resizeSel(dc,dr){
@@ -6916,9 +6952,9 @@ document.addEventListener('DOMContentLoaded', function() {
  
  const { x, y } = screenToGridCoord(e.clientX, e.clientY);
  
- // 0.5 단위로 스냅
- const col = Math.round(x / (CELL + GAP) * 2) / 2;
- const row = Math.round(y / (ROW + GAP) * 2) / 2;
+ // 0.5 단위로 스냅 (canvasOffset 역보정)
+ const col = Math.round((x / (CELL + GAP) - canvasOffsetC) * 2) / 2;
+ const row = Math.round((y / (ROW + GAP) - canvasOffsetR) * 2) / 2;
  
  drawStart = { col: Math.max(0, col), row: Math.max(0, row), x: e.clientX, y: e.clientY };
  
@@ -6990,9 +7026,9 @@ document.addEventListener('DOMContentLoaded', function() {
  const gc = document.getElementById('gc');
  const { x, y } = screenToGridCoord(e.clientX, e.clientY);
  
- // 0.5 단위로 스냅
- const endCol = Math.max(0, Math.round(x / (CELL + GAP) * 2) / 2);
- const endRow = Math.max(0, Math.round(y / (ROW + GAP) * 2) / 2);
+ // 0.5 단위로 스냅 (canvasOffset 역보정)
+ const endCol = Math.max(0, Math.round((x / (CELL + GAP) - canvasOffsetC) * 2) / 2);
+ const endRow = Math.max(0, Math.round((y / (ROW + GAP) - canvasOffsetR) * 2) / 2);
  
  const minCol = Math.min(drawStart.col, endCol);
  const maxCol = Math.max(drawStart.col, endCol);
@@ -7367,6 +7403,12 @@ window._getSavePayload = function(store) {
  var saveRot = storeRotations[store] || 0;
  var saveTxt = storeTextRot[store] || 0;
  var savePos = storeCatTagPos[store] || 'tl';
+ // canvasOffset (지점별 저장)
+ var saveOffsetR = isCurrent ? canvasOffsetR : ((window.storeCanvasOffset && window.storeCanvasOffset[store]) ? window.storeCanvasOffset[store].r : 0);
+ var saveOffsetC = isCurrent ? canvasOffsetC : ((window.storeCanvasOffset && window.storeCanvasOffset[store]) ? window.storeCanvasOffset[store].c : 0);
+ // canvasExtra (아래/오른쪽 여백, 지점별 저장)
+ var saveExtraR = isCurrent ? canvasExtraR : ((window.storeCanvasExtra && window.storeCanvasExtra[store]) ? window.storeCanvasExtra[store].r : 0);
+ var saveExtraC = isCurrent ? canvasExtraC : ((window.storeCanvasExtra && window.storeCanvasExtra[store]) ? window.storeCanvasExtra[store].c : 0);
 
  var allNames = window.storeNames || storeNames;
 
@@ -7399,6 +7441,10 @@ window._getSavePayload = function(store) {
  canvasRotation: saveRot,
  textRotation: saveTxt,
  catTagPos: savePos,
+ canvasOffsetR: saveOffsetR,
+ canvasOffsetC: saveOffsetC,
+ canvasExtraR: saveExtraR,
+ canvasExtraC: saveExtraC,
  salesData: saveSalesData,
  areaData: saveAreaData,
  manualTotalSales: saveManualSales,
@@ -7444,6 +7490,11 @@ function syncToFirebase(){
  // storeZonesSnapshot 최신화
  storeUserOverrides[currentStore] = JSON.parse(JSON.stringify(userOverrides));
  storeZonesSnapshot[currentStore] = zones.map(z => Object.assign({}, z));
+ // canvasOffset/Extra 최신화
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
+ window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
  // storeMonthZoneOverrides 최신화 (삭제/이동 후 지점전환·새로고침 시 유실 방지)
  if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
  window.storeMonthZoneOverrides[currentStore] = JSON.parse(JSON.stringify(monthZoneOverrides));
@@ -9504,6 +9555,18 @@ function switchStore(store) {
  const _newPos = window.storeCatTagPos[store] || 'tl';
  if (typeof catTagPos !== 'undefined') catTagPos = _newPos;
  }
+ // canvasOffset 복원 (지점 전환 시)
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC }; // 이전 지점 offset 저장
+ const _newOffset = window.storeCanvasOffset[store] || { r: 0, c: 0 };
+ canvasOffsetR = _newOffset.r;
+ canvasOffsetC = _newOffset.c;
+ // canvasExtra 지점 전환
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC }; // 이전 지점 extra 저장
+ const _newExtra = window.storeCanvasExtra[store] || { r: 0, c: 0 };
+ canvasExtraR = _newExtra.r;
+ canvasExtraC = _newExtra.c;
  const s = storeMap[store];
  zones.length = 0;
  // 이전에 편집한 zones가 있으면 복원, 없으면 기본값
