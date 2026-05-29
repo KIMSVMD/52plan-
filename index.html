@@ -1657,6 +1657,13 @@ body.viewer-mode #salesMonthNav > div > button{
 
  const app = initializeApp(firebaseConfig);
  const db = getDatabase(app);
+ const auth = getAuth(app);
+
+ // DB 함수 전역 노출 (tryLogin 등 일반 script에서 사용)
+ window._db = db;
+ window._dbRef = ref;
+ window._dbGet = get;
+ window._dbSet = set;
 
  const _myLastSavedAt = {}; // 지점별 내 마지막 저장 savedAt (자기 업데이트 억제용)
 
@@ -2551,8 +2558,8 @@ window.onerror = function(msg, src, line, col, err) {
  <button onclick="enterViewer()" style="width:100%;padding:13px;border-radius:10px;border:none;background:#0d0d0d;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-.2px">열람 모드로 입장</button>
  </div>
  <div id="lockAdminPane" style="display:none">
- <input id="pwInput" type="password" placeholder="관리자 비밀번호" onkeydown="if(event.key==='Enter')tryLogin()"
- style="width:100%;padding:13px 16px;border-radius:10px;border:1.5px solid #e5e5e5;background:#f7f7f7;color:#0d0d0d;font-size:15px;font-family:inherit;outline:none;margin-bottom:14px;letter-spacing:2px"/>
+ <input id="pwInput" type="password" placeholder="관리자 비밀번호" onkeydown="if(event.key==='Enter')tryLogin()" autocomplete="current-password"
+  style="width:100%;padding:13px 16px;border-radius:10px;border:1.5px solid #e5e5e5;background:#f7f7f7;color:#0d0d0d;font-size:15px;font-family:inherit;outline:none;margin-bottom:14px;letter-spacing:2px"/>
  <button onclick="tryLogin()" style="width:100%;padding:13px;border-radius:10px;border:none;background:#0d0d0d;color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:-.2px">관리자 로그인</button>
  <div id="lockErr" style="color:#e53935;font-size:12px;margin-top:8px;min-height:20px"></div>
  </div>
@@ -7168,7 +7175,7 @@ function addZone(){
 // ══════════════════════════════════════
 // 권한 시스템
 // ══════════════════════════════════════
-const ADMIN_PW = 'vmd12!';
+// 관리자 비밀번호는 Firebase DB /config/adminPw 에 저장 (소스코드에서 제거)
 let isAdmin = false, isViewer = false;
 
 function getPublicMonths(){
@@ -7184,8 +7191,7 @@ function lockTab(t){
  document.getElementById('lockHint').style.display = t==='admin' ? 'none' : '';
 }
 
-function tryLogin(){
- if(document.getElementById('pwInput').value === ADMIN_PW){
+function _onAdminLoginSuccess(){
  isAdmin=true; isViewer=false;
  document.getElementById('lockOverlay').style.display='none';
  const _hdrA = document.getElementById('hdrR');
@@ -7193,7 +7199,6 @@ function tryLogin(){
  document.getElementById('adminMonthBtn').style.display='';
  document.getElementById('adminLogoutBtn').style.display='';
  document.getElementById('backToHomeBtn').style.display='none';
- // 관리자 로그인 시 오늘 주차로 이동
  const _todayIdx = getTodayWkIdx();
  curWkIdx = _todayIdx;
  curMonthIdx = WEEKS[_todayIdx].mo;
@@ -7202,23 +7207,54 @@ function tryLogin(){
  document.getElementById('modeTag').textContent='편집 모드';
  document.getElementById('modeTag').className='badge b-edit';
  document.getElementById('toolbar').style.display='flex';
- // 관리자: 요약 패널 숨김
  const _sw = document.getElementById('wkSummaryWrap');
  const _sh = document.getElementById('summaryResizeHandle');
  if(_sw) _sw.style.display='none';
  if(_sh) _sh.style.display='none';
- // Presence 등록 (현재 지점)
  if (typeof window._presenceEnter === 'function') window._presenceEnter(currentStore);
- // 평당매출 탭 버튼 즉시 표시 (로그인 전에 탭을 열었을 경우 대비)
  ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel'].forEach(function(id){
- var el = document.getElementById(id);
- if (el) el.style.display = '';
+  var el = document.getElementById(id);
+  if (el) el.style.display = '';
  });
  showToast('관리자 로그인');
- } else {
- document.getElementById('lockErr').textContent='비밀번호가 올바르지 않습니다';
- document.getElementById('pwInput').value='';
+}
+
+async function tryLogin(){
+ const pwInput = document.getElementById('pwInput');
+ const enteredPw = pwInput.value;
+ if(!enteredPw){ document.getElementById('lockErr').textContent='비밀번호를 입력하세요'; return; }
+ const loginBtn = document.querySelector('#lockAdminPane button');
+ if(loginBtn){ loginBtn.disabled=true; loginBtn.textContent='확인 중...'; }
+ try {
+  // Firebase DB에서 adminPw 읽어서 서버측 해시와 비교
+  // DB 경로: /config/adminPwHash (SHA-256 hex)
+  const snap = await window._dbGet(window._dbRef(window._db, 'config/adminPwHash'));
+  const storedHash = snap.val();
+  if(!storedHash){
+   // DB에 해시가 없으면 최초 설정: 현재 입력값으로 초기화 (최초 1회만 허용)
+   const firstHash = await _sha256(enteredPw);
+   await window._dbSet(window._dbRef(window._db, 'config/adminPwHash'), firstHash);
+   _onAdminLoginSuccess();
+   return;
+  }
+  const enteredHash = await _sha256(enteredPw);
+  if(enteredHash === storedHash){
+   _onAdminLoginSuccess();
+  } else {
+   document.getElementById('lockErr').textContent='비밀번호가 올바르지 않습니다';
+   pwInput.value='';
+  }
+ } catch(e) {
+  document.getElementById('lockErr').textContent='서버 연결 실패. 다시 시도해 주세요.';
+ } finally {
+  if(loginBtn){ loginBtn.disabled=false; loginBtn.textContent='관리자 로그인'; }
  }
+}
+
+// SHA-256 해시 유틸 (Web Crypto API — 브라우저 내장, 외부 라이브러리 불필요)
+async function _sha256(str){
+ const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+ return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
 function enterViewer(){
@@ -8577,7 +8613,7 @@ let aiHistArr=[];
 function openAI(){document.getElementById('aiPanel').classList.add('open');document.getElementById('aiFloat').style.display='none';setTimeout(()=>document.getElementById('aiInp').focus(),300);}
 function closeAI(){document.getElementById('aiPanel').classList.remove('open');document.getElementById('aiFloat').style.display='';}
 
-async function doAsk(){
+function doAsk(){
  const inp=document.getElementById('aiInp');
  const product=inp.value.trim();if(!product)return;
  const btn=document.getElementById('aiGo');
@@ -8663,12 +8699,8 @@ ${histCtx.length>0?`\n■ 과거 유사상품 배치 이력\n${histCtx.slice(0,4
 JSON으로만 응답 (마크다운 없이):
 {"product":"${product}","recommendations":[{"rank":1,"zoneId":"실제존재하는구역id","zoneName":"구역이름","reason":"카테고리 매칭 근거와 배치 이유 25자이내","strategy":"진열 전략 35자이내","score":95},{"rank":2,"zoneId":"실제존재하는구역id","zoneName":"구역이름","reason":"이유","strategy":"전략","score":78},{"rank":3,"zoneId":"실제존재하는구역id","zoneName":"구역이름","reason":"이유","strategy":"전략","score":60}]}`;
 
- let result=null;
- try{
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
-  const data=await res.json();
-  result=JSON.parse((data.content?.[0]?.text||'').replace(/```json|```/g,'').trim());
- }catch(e){result=fallbackRec(product);}
+ // 카테고리 기반 내장 추천 로직 사용 (외부 API 호출 없음)
+ const result=fallbackRec(product);
 
  renderAIResult(result,product);
  if(!aiHistArr.includes(product))aiHistArr.unshift(product);
