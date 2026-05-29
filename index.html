@@ -1657,7 +1657,6 @@ body.viewer-mode #salesMonthNav > div > button{
 
  const app = initializeApp(firebaseConfig);
  const db = getDatabase(app);
- const auth = getAuth(app);
 
  // DB 함수 전역 노출 (tryLogin 등 일반 script에서 사용)
  window._db = db;
