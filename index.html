@@ -1634,6 +1634,23 @@ body.viewer-mode #salesMonthNav > div > button{
  #mobWkSummaryBar { display: none !important; }
 }
 
+
+/* ── 주차 범위 일괄 적용 모달 ── */
+#rangeApplyModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;}
+#rangeApplyModal.open{display:flex;}
+#rangeApplyBox{background:#fff;border-radius:16px;padding:24px;width:min(440px,92vw);box-shadow:0 8px 40px rgba(0,0,0,.22);font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;}
+#rangeApplyBox h3{margin:0 0 4px;font-size:16px;font-weight:900;color:#111;}
+.ram-sub{font-size:12px;color:#6b7280;margin-bottom:18px;}
+.ram-row{margin-bottom:14px;}
+.ram-label{font-size:11px;font-weight:700;color:#374151;margin-bottom:5px;}
+#rangeApplyBox select,#rangeApplyBox input[type=text]{width:100%;box-sizing:border-box;padding:9px 11px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;font-family:inherit;color:#111;background:#fff;}
+.ram-row-2col{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.ram-preview{background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:10px 13px;font-size:12px;color:#1e40af;margin-bottom:16px;min-height:36px;}
+.ram-btns{display:flex;gap:8px;}
+.ram-btn-ok{flex:1;padding:12px;background:#1e40af;color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.ram-btn-ok:hover{background:#1d4ed8;}
+.ram-btn-cancel{padding:12px 18px;background:#f3f4f6;color:#374151;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
+.ram-info-badge{background:#fef3c7;border:1.5px solid #fcd34d;border-radius:7px;padding:7px 10px;font-size:11px;color:#92400e;margin-bottom:12px;}
 </style>
 
 <!-- Firebase SDK -->
@@ -3212,6 +3229,7 @@ window.onerror = function(msg, src, line, col, err) {
  <select id="wkStatus" style="display:none;"><option value="planned">예정</option><option value="confirmed">확정</option><option value="tbd">미정</option></select>
  <input class="rpi" id="wkNoteInp" placeholder="메모 (POP, 온도 조건 등)" style="margin-top:5px;"/>
  <button class="wk-apply" onclick="applyWkProd()">이 주차에 적용</button>
+ <button class="wk-apply" onclick="openRangeApplyModal()" style="margin-top:5px;background:#1e40af;">📅 주차 범위 일괄 적용</button>
  </div>
  </div>
 
@@ -17719,6 +17737,85 @@ function psuAutoFillDays() {
  };
 })();
 
+
+/* ════ 주차 범위 일괄 적용 ════ */
+function openRangeApplyModal(){
+  if(!selId){showToast('⚠️ 구역을 먼저 선택해주세요');return;}
+  var z=zones.find(function(x){return x.id===selId;});
+  var zoneName=z?z.name:selId;
+  document.getElementById('ramZoneInfo').textContent='🏷️ 선택 구역: '+zoneName;
+  document.getElementById('ramProd').value=document.getElementById('wkProdInp').value||'';
+  document.getElementById('ramNote').value=document.getElementById('wkNoteInp').value||'';
+  document.getElementById('ramStatus').value=document.getElementById('wkStatus').value||'planned';
+  var fs=document.getElementById('ramFrom');
+  var ts=document.getElementById('ramTo');
+  fs.innerHTML='';ts.innerHTML='';
+  var ci=typeof curWkIdx!=='undefined'?curWkIdx:0;
+  WEEKS.forEach(function(wk,idx){
+    var o=document.createElement('option');
+    o.value=wk.id;o.textContent=wk.label+' ('+wk.dates+')';
+    if(idx===ci)o.selected=true;
+    fs.appendChild(o);
+    var o2=document.createElement('option');
+    o2.value=wk.id;o2.textContent=wk.label+' ('+wk.dates+')';
+    if(idx===ci)o2.selected=true;
+    ts.appendChild(o2);
+  });
+  updateRamPreview();
+  document.getElementById('rangeApplyModal').classList.add('open');
+}
+function closeRangeApplyModal(){
+  document.getElementById('rangeApplyModal').classList.remove('open');
+}
+function updateRamPreview(){
+  var fId=document.getElementById('ramFrom').value;
+  var tId=document.getElementById('ramTo').value;
+  var prod=(document.getElementById('ramProd').value||'').trim();
+  var status=document.getElementById('ramStatus').value;
+  var fi=WEEKS.findIndex(function(w){return w.id===fId;});
+  var ti=WEEKS.findIndex(function(w){return w.id===tId;});
+  var pv=document.getElementById('ramPreview');
+  if(!prod){pv.textContent='상품명을 입력해주세요';pv.style.color='#9ca3af';return;}
+  if(fi<0||ti<0){pv.textContent='주차를 선택해주세요';return;}
+  if(fi>ti){pv.textContent='⚠️ 시작 주차가 종료 주차보다 늦습니다';pv.style.color='#dc2626';return;}
+  var cnt=ti-fi+1;
+  var sl={planned:'예정',confirmed:'확정',tbd:'미정'};
+  pv.style.color='#1e40af';
+  pv.textContent='📦 "'+prod+'" ('+(sl[status]||status)+') — '+WEEKS[fi].label+' ~ '+WEEKS[ti].label+' ('+cnt+'주간) 적용 예정';
+}
+function execRangeApply(){
+  if(!selId){showToast('⚠️ 구역이 선택되지 않았습니다');return;}
+  var fId=document.getElementById('ramFrom').value;
+  var tId=document.getElementById('ramTo').value;
+  var prod=(document.getElementById('ramProd').value||'').trim();
+  var note=(document.getElementById('ramNote').value||'').trim();
+  var status=document.getElementById('ramStatus').value;
+  if(!prod){showToast('⚠️ 상품명을 입력해주세요');return;}
+  var fi=WEEKS.findIndex(function(w){return w.id===fId;});
+  var ti=WEEKS.findIndex(function(w){return w.id===tId;});
+  if(fi<0||ti<0){showToast('⚠️ 주차를 선택해주세요');return;}
+  if(fi>ti){showToast('⚠️ 시작 주차가 종료 주차보다 늦습니다');return;}
+  var cnt=ti-fi+1;
+  var z=zones.find(function(x){return x.id===selId;});
+  var zn=z?z.name:selId;
+  for(var i=fi;i<=ti;i++){
+    var wkId=WEEKS[i].id;
+    if(!userOverrides[wkId])userOverrides[wkId]={};
+    userOverrides[wkId][selId]={prod:prod,status:status,note:note};
+    if(typeof syncGsLinkToOtherStores==='function')syncGsLinkToOtherStores(selId,wkId,prod,status);
+  }
+  closeRangeApplyModal();
+  if(typeof render==='function')render();
+  if(typeof applyScale==='function')applyScale();
+  if(typeof renderNav==='function')renderNav();
+  var cwId=typeof getCurWkId==='function'?getCurWkId():'';
+  if(cwId&&userOverrides[cwId]&&userOverrides[cwId][selId]){
+    var e1=document.getElementById('wkProdInp');if(e1)e1.value=prod;
+    var e2=document.getElementById('wkNoteInp');if(e2)e2.value=note;
+    var e3=document.getElementById('wkStatus');if(e3)e3.value=status;
+  }
+  showToast('✅ "'+zn+'" — '+WEEKS[fi].label+'~'+WEEKS[ti].label+' ('+cnt+'주) 일괄 적용 완료!');
+}
 </script>
 <!-- ── 원위치 확인 모달 ── -->
 <div id="resetConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;">
@@ -17779,4 +17876,35 @@ function showResetConfirm(zoneName, monthLabel) {
  });
 }
 </script>
+
+<!-- ════ 주차 범위 일괄 적용 모달 ════ -->
+<div id="rangeApplyModal" onclick="if(event.target===this)closeRangeApplyModal()">
+  <div id="rangeApplyBox">
+    <h3>📅 주차 범위 일괄 적용</h3>
+    <div class="ram-sub">선택 구역에 특정 주차 범위 동안 동일한 상품을 한번에 적용합니다</div>
+    <div class="ram-info-badge" id="ramZoneInfo">구역을 먼저 선택해주세요</div>
+    <div class="ram-row"><div class="ram-label">배치 상품명</div>
+      <input type="text" id="ramProd" placeholder="예: 딸기, 수박, 참외 등" oninput="updateRamPreview()"/>
+    </div>
+    <div class="ram-row"><div class="ram-label">메모 (선택)</div>
+      <input type="text" id="ramNote" placeholder="POP, 온도 조건 등"/>
+    </div>
+    <div class="ram-row"><div class="ram-label">상태</div>
+      <select id="ramStatus" onchange="updateRamPreview()">
+        <option value="planned">예정</option>
+        <option value="confirmed">확정</option>
+        <option value="tbd">미정</option>
+      </select>
+    </div>
+    <div class="ram-row-2col">
+      <div><div class="ram-label">시작 주차</div><select id="ramFrom" onchange="updateRamPreview()"></select></div>
+      <div><div class="ram-label">종료 주차</div><select id="ramTo" onchange="updateRamPreview()"></select></div>
+    </div>
+    <div class="ram-preview" id="ramPreview">주차와 상품명을 입력하면 미리보기가 표시됩니다</div>
+    <div class="ram-btns">
+      <button class="ram-btn-cancel" onclick="closeRangeApplyModal()">취소</button>
+      <button class="ram-btn-ok" onclick="execRangeApply()">✅ 일괄 적용</button>
+    </div>
+  </div>
+</div>
 </body>
