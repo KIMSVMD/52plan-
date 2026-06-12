@@ -1880,14 +1880,15 @@ body.viewer-mode #salesMonthNav > div > button{
  // canvasExtra 복원
  if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
  window.storeCanvasExtra[store] = { r: _rd0.canvasExtraR || 0, c: _rd0.canvasExtraC || 0 };
- if (store === (window.currentStore || 'gs')) {
+ // [BUG FIX] 지점 전환 중이면 전역 변수 건드리지 않음 (switchStore가 storeCanvasExtra로 복원)
+ if (!window._isSwitchingStore && store === (window.currentStore || 'gs')) {
  if (typeof canvasOffsetR !== 'undefined') { canvasOffsetR = _rd0.canvasOffsetR || 0; window.canvasOffsetR = canvasOffsetR; }
  if (typeof canvasOffsetC !== 'undefined') { canvasOffsetC = _rd0.canvasOffsetC || 0; window.canvasOffsetC = canvasOffsetC; }
  if (typeof canvasExtraR !== 'undefined') { canvasExtraR = _rd0.canvasExtraR || 0; }
  if (typeof canvasExtraC !== 'undefined') { canvasExtraC = _rd0.canvasExtraC || 0; }
  }
  // 현재 지점이면 화면에도 즉시 반영
- if (store === (window.currentStore || 'gs') && typeof applyScale === 'function') {
+ if (!window._isSwitchingStore && store === (window.currentStore || 'gs') && typeof applyScale === 'function') {
  applyScale();
  requestAnimationFrame(function(){ applyScale(); });
  }
@@ -2063,8 +2064,13 @@ body.viewer-mode #salesMonthNav > div > button{
  const _offC = data.canvasOffsetC !== undefined ? Number(data.canvasOffsetC) : 0;
  const _extR = data.canvasExtraR !== undefined ? Number(data.canvasExtraR) : 0;
  const _extC = data.canvasExtraC !== undefined ? Number(data.canvasExtraC) : 0;
+ // 항상 점포별 캐시에 저장 (비현재 점포 포함)
  window.storeCanvasOffset[store] = { r: _offR, c: _offC };
  window.storeCanvasExtra[store] = { r: _extR, c: _extC };
+ // [BUG FIX] 지점 전환 중이면 전역 canvasExtra/Offset 덮어쓰기 + 렌더 스킵
+ // switchStore()가 storeCanvasExtra에서 직접 복원 후 render()를 호출하므로 여기서 건드리면 충돌
+ if (window._isSwitchingStore) { syncUI('saved', ' 동기화됨'); return; }
+ // 현재 점포일 때만 전역 canvasExtra/Offset 전역 변수 갱신
  if (store === (window.currentStore || 'gs')) {
  if (_d) { globalTextRot = _d.textRotation || 0; catTagPos = _d.catTagPos || 'tl'; }
  canvasOffsetR = _offR;
@@ -2072,8 +2078,6 @@ body.viewer-mode #salesMonthNav > div > button{
  canvasExtraR = _extR;
  canvasExtraC = _extC;
  }
- // 지점 전환 중이면 렌더 스킵 (switchStore가 전환 완료 후 직접 render() 호출)
- if (window._isSwitchingStore) { syncUI('saved', ' 동기화됨'); return; }
  if(!window._isDraggingOrResizing){ render(); renderPanel(); renderNav(); }
  if (typeof applyScale === 'function') { applyScale(); requestAnimationFrame(function(){ applyScale(); }); }
  if (typeof renderCatFocusBar === 'function') renderCatFocusBar();
@@ -6100,8 +6104,10 @@ function pxPos(z){
 
 /* ── 가이드 초기화 ── */
 function clearGuides(){
+ _hideSnapPool();
+ // .sg (갭 가이드 등 풀 외 요소) 만 제거
  const gc=document.getElementById('gc');
- if(gc) gc.querySelectorAll('.sg,.sg-snap-line').forEach(g=>g.remove());
+ if(gc) gc.querySelectorAll('.sg').forEach(g=>g.remove());
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -6110,50 +6116,68 @@ function clearGuides(){
  ===================================================== */
 const SNAP_THRESH = 6; // px
 
+// ── 스냅 가이드 DOM 풀 (createElement 반복 방지) ──
+const _snapPool = { x: [], y: [], _xi: 0, _yi: 0 };
+function _getSnapLine(gc, axis){
+ const pool = axis==='x' ? _snapPool.x : _snapPool.y;
+ const idx  = axis==='x' ? _snapPool._xi++ : _snapPool._yi++;
+ if(idx < pool.length){ pool[idx].style.display='block'; return pool[idx]; }
+ const ln = document.createElement('div');
+ ln.className = 'sg-snap-line';
+ ln.style.cssText = axis==='x'
+  ? 'position:absolute;top:0;bottom:0;width:2px;pointer-events:none;z-index:9890;display:none;'
+  : 'position:absolute;left:0;right:0;height:2px;pointer-events:none;z-index:9890;display:none;';
+ gc.appendChild(ln);
+ pool.push(ln);
+ return ln;
+}
+function _hideSnapPool(){
+ _snapPool.x.forEach(l=>{ l.style.display='none'; });
+ _snapPool.y.forEach(l=>{ l.style.display='none'; });
+ _snapPool._xi=0; _snapPool._yi=0;
+}
+
 function calcSnapGuides(movingIds, testPos){
- clearGuides();
  const gc = document.getElementById('gc'); if(!gc) return {dx:0, dy:0};
+ _hideSnapPool();
+
  const others = zones.filter(z => !movingIds.has(z.id));
- const SHOW = 10; // 가이드 표시 범위
+ const SHOW = 10;
  let bestDx=null, bestDy=null;
 
  movingIds.forEach(mid=>{
- const mp = testPos[mid]; if(!mp) return;
- others.forEach(oz=>{
- const effOz = getEffectiveZone(oz);
- if (!effOz) return; // _hidden 집기 제외
- const op = pxPos(effOz);
+  const mp = testPos[mid]; if(!mp) return;
+  others.forEach(oz=>{
+   const effOz = getEffectiveZone(oz);
+   if (!effOz) return;
+   const op = pxPos(effOz);
 
- // X축 — 수직 가이드선
- [
- [mp.l, op.l, '#4f8ef7'], [mp.r, op.r, '#4f8ef7'],
- [mp.l, op.r, '#005233'], [mp.r, op.l, '#005233'],
- [mp.cx,op.cx,'#f59e0b'],
- ].forEach(([a,b,c])=>{
- const d=Math.abs(a-b); if(d>SHOW) return;
- const snapped = d<=SNAP_THRESH;
- const ln=document.createElement('div');
- ln.className='sg-snap-line';
- ln.style.cssText=`position:absolute;left:${b}px;top:0;bottom:0;width:${snapped?2:1}px;background:${c};opacity:${snapped?0.9:0.4};pointer-events:none;z-index:9890;`;
- gc.appendChild(ln);
- if(snapped && (!bestDx || d<Math.abs(bestDx.d))) bestDx={d:b-a};
- });
+   [[mp.l,op.l,'#4f8ef7'],[mp.r,op.r,'#4f8ef7'],
+    [mp.l,op.r,'#005233'],[mp.r,op.l,'#005233'],
+    [mp.cx,op.cx,'#f59e0b']].forEach(([a,b,c])=>{
+    const d=Math.abs(a-b); if(d>SHOW) return;
+    const snapped=d<=SNAP_THRESH;
+    const ln=_getSnapLine(gc,'x');
+    ln.style.left=b+'px';
+    ln.style.width=(snapped?2:1)+'px';
+    ln.style.background=c;
+    ln.style.opacity=snapped?'0.9':'0.4';
+    if(snapped&&(!bestDx||d<Math.abs(bestDx.d))) bestDx={d:b-a};
+   });
 
- // Y축 — 수평 가이드선
- [
- [mp.t, op.t, '#4f8ef7'], [mp.b, op.b, '#4f8ef7'],
- [mp.t, op.b, '#005233'], [mp.b, op.t, '#005233'],
- [mp.cy,op.cy,'#f59e0b'],
- ].forEach(([a,b,c])=>{
- const d=Math.abs(a-b); if(d>SHOW) return;
- const snapped = d<=SNAP_THRESH;
- const ln=document.createElement('div');
- ln.className='sg-snap-line';
- ln.style.cssText=`position:absolute;top:${b}px;left:0;right:0;height:${snapped?2:1}px;background:${c};opacity:${snapped?0.9:0.4};pointer-events:none;z-index:9890;`;
- gc.appendChild(ln);
- if(snapped && (!bestDy || d<Math.abs(bestDy.d))) bestDy={d:b-a};
- });
- });
+   [[mp.t,op.t,'#4f8ef7'],[mp.b,op.b,'#4f8ef7'],
+    [mp.t,op.b,'#005233'],[mp.b,op.t,'#005233'],
+    [mp.cy,op.cy,'#f59e0b']].forEach(([a,b,c])=>{
+    const d=Math.abs(a-b); if(d>SHOW) return;
+    const snapped=d<=SNAP_THRESH;
+    const ln=_getSnapLine(gc,'y');
+    ln.style.top=b+'px';
+    ln.style.height=(snapped?2:1)+'px';
+    ln.style.background=c;
+    ln.style.opacity=snapped?'0.9':'0.4';
+    if(snapped&&(!bestDy||d<Math.abs(bestDy.d))) bestDy={d:b-a};
+   });
+  });
  });
 
  return { dx: bestDx?bestDx.d:0, dy: bestDy?bestDy.d:0 };
@@ -6189,7 +6213,7 @@ function startPixelDrag(e, startId){
 
  movingIds.forEach(id=>{
  const el=document.getElementById('z-'+id);
- if(el){ el.classList.add('dragging'); el.style.transition='none'; }
+ if(el){ el.classList.add('dragging'); el.style.transition='none'; el.style.willChange='left,top'; }
  });
 
  document.addEventListener('mousemove', onPixelDragMove);
@@ -6202,6 +6226,22 @@ function onPixelDragMove(e){
  let screenDy=(e.clientY-pixelDrag.startMouseY)/curScale;
  if(Math.abs(screenDx)>2||Math.abs(screenDy)>2) pixelDrag.moved=true;
  if(!pixelDrag.moved) return;
+
+ // RAF 스로틀: 직전 프레임이 아직 처리 중이면 마지막 이벤트만 보존
+ pixelDrag._lastE = e;
+ if(pixelDrag._rafId) return;
+ pixelDrag._rafId = requestAnimationFrame(function(){
+  pixelDrag._rafId = null;
+  const e = pixelDrag._lastE;
+  if(!pixelDrag || !e) return;
+  _doPixelDragMove(e);
+ });
+}
+
+function _doPixelDragMove(e){
+ if(!pixelDrag) return;
+ let screenDx=(e.clientX-pixelDrag.startMouseX)/curScale;
+ let screenDy=(e.clientY-pixelDrag.startMouseY)/curScale;
 
  // 도면 회전각만큼 마우스 델타를 역변환 → 도면 좌표계 델타
  const _rotDeg = storeRotations[currentStore] || 0;
@@ -6233,8 +6273,10 @@ function onPixelDragMove(e){
  const finalDy = rawDy + snaps.dy;
 
  // DOM 이동 + 임시 위치 기록 (zones 원본은 End에서만 오버라이드로 저장)
- const minLeft = canvasOffsetC * (CELL+GAP) + 8;
- const minTop  = canvasOffsetR * (ROW+GAP)  + 8;
+ // [BUG FIX] minLeft/minTop: 확장 영역(offset) 전체 허용
+ // px(col)+8 공식에서 col=-canvasOffsetC일 때 left=8, col=-(canvasOffsetC+1)은 음수 → 0으로 제한
+ const minLeft = 0;
+ const minTop  = 0;
  pixelDrag.movingIds.forEach(id=>{
  const sp=pixelDrag.startPx[id]; if(!sp) return;
  const el=document.getElementById('z-'+id); if(!el) return;
@@ -6244,8 +6286,8 @@ function onPixelDragMove(e){
  el.style.top =nt+'px';
  if(!pixelDrag.curPos) pixelDrag.curPos={};
  pixelDrag.curPos[id]={
-  col:Math.max(0,(nl-8)/(CELL+GAP) - canvasOffsetC),
-  row:Math.max(0,(nt-8)/(ROW+GAP) - canvasOffsetR)
+  col:Math.max(-canvasOffsetC, (nl-8)/(CELL+GAP) - canvasOffsetC),
+  row:Math.max(-canvasOffsetR, (nt-8)/(ROW+GAP) - canvasOffsetR)
  };
  });
 }
@@ -6254,6 +6296,7 @@ function onPixelDragEnd(e){
  if(!pixelDrag) return;
  document.removeEventListener('mousemove',onPixelDragMove);
  document.removeEventListener('mouseup', onPixelDragEnd);
+ if(pixelDrag._rafId){ cancelAnimationFrame(pixelDrag._rafId); pixelDrag._rafId=null; }
  clearGuides();
 
  const moved=pixelDrag.moved;
@@ -6262,7 +6305,7 @@ function onPixelDragEnd(e){
  pixelDrag=null;
 
  document.querySelectorAll('.dragging').forEach(el=>{
- el.classList.remove('dragging'); el.style.transition='';
+ el.classList.remove('dragging'); el.style.transition=''; el.style.willChange='';
  });
 
  if(moved){
@@ -6347,8 +6390,10 @@ function onRM(e){
  el.style.width=nw+'px'; el.style.height=nh+'px';
  // 리사이즈 중간 임시 값 기록 (zones 원본 수정 안 함)
  resizing._cur = {
-  col:Math.max(0,(nl-8)/(CELL+GAP)),
-  row:Math.max(0,(nt-8)/(ROW+GAP)),
+  // [FIX] canvasOffset 역보정 필수: px(col)=(col+offC)*(C+G) → col=(px-offC*(C+G))/(C+G) - offC 가 아니라
+  // left = px(col)+8 = (col+offC)*(C+G)+8 → col = (left-8)/(C+G) - offC
+  col:Math.max(-canvasOffsetC,(nl-8)/(CELL+GAP) - canvasOffsetC),
+  row:Math.max(-canvasOffsetR,(nt-8)/(ROW+GAP) - canvasOffsetR),
   cols:Math.max(0.2, nw/(CELL+GAP)),
   rows:Math.max(0.2, nh/(ROW+GAP))
  };
@@ -6564,7 +6609,8 @@ function distributeH(){
  let cursor = px(first.col)+8;
  effArr.forEach(({z, eff})=>{
   const zW = eff.cols*CELL+(eff.cols-1)*GAP;
-  const newCol = Math.max(0, (cursor-8)/(CELL+GAP));
+  // [FIX] canvasOffset 역보정 + 확장 영역 허용
+  const newCol = Math.max(-canvasOffsetC, (cursor-8)/(CELL+GAP) - canvasOffsetC);
   saveMonthZoneOverride(z.id, { col: newCol, row: eff.row, cols: eff.cols, rows: eff.rows });
   cursor += zW + gap;
  });
@@ -6581,13 +6627,13 @@ function restoreMultiSel(arr){
 function updPosX(v){
  const z=zones.find(x=>x.id===selId);if(!z)return;
  const eff=getEffectiveZone(z)||z;if(!eff)return;
- saveMonthZoneOverride(z.id,{col:Math.max(0,v),row:eff.row,cols:eff.cols,rows:eff.rows});
+ saveMonthZoneOverride(z.id,{col:Math.max(-canvasOffsetC,v),row:eff.row,cols:eff.cols,rows:eff.rows});
  render(); renderPanel(); syncToFirebase();
 }
 function updPosY(v){
  const z=zones.find(x=>x.id===selId);if(!z)return;
  const eff=getEffectiveZone(z)||z;if(!eff)return;
- saveMonthZoneOverride(z.id,{col:eff.col,row:Math.max(0,v),cols:eff.cols,rows:eff.rows});
+ saveMonthZoneOverride(z.id,{col:eff.col,row:Math.max(-canvasOffsetR,v),cols:eff.cols,rows:eff.rows});
  render(); renderPanel(); syncToFirebase();
 }
 function updRotation(deg){
@@ -6687,6 +6733,13 @@ function _rotateDir(dir) {
  return dirs[((idx - steps) % 4 + 4) % 4];
 }
 
+// [FIX] 도면 확장/축소 시 평당매출 도면 즉시 동기화 — 완전 재렌더로 offset 정확히 반영
+function _syncSalesCanvasToFloorplan() {
+ const salesWrap = document.getElementById('salesWrap');
+ if (!salesWrap || salesWrap.style.display === 'none') return;
+ if (typeof renderSalesView === 'function') renderSalesView();
+}
+
 function expandCanvas(dir) {
  // 화면 방향 → 도면 좌표 방향 변환 (회전각 보정)
  dir = _rotateDir(dir);
@@ -6710,6 +6763,8 @@ function expandCanvas(dir) {
  window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
  window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
  if (typeof syncToFirebase === 'function') syncToFirebase();
+ // [FIX] 평당매출 도면도 동일 방향으로 즉시 갱신
+ _syncSalesCanvasToFloorplan();
 }
 
 function shrinkCanvas(dir) {
@@ -6755,6 +6810,8 @@ function shrinkCanvas(dir) {
  window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
  window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
  if (typeof syncToFirebase === 'function') syncToFirebase();
+ // [FIX] 평당매출 도면도 동일 방향으로 즉시 갱신
+ _syncSalesCanvasToFloorplan();
 }
 
 function resizeSel(dc,dr){
@@ -6766,7 +6823,7 @@ function resizeSel(dc,dr){
 function moveSel(dc,dr){
  const z=zones.find(x=>x.id===selId);if(!z)return showToast('먼저 구역 선택');
  const eff=getEffectiveZone(z)||z;if(!eff)return showToast('숨겨진 집기는 수정 불가');
- saveMonthZoneOverride(z.id,{col:Math.max(0,eff.col+dc),row:Math.max(0,eff.row+dr),cols:eff.cols,rows:eff.rows});
+ saveMonthZoneOverride(z.id,{col:Math.max(-canvasOffsetC,eff.col+dc),row:Math.max(-canvasOffsetR,eff.row+dr),cols:eff.cols,rows:eff.rows});
  render();renderPanel();syncToFirebase();
 }
 function deleteSel(){
@@ -7054,7 +7111,8 @@ document.addEventListener('DOMContentLoaded', function() {
  const col = Math.round((x / (CELL + GAP) - canvasOffsetC) * 2) / 2;
  const row = Math.round((y / (ROW + GAP) - canvasOffsetR) * 2) / 2;
  
- drawStart = { col: Math.max(0, col), row: Math.max(0, row), x: e.clientX, y: e.clientY };
+ // [BUG FIX] 확장 영역(음수 col/row)도 그리기 허용
+ drawStart = { col: Math.max(-canvasOffsetC, col), row: Math.max(-canvasOffsetR, row), x: e.clientX, y: e.clientY };
  
  // 미리보기 생성
  drawPreview = document.createElement('div');
@@ -7125,8 +7183,8 @@ document.addEventListener('DOMContentLoaded', function() {
  const { x, y } = screenToGridCoord(e.clientX, e.clientY);
  
  // 0.5 단위로 스냅 (canvasOffset 역보정)
- const endCol = Math.max(0, Math.round((x / (CELL + GAP) - canvasOffsetC) * 2) / 2);
- const endRow = Math.max(0, Math.round((y / (ROW + GAP) - canvasOffsetR) * 2) / 2);
+ const endCol = Math.max(-canvasOffsetC, Math.round((x / (CELL + GAP) - canvasOffsetC) * 2) / 2);
+ const endRow = Math.max(-canvasOffsetR, Math.round((y / (ROW + GAP) - canvasOffsetR) * 2) / 2);
  
  const minCol = Math.min(drawStart.col, endCol);
  const maxCol = Math.max(drawStart.col, endCol);
@@ -9661,6 +9719,11 @@ function switchStore(store) {
  if (typeof seasonOverrides !== 'undefined' && window.storeSeasonOverrides) {
  window.storeSeasonOverrides[currentStore] = JSON.parse(JSON.stringify(seasonOverrides));
  }
+ // [BUG FIX] currentStore 변경 전에 이전 점포 canvasExtra/Offset 저장 (변경 후엔 키가 새 점포로 바뀜)
+ if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
+ window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
  currentStore = store;
  // monthZoneOverrides 지점별 전환
  if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
@@ -9683,14 +9746,15 @@ function switchStore(store) {
  if (typeof catTagPos !== 'undefined') catTagPos = _newPos;
  }
  // canvasOffset 복원 (지점 전환 시)
+ // [BUG FIX] currentStore는 이미 새 점포로 변경됐으므로 store 인자(이전 점포) 대신 변경 전 값으로 저장
  if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
- window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC }; // 이전 지점 offset 저장
+ if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+ // 이전 점포 extra는 store 변수가 아직 이전 점포를 가리키므로 명시적 저장 불가 — Firebase 수신값 우선
+ // (currentStore가 이미 바뀐 상태라 currentStore 키로 저장하면 새 점포 데이터를 덮어씀)
+ // canvasExtra/Offset는 Firebase storeCanvasExtra/Offset 캐시에서 읽어 복원
  const _newOffset = window.storeCanvasOffset[store] || { r: 0, c: 0 };
  canvasOffsetR = _newOffset.r;
  canvasOffsetC = _newOffset.c;
- // canvasExtra 지점 전환
- if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
- window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC }; // 이전 지점 extra 저장
  const _newExtra = window.storeCanvasExtra[store] || { r: 0, c: 0 };
  canvasExtraR = _newExtra.r;
  canvasExtraC = _newExtra.c;
@@ -12003,50 +12067,23 @@ function renderSalesMap(container, metrics, maxPerSales) {
  const _rad = _rot * Math.PI / 180;
  const _cos = Math.abs(Math.cos(_rad)), _sin = Math.abs(Math.sin(_rad));
 
- // 핵심 수정: planView가 display:none일 때 offsetWidth=0 문제 해결
- // 우선순위: 전역 저장값 → gcScaler style → scrollWidth → zones 계산
- let _gcW = 0, _gcH = 0;
-
- // 1차: applyScale()이 저장해둔 전역 값 (가장 정확)
- if (window._gcLastKnownW && window._gcLastKnownH) {
- _gcW = window._gcLastKnownW;
- _gcH = window._gcLastKnownH;
- }
-
- // 2차: gcScaler의 style.width/height (applyScale이 설정한 bbox 크기)
- if (!_gcW || !_gcH) {
- const _scalerEl = document.getElementById('gcScaler');
- if (_scalerEl && _scalerEl.style.width) {
- // gcScaler width = bbox 크기, gc 원본 크기는 역산
- const _bw = parseFloat(_scalerEl.style.width) || 0;
- const _bh = parseFloat(_scalerEl.style.height) || 0;
- if (_bw && _bh) {
- // 회전이 없으면 bbox = gc 크기
- if (!_rot) { _gcW = _bw; _gcH = _bh; }
- else {
- // 역산: bw = w*cos+h*sin, bh = w*sin+h*cos → 근사값
- _gcW = Math.round((_bw * _cos - _bh * _sin) / (_cos*_cos - _sin*_sin)) || _bw;
- _gcH = Math.round((_bh * _cos - _bw * _sin) / (_cos*_cos - _sin*_sin)) || _bh;
- }
- }
- }
- }
-
- // 3차: zones 데이터로 직접 계산 — render()와 완전 동일한 공식
- // 반드시 전역 CELL/ROW/GAP 사용 (도면탭과 동일한 상수)
- if ((!_gcW || !_gcH) && typeof zones !== 'undefined' && zones.length > 0) {
- const _CELL = (typeof CELL !== 'undefined') ? CELL : 72;
- const _ROW = (typeof ROW !== 'undefined') ? ROW : 46;
- const _GAP = (typeof GAP !== 'undefined') ? GAP : 3;
- const _canvasExtraC = (typeof canvasExtraC !== 'undefined') ? canvasExtraC : 0;
- const _canvasExtraR = (typeof canvasExtraR !== 'undefined') ? canvasExtraR : 0;
- const maxC = Math.max(...zones.map(function(z){ return (z.col||0)+(z.cols||1); }), 22) + _canvasExtraC;
- const maxR = Math.max(...zones.map(function(z){ return (z.row||0)+(z.rows||1); }), 24) + _canvasExtraR;
- _gcW = maxC * (_CELL + _GAP) + _GAP + 16;
- _gcH = maxR * (_ROW + _GAP) + _GAP + 16;
- }
-
- // 4차: 최소값 보장
+ // [FIX] 항상 zones 데이터로 직접 계산 — canvasOffset/Extra가 바뀌어도 정확히 반영
+ // _gcLastKnownW는 도면탭이 display:none일 때 stale 값이 될 수 있으므로 사용 안 함
+ const _CELL_s = (typeof CELL !== 'undefined') ? CELL : 72;
+ const _ROW_s  = (typeof ROW  !== 'undefined') ? ROW  : 46;
+ const _GAP_s  = (typeof GAP  !== 'undefined') ? GAP  : 3;
+ const _exC_s  = (typeof canvasExtraC  !== 'undefined') ? canvasExtraC  : 0;
+ const _exR_s  = (typeof canvasExtraR  !== 'undefined') ? canvasExtraR  : 0;
+ const _offC_s = (typeof canvasOffsetC !== 'undefined') ? canvasOffsetC : 0;
+ const _offR_s = (typeof canvasOffsetR !== 'undefined') ? canvasOffsetR : 0;
+ const _maxC_s = (typeof zones !== 'undefined' && zones.length)
+  ? Math.max(...zones.map(function(z){ return (z.col||0)+(z.cols||1); }), 22) + _exC_s + _offC_s
+  : 22 + _exC_s + _offC_s;
+ const _maxR_s = (typeof zones !== 'undefined' && zones.length)
+  ? Math.max(...zones.map(function(z){ return (z.row||0)+(z.rows||1); }), 24) + _exR_s + _offR_s
+  : 24 + _exR_s + _offR_s;
+ let _gcW = _maxC_s * (_CELL_s + _GAP_s) + _GAP_s + 16;
+ let _gcH = _maxR_s * (_ROW_s  + _GAP_s) + _GAP_s + 16;
  if (!_gcW) _gcW = 800;
  if (!_gcH) _gcH = 600;
 
@@ -12098,8 +12135,10 @@ function renderSalesMap(container, metrics, maxPerSales) {
    el.id = 'sz-' + z.id;
    el.className = 'zb';
    el.style.position = 'absolute';
-   el.style.left   = (z.col * (_CELL + _GAP) + 8) + 'px';
-   el.style.top    = (z.row * (_ROW  + _GAP) + 8) + 'px';
+   const _offC2 = (typeof canvasOffsetC !== 'undefined') ? canvasOffsetC : 0;
+   const _offR2 = (typeof canvasOffsetR !== 'undefined') ? canvasOffsetR : 0;
+   el.style.left   = ((z.col + _offC2) * (_CELL + _GAP) + 8) + 'px';
+   el.style.top    = ((z.row + _offR2) * (_ROW  + _GAP) + 8) + 'px';
    el.style.width  = (z.cols * _CELL + (z.cols - 1) * _GAP) + 'px';
    el.style.height = (z.rows * _ROW  + (z.rows - 1) * _GAP) + 'px';
    el.style.borderRadius = '5px';
@@ -12365,14 +12404,17 @@ function renderSalesMap(container, metrics, maxPerSales) {
  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) _sdDrag.moved = true;
  if (!_sdDrag.moved) return;
 
- const nl = Math.max(8, _sdDrag.startL + dx);
- const nt = Math.max(8, _sdDrag.startT + dy);
+ // [FIX] 확장 영역 허용 (minLeft=0) + canvasOffset 역보정
+ const _sdOffC = (typeof canvasOffsetC !== 'undefined') ? canvasOffsetC : 0;
+ const _sdOffR = (typeof canvasOffsetR !== 'undefined') ? canvasOffsetR : 0;
+ const nl = Math.max(0, _sdDrag.startL + dx);
+ const nt = Math.max(0, _sdDrag.startT + dy);
  zEl.style.left = nl + 'px';
  zEl.style.top = nt + 'px';
 
  // zones 배열 실시간 업데이트
- zObj.col = Math.max(0, (nl - 8) / (_CELL + _GAP));
- zObj.row = Math.max(0, (nt - 8) / (_ROW + _GAP));
+ zObj.col = Math.max(-_sdOffC, (nl - 8) / (_CELL + _GAP) - _sdOffC);
+ zObj.row = Math.max(-_sdOffR, (nt - 8) / (_ROW + _GAP) - _sdOffR);
  }
 
  function onUp() {
@@ -12525,8 +12567,11 @@ document.addEventListener('mouseup', function(e) {
 function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSales) {
  const ns = 'http://www.w3.org/2000/svg';
  const CELL = 72, ROW = 46, GAP = 3, GPAD = 8;
- const px = c => c * (CELL + GAP) + GPAD;
- const py = r => r * (ROW + GAP) + GPAD;
+ // [FIX] canvasOffset 반영 — 도면탭 px()/py()와 동일한 공식
+ const _offC = (typeof canvasOffsetC !== 'undefined') ? canvasOffsetC : 0;
+ const _offR = (typeof canvasOffsetR !== 'undefined') ? canvasOffsetR : 0;
+ const px = c => (c + _offC) * (CELL + GAP) + GPAD;
+ const py = r => (r + _offR) * (ROW + GAP) + GPAD;
  const zw = cols => (cols||1)*CELL + ((cols||1)-1)*GAP;
  const zh = rows => (rows||1)*ROW + ((rows||1)-1)*GAP;
 
