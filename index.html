@@ -18463,118 +18463,115 @@ function _xlsZoningVal(val) {
 
 /* ── 파일 파싱 + 그룹별 매출 누산 ── */
 function handleZoneSalesFile(file) {
-  /* ── 진단용 로그 (문제 확인 후 제거 가능) ── */
-  console.log('━━━ [ZSU] 1) 핸들러 진입 ━━━', file ? file.name : '(file 없음)');
-  if (!file) { console.warn('[ZSU] file이 null/undefined — 조기 종료'); return; }
-
-  console.log('[ZSU] 2) XLSX 라이브러리 확인:', typeof XLSX, typeof XLSX !== 'undefined' ? '✅ 로드됨' : '❌ 없음!');
-  console.log('[ZSU] 3) 파일 정보 — name:', file.name, '/ size:', file.size, 'bytes / type:', file.type);
-
-  var ext = file.name.split('.').pop().toLowerCase();
-  console.log('[ZSU] 4) 확장자:', ext, '→', ext === 'csv' ? 'readAsText' : 'readAsBinaryString');
-
-  var reader = new FileReader();
-
-  reader.onerror = function(e) {
-    console.error('[ZSU] ❌ FileReader 오류:', e);
-    _zsuShowError('FileReader 오류: ' + (e.target && e.target.error ? e.target.error.message : String(e)));
-  };
-
-  reader.onload = function(e) {
-    console.log('[ZSU] 5) FileReader onload 진입 — result 타입:', typeof e.target.result,
-      '/ 길이:', e.target.result ? e.target.result.length : 0);
-
-    var rows = [];
-    try {
-      if (ext === 'csv') {
-        console.log('[ZSU] 6-csv) CSV 파싱 시작');
-        rows = e.target.result.split('\n').map(function(l) {
-          return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
-        });
-        console.log('[ZSU] 7-csv) CSV 파싱 완료 — 행 수:', rows.length);
-      } else {
-        if (typeof XLSX === 'undefined') {
-          throw new Error('XLSX 라이브러리가 로드되지 않았습니다 (typeof XLSX === undefined)');
-        }
-        console.log('[ZSU] 6-xlsx) XLSX.read 시작 — type: binary');
-        var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
-        console.log('[ZSU] 7-xlsx) XLSX.read 완료 — SheetNames:', wb.SheetNames);
-        var ws2 = wb.Sheets[wb.SheetNames[0]];
-        console.log('[ZSU] 8-xlsx) sheet_to_json 시작');
-        rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
-        console.log('[ZSU] 9-xlsx) sheet_to_json 완료 — 행 수:', rows.length, '/ 1행 샘플:', rows[0]);
-      }
-    } catch(err) {
-      console.error('[ZSU] ❌ 파싱 에러 (catch):', err);
-      _zsuShowError('파싱 오류: ' + err.message);
-      showToast('파일 오류: ' + err.message);
-      return;
-    }
-
-    if (rows.length < 2) {
-      console.warn('[ZSU] ❌ 행 부족 — rows.length:', rows.length);
-      showToast('데이터가 없습니다 (최소 2행 필요)');
-      return;
-    }
-
-    console.log('[ZSU] 10) 헤더 매칭 시작 — headerRow:', rows[0]);
-    var headerRow = rows[0];
-    var weekIds = [], unmatchedHeaders = [];
-    for (var c = 1; c < headerRow.length; c++) {
-      var h = String(headerRow[c] || '').trim();
-      if (!h) { weekIds.push(null); continue; }
-      var wid = _zsuParseWeekId(h);
-      weekIds.push(wid);
-      if (!wid) unmatchedHeaders.push(h);
-    }
-    console.log('[ZSU] 11) 헤더 매칭 완료 — weekIds:', weekIds, '/ 미매칭:', unmatchedHeaders);
-
-    console.log('[ZSU] 12) 행 매칭 시작 — 데이터행 수:', rows.length - 1);
-    var rawRows = [];
-    var groupAccum = {};
-    for (var r = 1; r < rows.length; r++) {
-      var row = rows[r];
-      var raw = _xlsZoningVal(row[0]);
-      if (!raw) continue;
-      var mr = _zsuMatchGroup(raw);
-      var weekSales = {};
-      for (var c2 = 1; c2 < row.length && (c2-1) < weekIds.length; c2++) {
-        var wid2 = weekIds[c2-1];
-        if (!wid2) continue;
-        var val = parseFloat(String(row[c2] || '0').replace(/,/g,'')) || 0;
-        if (val > 0) weekSales[wid2] = val;
-      }
-      rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales });
-      if (mr.gid) {
-        if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
-        groupAccum[mr.gid].mcNames.push(raw);
-        Object.keys(weekSales).forEach(function(wk) {
-          groupAccum[mr.gid].weekSales[wk] = (groupAccum[mr.gid].weekSales[wk] || 0) + weekSales[wk];
-        });
-      }
-    }
-    console.log('[ZSU] 13) 행 매칭 완료 — 매칭된 구역 수:', Object.keys(groupAccum).length, '/ 전체 행:', rawRows.length);
-
-    window._zsuParsed = { weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
-
-    console.log('[ZSU] 14) _zsuRenderPreview 호출 직전');
-    try {
-      _zsuRenderPreview(window._zsuParsed);
-      console.log('[ZSU] 15) _zsuRenderPreview 완료 ✅');
-    } catch(err2) {
-      console.error('[ZSU] ❌ _zsuRenderPreview 에러:', err2);
-      _zsuShowError('미리보기 렌더 오류: ' + err2.message);
-    }
-  };
-
-  console.log('[ZSU] 16) FileReader.read 호출 직전');
   try {
+    /* ── 진단용 로그 ── */
+    console.log('━━━ [ZSU] 1) 핸들러 진입 ━━━', file ? file.name : '(file 없음)');
+    if (!file) { console.warn('[ZSU] file이 null/undefined — 조기 종료'); return; }
+
+    console.log('[ZSU] 2) XLSX 라이브러리:', typeof XLSX, typeof XLSX !== 'undefined' ? '✅ 로드됨' : '❌ 없음!');
+    console.log('[ZSU] 3) 파일 정보 — name:', file.name, '/ size:', file.size, '/ type:', file.type);
+
+    var ext = file.name.split('.').pop().toLowerCase();
+    console.log('[ZSU] 4) 확장자:', ext, '→', ext === 'csv' ? 'readAsText' : 'readAsArrayBuffer');
+
+    var reader = new FileReader();
+
+    reader.onerror = function(ev) {
+      var msg = ev.target && ev.target.error ? ev.target.error.message : String(ev);
+      console.error('[ZSU] ❌ FileReader onerror:', msg);
+      _zsuShowError('FileReader 오류: ' + msg);
+    };
+
+    reader.onload = function(ev) {
+      try {
+        var result = ev.target.result;
+        console.log('[ZSU] 5) FileReader onload — result 타입:', typeof result,
+          '/ byteLength(or len):', result ? (result.byteLength !== undefined ? result.byteLength : result.length) : 0);
+
+        var rows = [];
+        if (ext === 'csv') {
+          console.log('[ZSU] 6-csv) CSV 파싱 시작');
+          rows = result.split('\n').map(function(l) {
+            return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
+          });
+          console.log('[ZSU] 7-csv) CSV 파싱 완료 — 행 수:', rows.length);
+        } else {
+          if (typeof XLSX === 'undefined') throw new Error('XLSX 라이브러리 미로드 (typeof XLSX === undefined)');
+          console.log('[ZSU] 6-xlsx) XLSX.read 시작 — type: array');
+          var data = new Uint8Array(result);
+          var wb = XLSX.read(data, { type: 'array', cellDates: true });
+          console.log('[ZSU] 7-xlsx) XLSX.read 완료 — SheetNames:', wb.SheetNames);
+          var ws2 = wb.Sheets[wb.SheetNames[0]];
+          console.log('[ZSU] 8-xlsx) sheet_to_json 시작');
+          rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
+          console.log('[ZSU] 9-xlsx) sheet_to_json 완료 — 행 수:', rows.length, '/ 1행 샘플:', rows[0]);
+        }
+
+        if (rows.length < 2) {
+          console.warn('[ZSU] ❌ 행 부족 — rows.length:', rows.length);
+          showToast('데이터가 없습니다 (최소 2행 필요)');
+          return;
+        }
+
+        console.log('[ZSU] 10) 헤더 매칭 시작 — headerRow:', rows[0]);
+        var headerRow = rows[0];
+        var weekIds = [], unmatchedHeaders = [];
+        for (var c = 1; c < headerRow.length; c++) {
+          var h = String(headerRow[c] || '').trim();
+          if (!h) { weekIds.push(null); continue; }
+          var wid = _zsuParseWeekId(h);
+          weekIds.push(wid);
+          if (!wid) unmatchedHeaders.push(h);
+        }
+        console.log('[ZSU] 11) 헤더 매칭 완료 — weekIds:', weekIds, '/ 미매칭:', unmatchedHeaders);
+
+        console.log('[ZSU] 12) 행 매칭 시작 — 데이터행 수:', rows.length - 1);
+        var rawRows = [];
+        var groupAccum = {};
+        for (var r = 1; r < rows.length; r++) {
+          var row = rows[r];
+          var raw = _xlsZoningVal(row[0]);
+          if (!raw) continue;
+          var mr = _zsuMatchGroup(raw);
+          var weekSales = {};
+          for (var c2 = 1; c2 < row.length && (c2 - 1) < weekIds.length; c2++) {
+            var wid2 = weekIds[c2 - 1];
+            if (!wid2) continue;
+            var val = parseFloat(String(row[c2] || '0').replace(/,/g, '')) || 0;
+            if (val > 0) weekSales[wid2] = val;
+          }
+          rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales });
+          if (mr.gid) {
+            if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
+            groupAccum[mr.gid].mcNames.push(raw);
+            Object.keys(weekSales).forEach(function(wk) {
+              groupAccum[mr.gid].weekSales[wk] = (groupAccum[mr.gid].weekSales[wk] || 0) + weekSales[wk];
+            });
+          }
+        }
+        console.log('[ZSU] 13) 행 매칭 완료 — 매칭 구역:', Object.keys(groupAccum).length, '/ 전체 행:', rawRows.length);
+
+        window._zsuParsed = { weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
+
+        console.log('[ZSU] 14) _zsuRenderPreview 호출 직전');
+        _zsuRenderPreview(window._zsuParsed);
+        console.log('[ZSU] 15) _zsuRenderPreview 완료 ✅');
+
+      } catch(innerErr) {
+        console.error('[ZSU] ❌ onload 내부 에러:', innerErr.message, '\nstack:', innerErr.stack);
+        _zsuShowError('처리 오류: ' + innerErr.message);
+        showToast('파일 오류: ' + innerErr.message);
+      }
+    };
+
+    console.log('[ZSU] 16) FileReader.read 호출 직전');
     if (ext === 'csv') reader.readAsText(file, 'utf-8');
-    else reader.readAsBinaryString(file);
-    console.log('[ZSU] 17) FileReader.read 호출 완료 (비동기 — onload 대기 중)');
-  } catch(err3) {
-    console.error('[ZSU] ❌ FileReader.read 호출 자체 실패:', err3);
-    _zsuShowError('파일 읽기 실패: ' + err3.message);
+    else reader.readAsArrayBuffer(file);   /* readAsBinaryString은 deprecated — ArrayBuffer 사용 */
+    console.log('[ZSU] 17) FileReader.read 완료 (비동기 — onload 대기 중)');
+
+  } catch(outerErr) {
+    console.error('[ZSU] ❌ 함수 최상위 에러:', outerErr.message, '\nstack:', outerErr.stack);
+    _zsuShowError('예상치 못한 오류: ' + outerErr.message);
   }
 }
 
