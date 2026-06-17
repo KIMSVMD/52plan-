@@ -18443,6 +18443,24 @@ function _zsuParseWeekId(h) {
   return null;
 }
 
+/* ── 엑셀 날짜 일련번호 → 조닝번호 역변환 공통 함수 ──
+   엑셀이 "3-2" 같은 N-M 텍스트를 날짜로 자동 인식해 일련번호(예: 46083)로
+   저장하는 문제를 방어. SheetJS cellDates:true 옵션과 함께 사용.
+   - Date 객체 → "월-일" 문자열 (예: new Date(2026-03-02) → "3-2")
+   - 숫자 ≥ 1000 → 엑셀 일련번호로 간주해 날짜 변환 후 "월-일" 반환
+   - 그 외 → 문자열 그대로 반환 */
+function _xlsZoningVal(val) {
+  if (val instanceof Date) {
+    return (val.getUTCMonth() + 1) + '-' + val.getUTCDate();
+  }
+  if (typeof val === 'number' && val >= 1000) {
+    var d = new Date(Math.round((val - 25569) * 86400000));
+    var m = d.getUTCMonth() + 1, day = d.getUTCDate();
+    if (m >= 1 && m <= 12 && day >= 1 && day <= 31) return m + '-' + day;
+  }
+  return String(val == null ? '' : val).trim();
+}
+
 /* ── 파일 파싱 + 그룹별 매출 누산 ── */
 function handleZoneSalesFile(file) {
   if (!file) return;
@@ -18456,9 +18474,9 @@ function handleZoneSalesFile(file) {
           return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
         });
       } else {
-        var wb = XLSX.read(e.target.result, { type: 'binary' });
+        var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
         var ws2 = wb.Sheets[wb.SheetNames[0]];
-        rows = XLSX.utils.sheet_to_json(ws2, { header: 1 });
+        rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
       }
     } catch(err) { showToast('파일 오류: ' + err.message); return; }
     if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
@@ -18477,7 +18495,7 @@ function handleZoneSalesFile(file) {
     var groupAccum = {};
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r];
-      var raw = String(row[0] || '').trim();
+      var raw = _xlsZoningVal(row[0]);
       if (!raw) continue;
       var mr = _zsuMatchGroup(raw);
       var weekSales = {};
