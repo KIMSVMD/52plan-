@@ -11272,9 +11272,15 @@ function saveSalesMonthData(monthIdx) {
  if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
-/* ── 해당 월의 WEEKS 배열 반환 ── */
+/* ── 해당 월의 WEEKS 배열 반환 (wom 기준 중복 제거 — 다음 해 반복 항목 제외) ── */
 function _weeksForMonth(moIdx) {
- return (typeof WEEKS !== 'undefined' ? WEEKS : []).filter(function(w) { return w.mo === moIdx; });
+ var seen = {};
+ return (typeof WEEKS !== 'undefined' ? WEEKS : []).filter(function(w) {
+  if (w.mo !== moIdx) return false;
+  if (seen[w.wom]) return false;
+  seen[w.wom] = true;
+  return true;
+ });
 }
 
 /* ── 해당 월에 주차 데이터가 하나라도 있는지 확인 ── */
