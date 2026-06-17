@@ -1922,6 +1922,12 @@ body.viewer-mode #salesMonthNav > div > button{
  if (data.weeklySales) {
    window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
  }
+ if (!window.salesTargets) window.salesTargets = {};
+ if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
+ if (data.salesTargets) {
+   window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets));
+   window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets));
+ }
  // 현재 지점이면 활성 변수에도 즉시 적용
  if (store === (window.currentStore || 'gs')) {
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
@@ -2114,6 +2120,12 @@ body.viewer-mode #salesMonthNav > div > button{
  if (!window.weeklySalesStore) window.weeklySalesStore = {};
  if (data.weeklySales) {
    window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
+ }
+ if (!window.salesTargets) window.salesTargets = {};
+ if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
+ if (data.salesTargets) {
+   window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets));
+   window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets));
  }
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
  window.areaData = JSON.parse(JSON.stringify(data.areaData || {}));
@@ -7665,6 +7677,7 @@ window._getSavePayload = function(store) {
  labelOffsets: saveLabelOffsets,
  monthlySales: saveMonthlySales,
  weeklySales: saveWeeklySales,
+ salesTargets: JSON.parse(JSON.stringify((window.salesTargets && window.salesTargets[store]) || {})),
     productMaster: JSON.parse(JSON.stringify(window.productMaster || [])),
     zoneProducts: JSON.parse(JSON.stringify(window.zoneProducts || {})),
     productSalesData: (function() {
@@ -11062,13 +11075,40 @@ function calcSalesMetrics() {
  });
 }
 
-/* ── 히트맵 색상 ── */
-function salesHeatColor(perSales, maxPerSales) {
+/* ── 평당매출 목표 달성률 색상 기준 (숫자만 바꾸면 전체 반영) ── */
+const SALES_TARGET_PCT_GREEN  = 100; // 달성률 100% 이상 → 초록
+const SALES_TARGET_PCT_YELLOW =  80; // 달성률  80% 이상 → 노랑, 미만 → 빨강
+const SALES_FALLBACK_GREEN    =  30; // 목표 미설정 시 절대 기준: 30만↑ 초록
+const SALES_FALLBACK_YELLOW   =  16; // 목표 미설정 시 절대 기준: 16만↑ 노랑
+
+/* ── 목표 평당매출 조회 (groupId → 직접, zoneId → 소속 그룹 fallback) ── */
+function _getSalesTarget(id) {
+ if (!id) return null;
+ var store = window.currentStore || 'gs';
+ var targets = window.salesTargets && window.salesTargets[store];
+ if (!targets) return null;
+ if (targets[id] > 0) return targets[id];
+ // zone이 속한 그룹의 목표로 fallback
+ var grps = window.salesGroups || {};
+ for (var gid in grps) {
+  if ((grps[gid].zoneIds || []).indexOf(id) !== -1 && targets[gid] > 0) return targets[gid];
+ }
+ return null;
+}
+
+/* ── 히트맵 색상 (배경) ── */
+function salesHeatColor(perSales, maxPerSales, id) {
  if (perSales === 0) return '#9ca3af';
- // 절대값 기준: 0~15만=빨강, 16~29만=노랑, 30만+=초록
- if (perSales < 16) return '#dc2626'; // 0~15만 — 빨강
- if (perSales < 30) return '#eab308'; // 16~29만 — 노랑
- return '#16a34a'; // 30만+ — 밝은 초록
+ var tgt = _getSalesTarget(id);
+ if (tgt && tgt > 0) {
+  var pct = perSales / tgt * 100;
+  if (pct >= SALES_TARGET_PCT_GREEN)  return '#16a34a';
+  if (pct >= SALES_TARGET_PCT_YELLOW) return '#eab308';
+  return '#dc2626';
+ }
+ if (perSales < SALES_FALLBACK_YELLOW) return '#dc2626';
+ if (perSales < SALES_FALLBACK_GREEN)  return '#eab308';
+ return '#16a34a';
 }
 
 /* ── 등급 색상 = 배경색과 동일 계열 ── */
@@ -11078,17 +11118,33 @@ function gradeColor(grade) {
  return '#b91c1c';
 }
 
-/* ── perSales 절대값 기준 색상 (테두리/배경 통일용) ── */
-function salesColor(perSales) {
+/* ── perSales 달성률/절대값 기준 색상 (배경) ── */
+function salesColor(perSales, id) {
  if (!perSales || perSales === 0) return '#9ca3af';
- if (perSales < 16) return '#dc2626';
- if (perSales < 30) return '#eab308';
+ var tgt = _getSalesTarget(id);
+ if (tgt && tgt > 0) {
+  var pct = perSales / tgt * 100;
+  if (pct >= SALES_TARGET_PCT_GREEN)  return '#16a34a';
+  if (pct >= SALES_TARGET_PCT_YELLOW) return '#eab308';
+  return '#dc2626';
+ }
+ if (perSales < SALES_FALLBACK_YELLOW) return '#dc2626';
+ if (perSales < SALES_FALLBACK_GREEN)  return '#eab308';
  return '#16a34a';
 }
-function salesBorderColor(perSales) {
+
+/* ── perSales 달성률/절대값 기준 색상 (테두리) ── */
+function salesBorderColor(perSales, id) {
  if (!perSales || perSales === 0) return '#6b7280';
- if (perSales < 16) return '#b91c1c';
- if (perSales < 30) return '#ca8a04';
+ var tgt = _getSalesTarget(id);
+ if (tgt && tgt > 0) {
+  var pct = perSales / tgt * 100;
+  if (pct >= SALES_TARGET_PCT_GREEN)  return '#15803d';
+  if (pct >= SALES_TARGET_PCT_YELLOW) return '#ca8a04';
+  return '#b91c1c';
+ }
+ if (perSales < SALES_FALLBACK_YELLOW) return '#b91c1c';
+ if (perSales < SALES_FALLBACK_GREEN)  return '#ca8a04';
  return '#15803d';
 }
 
@@ -11163,6 +11219,8 @@ window.currentSalesMonth = (window.currentSalesMonth !== undefined) ? window.cur
 // currentSalesWeek: null=월 전체(누적), 'W01' 등=특정 주차
 window.currentSalesWeek = (window.currentSalesWeek !== undefined) ? window.currentSalesWeek : null;
 if (!window.weeklySalesStore) window.weeklySalesStore = {};
+if (!window.salesTargets) window.salesTargets = {};
+if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
 
 /* ── 월 인덱스 → 스토어 키 변환 ── */
 function _salesMonthKey(idx) {
@@ -11605,8 +11663,8 @@ function refreshSalesContent(gcEl, panelEl) {
  zEl.style.borderRadius = '4px';
  } else {
  if (m) {
- zEl.style.background = m.isDead ? '#6b7280' : salesColor(m.perSales);
- zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : salesBorderColor(m.perSales));
+ zEl.style.background = m.isDead ? '#6b7280' : salesColor(m.perSales, m.z.id);
+ zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : salesBorderColor(m.perSales, m.z.id));
  zEl.style.outlineOffset = '1px';
  zEl.style.opacity = '1';
  const zi = zEl.querySelector('.zi');
@@ -12534,8 +12592,8 @@ function renderSalesMap(container, metrics, maxPerSales) {
  // 그룹 없음 → 기존 히트맵 방식
  if (m) {
  // ① 배경색 = 히트맵 색상
- const _bgColor = m.isDead ? '#6b7280' : salesColor(m.perSales);
- const _olColor = m.isDead ? '#374151' : salesBorderColor(m.perSales);
+ const _bgColor = m.isDead ? '#6b7280' : salesColor(m.perSales, m.z.id);
+ const _olColor = m.isDead ? '#374151' : salesBorderColor(m.perSales, m.z.id);
  zEl.style.background = _bgColor;
  zEl.style.borderRadius = '4px';
  zEl.style.boxShadow = '';
@@ -12879,7 +12937,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  var avgGrade =
  gMetrics.filter(m=>m.grade==='A').length > gMetrics.length/2 ? 'A' :
  gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
- var heatColor = tPS > 0 ? salesHeatColor(tPS, maxPerSales) : '#9ca3af';
+ var heatColor = tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af';
  var PAD = 8;
 
  var zRects = zids.map(zid => {
@@ -13005,7 +13063,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  var sp = document.createElementNS(ns, 'path');
  sp.setAttribute('d', pi.d);
  sp.setAttribute('fill', 'none');
- sp.setAttribute('stroke', tPS > 0 ? salesBorderColor(tPS) : g.color);
+ sp.setAttribute('stroke', tPS > 0 ? salesBorderColor(tPS, gid) : g.color);
  sp.setAttribute('stroke-width', '4');
  sp.setAttribute('stroke-linejoin', 'round');
  sp.setAttribute('stroke-linecap', 'round');
@@ -13259,7 +13317,7 @@ function showSalesZoneCard(m, zEl) {
  'transition:opacity .18s ease, transform .18s cubic-bezier(.34,1.2,.64,1);';
 
  // ── 상단 헤더 (평당매출 색상 배경) ──
- const _hdColor = m.isDead ? '#6b7280' : salesBorderColor(m.perSales);
+ const _hdColor = m.isDead ? '#6b7280' : salesBorderColor(m.perSales, m.z.id);
  const hd = document.createElement('div');
  hd.style.cssText =
  'padding:11px 14px 9px;' +
@@ -13281,7 +13339,7 @@ function showSalesZoneCard(m, zEl) {
  bigNum.innerHTML =
  '<div>' +
  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">평당매출</div>' +
- '<div style="font-size:22px;font-weight:900;color:' + salesBorderColor(m.perSales) + ';letter-spacing:-.5px;">' +
+ '<div style="font-size:22px;font-weight:900;color:' + salesBorderColor(m.perSales, m.z.id) + ';letter-spacing:-.5px;">' +
  Math.floor(m.perSales).toLocaleString() + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">만/평</span>' +
  '</div>' +
  '</div>' +
@@ -13987,7 +14045,7 @@ function makeSalesSection(icon, title, color, rows) {
  '<span style="font-size:9px;color:#9ca3af;">' + Math.round(r.zone.area) + '평</span>' +
  '</div>' +
  '<div style="display:flex;align-items:center;gap:8px;">' +
- '<span style="font-size:10px;font-weight:700;color:' + salesColor(r.zone.perSales) + ';">' + Math.round(r.zone.perSales).toLocaleString() + '만/평</span>' +
+ '<span style="font-size:10px;font-weight:700;color:' + salesColor(r.zone.perSales, r.zone.z && r.zone.z.id) + ';">' + Math.round(r.zone.perSales).toLocaleString() + '만/평</span>' +
  '<span style="font-size:9px;color:#9ca3af;">효율 ' + Math.round(r.zone.effIdx * 100) + '%</span>' +
  '</div>';
  if (r.desc) {
@@ -14703,7 +14761,7 @@ function renderListTab(container, metrics, maxPerSales) {
  '<span style="font-size:8px;color:#9ca3af;flex-shrink:0;">'+Math.round(r.area)+'평</span>';
 
  const ps=document.createElement('div');ps.style.cssText='display:flex;align-items:center;justify-content:flex-end;gap:3px;';
- ps.innerHTML='<div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(r.perSales,maxPS)+';flex-shrink:0;"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(r.perSales).toLocaleString()+'</span>';
+ ps.innerHTML='<div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(r.perSales,maxPS,r.id)+';flex-shrink:0;"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(r.perSales).toLocaleString()+'</span>';
  const sp=document.createElement('div');sp.style.cssText='font-size:10px;font-weight:700;color:'+spC+';text-align:right;';sp.textContent=fmtEff(r.spaceEff);
  const se=document.createElement('div');se.style.cssText='font-size:10px;font-weight:700;color:'+seC+';text-align:right;';se.textContent=sep+'%';
  const gr=document.createElement('div');gr.style.cssText='text-align:center;';
@@ -14757,7 +14815,7 @@ function renderGroupTab(container, metrics) {
  mr.onclick =()=>{ focusSalesMapZone(m.z.id); };
  mr.onclick =()=>{ focusSalesMapZone(m.z.id); };
  const bw=Math.max(2,Math.round((m.perSales/maxGPS)*50));
- mr.innerHTML='<span style="font-size:9px;color:#9ca3af;font-weight:700;width:16px;text-align:right;">'+(i+1)+'</span><span style="font-size:10px;font-weight:700;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+m.z.name+'</span><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(m.perSales,maxGPS)+';"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(m.perSales).toLocaleString()+'만</span></div>';
+ mr.innerHTML='<span style="font-size:9px;color:#9ca3af;font-weight:700;width:16px;text-align:right;">'+(i+1)+'</span><span style="font-size:10px;font-weight:700;color:#374151;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+m.z.name+'</span><div style="display:flex;align-items:center;gap:4px;"><div style="width:'+bw+'px;height:4px;border-radius:2px;background:'+salesHeatColor(m.perSales,maxGPS,m.z.id)+';"></div><span style="font-size:10px;font-weight:800;color:#f97316;">'+Math.floor(m.perSales).toLocaleString()+'만</span></div>';
  ml.appendChild(mr);
  });
  card.appendChild(ml);container.appendChild(card);
@@ -15024,7 +15082,7 @@ function applySalesGroupOutlines() {
  if (el) {
  const m = _mMap[zid];
  // 매출 데이터 있으면 매출 기준 색(진한 테두리색), 없으면 그룹 색
- const _oc = (m && m.perSales > 0) ? salesBorderColor(m.perSales) : g.color;
+ const _oc = (m && m.perSales > 0) ? salesBorderColor(m.perSales, m.z.id) : g.color;
  el.style.outline = '';
  el.style.outlineOffset= '';
  }
@@ -15128,7 +15186,7 @@ function renderSalesGroupSummary(container, metrics) {
  '</div>' +
  '<div style="background:#1e293b;border-radius:5px;padding:5px 8px;text-align:center;">' +
  '<div style="font-size:8px;color:#64748b;margin-bottom:2px;">평당매출</div>' +
- '<div style="font-size:11px;font-weight:800;color:'+salesHeatColor(perSales, Math.max(...metrics.map(m=>m.perSales),1))+';filter:brightness(1.4);">'+perSales.toLocaleString()+'</div>' +
+ '<div style="font-size:11px;font-weight:800;color:'+salesHeatColor(perSales, Math.max(...metrics.map(m=>m.perSales),1), gid)+';filter:brightness(1.4);">'+perSales.toLocaleString()+'</div>' +
  '</div>' +
  '</div>' +
  '<div style="margin-top:5px;font-size:9px;color:#475569;">구역: '+gMetrics.map(m=>m.z.name).join(', ')+'</div>';
@@ -15583,8 +15641,10 @@ function _buildGroupCard(gid, g, catKey) {
   const savedArea  = window.salesGroupData && window.salesGroupData[gid] !== undefined ? window.salesGroupData[gid].area  : '';
   const initPS = (savedSales !== '' && Number(savedArea) > 0) ? Math.round(Number(savedSales) / Number(savedArea)) : '';
 
+  var savedTarget = (window.salesTargets && window.salesTargets[currentStore] && window.salesTargets[currentStore][gid] > 0) ? window.salesTargets[currentStore][gid] : '';
+
   const grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;';
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;';
 
   function mkInp(label, id, val, ph, col, bg, step, onInput) {
     var wrap = document.createElement('div');
@@ -15605,6 +15665,7 @@ function _buildGroupCard(gid, g, catKey) {
   grid.appendChild(mkInp('실매출 (만원)', 'gdsi_sales_'+gid, savedSales, '예: 1500', '#374151', '#f9fafb', '10', function(){ updateGroupCalc(gid,'sales'); }));
   grid.appendChild(mkInp('평수 (평)',     'gdsi_area_'+gid,  savedArea,  '예: 8',    '#374151', '#f9fafb', '0.1', function(){ updateGroupCalc(gid,'area'); }));
   grid.appendChild(mkInp('평당매출 (만/평)', 'gdsi_ps_'+gid, initPS,     '자동',     '#f97316', '#fff8f0', '0.1', function(){ updateGroupCalc(gid,'ps'); }));
+  grid.appendChild(mkInp('목표 평당매출 (만/평)', 'gdsi_tgt_'+gid, savedTarget, '미설정', '#6366f1', '#f5f3ff', '1', function(){ updateSalesTarget(gid); }));
 
   formArea.appendChild(grid);
   body.appendChild(formArea);
@@ -15657,6 +15718,24 @@ function updateGroupCalc(gid, changed) {
  sv_el.value = Math.round(ps * av / 10) * 10;
  }
  }
+}
+
+/* ── 목표 평당매출 저장 + 히트맵 즉시 갱신 ── */
+function updateSalesTarget(gid) {
+ var el = document.getElementById('gdsi_tgt_' + gid);
+ if (!el) return;
+ var val = parseFloat(el.value) || 0;
+ if (!window.salesTargets) window.salesTargets = {};
+ if (!window.salesTargets[currentStore]) window.salesTargets[currentStore] = {};
+ if (val > 0) {
+  window.salesTargets[currentStore][gid] = val;
+ } else {
+  delete window.salesTargets[currentStore][gid];
+ }
+ if (typeof syncToFirebase === 'function') syncToFirebase();
+ var gc = document.getElementById('gc-sales');
+ var panel = document.querySelector('#salesWrap [data-sales-panel]');
+ if (gc && panel) { refreshSalesContent(gc, panel); } else { renderSalesView(); }
 }
 
 /* ── 집기 단위 입력 (미지정/그룹 없을 때) ── */
