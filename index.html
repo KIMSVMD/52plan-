@@ -18463,25 +18463,61 @@ function _xlsZoningVal(val) {
 
 /* ── 파일 파싱 + 그룹별 매출 누산 ── */
 function handleZoneSalesFile(file) {
-  console.log('[구역 매출 업로드] handleZoneSalesFile called:', file && file.name);
-  if (!file) return;
+  /* ── 진단용 로그 (문제 확인 후 제거 가능) ── */
+  console.log('━━━ [ZSU] 1) 핸들러 진입 ━━━', file ? file.name : '(file 없음)');
+  if (!file) { console.warn('[ZSU] file이 null/undefined — 조기 종료'); return; }
+
+  console.log('[ZSU] 2) XLSX 라이브러리 확인:', typeof XLSX, typeof XLSX !== 'undefined' ? '✅ 로드됨' : '❌ 없음!');
+  console.log('[ZSU] 3) 파일 정보 — name:', file.name, '/ size:', file.size, 'bytes / type:', file.type);
+
   var ext = file.name.split('.').pop().toLowerCase();
+  console.log('[ZSU] 4) 확장자:', ext, '→', ext === 'csv' ? 'readAsText' : 'readAsBinaryString');
+
   var reader = new FileReader();
+
+  reader.onerror = function(e) {
+    console.error('[ZSU] ❌ FileReader 오류:', e);
+    _zsuShowError('FileReader 오류: ' + (e.target && e.target.error ? e.target.error.message : String(e)));
+  };
+
   reader.onload = function(e) {
+    console.log('[ZSU] 5) FileReader onload 진입 — result 타입:', typeof e.target.result,
+      '/ 길이:', e.target.result ? e.target.result.length : 0);
+
     var rows = [];
     try {
       if (ext === 'csv') {
+        console.log('[ZSU] 6-csv) CSV 파싱 시작');
         rows = e.target.result.split('\n').map(function(l) {
           return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
         });
+        console.log('[ZSU] 7-csv) CSV 파싱 완료 — 행 수:', rows.length);
       } else {
+        if (typeof XLSX === 'undefined') {
+          throw new Error('XLSX 라이브러리가 로드되지 않았습니다 (typeof XLSX === undefined)');
+        }
+        console.log('[ZSU] 6-xlsx) XLSX.read 시작 — type: binary');
         var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: true });
+        console.log('[ZSU] 7-xlsx) XLSX.read 완료 — SheetNames:', wb.SheetNames);
         var ws2 = wb.Sheets[wb.SheetNames[0]];
+        console.log('[ZSU] 8-xlsx) sheet_to_json 시작');
         rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
+        console.log('[ZSU] 9-xlsx) sheet_to_json 완료 — 행 수:', rows.length, '/ 1행 샘플:', rows[0]);
       }
-    } catch(err) { showToast('파일 오류: ' + err.message); return; }
-    if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
+    } catch(err) {
+      console.error('[ZSU] ❌ 파싱 에러 (catch):', err);
+      _zsuShowError('파싱 오류: ' + err.message);
+      showToast('파일 오류: ' + err.message);
+      return;
+    }
 
+    if (rows.length < 2) {
+      console.warn('[ZSU] ❌ 행 부족 — rows.length:', rows.length);
+      showToast('데이터가 없습니다 (최소 2행 필요)');
+      return;
+    }
+
+    console.log('[ZSU] 10) 헤더 매칭 시작 — headerRow:', rows[0]);
     var headerRow = rows[0];
     var weekIds = [], unmatchedHeaders = [];
     for (var c = 1; c < headerRow.length; c++) {
@@ -18491,7 +18527,9 @@ function handleZoneSalesFile(file) {
       weekIds.push(wid);
       if (!wid) unmatchedHeaders.push(h);
     }
+    console.log('[ZSU] 11) 헤더 매칭 완료 — weekIds:', weekIds, '/ 미매칭:', unmatchedHeaders);
 
+    console.log('[ZSU] 12) 행 매칭 시작 — 데이터행 수:', rows.length - 1);
     var rawRows = [];
     var groupAccum = {};
     for (var r = 1; r < rows.length; r++) {
@@ -18515,11 +18553,37 @@ function handleZoneSalesFile(file) {
         });
       }
     }
+    console.log('[ZSU] 13) 행 매칭 완료 — 매칭된 구역 수:', Object.keys(groupAccum).length, '/ 전체 행:', rawRows.length);
+
     window._zsuParsed = { weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
-    _zsuRenderPreview(window._zsuParsed);
+
+    console.log('[ZSU] 14) _zsuRenderPreview 호출 직전');
+    try {
+      _zsuRenderPreview(window._zsuParsed);
+      console.log('[ZSU] 15) _zsuRenderPreview 완료 ✅');
+    } catch(err2) {
+      console.error('[ZSU] ❌ _zsuRenderPreview 에러:', err2);
+      _zsuShowError('미리보기 렌더 오류: ' + err2.message);
+    }
   };
-  if (ext === 'csv') reader.readAsText(file, 'utf-8');
-  else reader.readAsBinaryString(file);
+
+  console.log('[ZSU] 16) FileReader.read 호출 직전');
+  try {
+    if (ext === 'csv') reader.readAsText(file, 'utf-8');
+    else reader.readAsBinaryString(file);
+    console.log('[ZSU] 17) FileReader.read 호출 완료 (비동기 — onload 대기 중)');
+  } catch(err3) {
+    console.error('[ZSU] ❌ FileReader.read 호출 자체 실패:', err3);
+    _zsuShowError('파일 읽기 실패: ' + err3.message);
+  }
+}
+
+function _zsuShowError(msg) {
+  var preview = document.getElementById('zsuPreview');
+  if (preview) {
+    preview.style.display = 'block';
+    preview.innerHTML = '<div style="padding:14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-size:12px;font-weight:700;">❌ ' + msg + '</div>';
+  }
 }
 
 /* ── 미리보기 렌더 ── */
