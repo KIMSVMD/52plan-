@@ -11778,9 +11778,10 @@ function renderSalesView() {
       <button id="salBtnProductDB" onclick="openProductMasterModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #f59e0b;background:#fffbeb;color:#b45309;cursor:pointer;">📦 상품 DB</button>
       <button id="salBtnZoneProducts" onclick="openZoneProductsModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #34d399;background:#ecfdf5;color:#065f46;cursor:pointer;">🗂 구역별 상품 배치</button>
       <button id="salBtnProductUpload" onclick="openProductSalesUploadModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #818cf8;background:#eef2ff;color:#3730a3;cursor:pointer;">📊 매출 업로드</button>
+      <button id="salBtnZoneSalesUpload" onclick="openZoneSalesUploadModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #059669;background:#ecfdf5;color:#065f46;cursor:pointer;">📥 구역 매출 업로드</button>
  `;
  // 권한에 따라 버튼 표시 제어 (isAdmin 조건을 innerHTML 조건문 대신 런타임 display로 처리)
- const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel','salBtnDeleteMonth','salBtnProductDB','salBtnZoneProducts','salBtnProductUpload'];
+ const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel','salBtnDeleteMonth','salBtnProductDB','salBtnZoneProducts','salBtnProductUpload','salBtnZoneSalesUpload'];
  _adminOnlyBtns.forEach(function(id) {
  const el = toolbar.querySelector('#' + id);
  if (el) el.style.display = isAdmin ? '' : 'none';
@@ -18366,6 +18367,274 @@ function showResetConfirm(zoneName, monthLabel) {
     </div>
   </div>
 </div>
+
+<!-- ════ 구역 매출 업로드 ════ -->
+<script>
+/* ── 주차 헤더 문자열 → WEEKS.id 변환 ── */
+function _zsuParseWeekId(headerStr) {
+  if (!headerStr) return null;
+  var h = String(headerStr).trim();
+  var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  for (var i = 0; i < ws.length; i++) { if (ws[i].id === h) return ws[i].id; }
+  for (var i = 0; i < ws.length; i++) { if (ws[i].dates === h) return ws[i].id; }
+  for (var i = 0; i < ws.length; i++) { if (ws[i].label === h) return ws[i].id; }
+  return null;
+}
+
+/* ── 조닝번호/이름 → salesGroups gid ── */
+function _zsuMatchGroup(str) {
+  if (!str) return null;
+  var s = String(str).trim();
+  var store = window.currentStore || 'gs';
+  var groups = window.salesGroups || {};
+  if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
+    groups = window.storeSalesGroupsMap[store] || {};
+  }
+  for (var gid in groups) {
+    if (groups[gid].number && String(groups[gid].number).trim() === s) return gid;
+  }
+  for (var gid in groups) {
+    if (groups[gid].label && String(groups[gid].label).trim() === s) return gid;
+  }
+  return null;
+}
+
+/* ── 파일 파싱 ── */
+function handleZoneSalesFile(file) {
+  if (!file) return;
+  var ext = file.name.split('.').pop().toLowerCase();
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var rows = [];
+    try {
+      if (ext === 'csv') {
+        rows = e.target.result.split('\n').map(function(l) {
+          return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
+        });
+      } else {
+        var wb = XLSX.read(e.target.result, {type:'binary'});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws, {header:1});
+      }
+    } catch(err) { showToast('파일 오류: ' + err.message); return; }
+
+    if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
+
+    var headerRow = rows[0];
+    var weekIds = [];
+    var unmatchedHeaders = [];
+    for (var c = 1; c < headerRow.length; c++) {
+      var h = String(headerRow[c] || '').trim();
+      if (!h) { weekIds.push(null); continue; }
+      var wid = _zsuParseWeekId(h);
+      weekIds.push(wid);
+      if (!wid) unmatchedHeaders.push(h);
+    }
+
+    var parsedRows = [];
+    for (var r = 1; r < rows.length; r++) {
+      var row = rows[r];
+      var raw = String(row[0] || '').trim();
+      if (!raw) continue;
+      var gid = _zsuMatchGroup(raw);
+      var weekSales = {};
+      for (var c = 1; c < row.length && (c - 1) < weekIds.length; c++) {
+        var wid = weekIds[c - 1];
+        if (!wid) continue;
+        var val = parseFloat(String(row[c] || '0').replace(/,/g, '')) || 0;
+        if (val > 0) weekSales[wid] = val;
+      }
+      parsedRows.push({ raw: raw, gid: gid, weekSales: weekSales });
+    }
+
+    window._zsuParsed = { weekIds: weekIds, rows: parsedRows, unmatchedHeaders: unmatchedHeaders };
+    _zsuRenderPreview(window._zsuParsed);
+  };
+  if (ext === 'csv') reader.readAsText(file, 'utf-8');
+  else reader.readAsBinaryString(file);
+}
+
+/* ── 미리보기 렌더 ── */
+function _zsuRenderPreview(parsed) {
+  var preview = document.getElementById('zsuPreview');
+  var applyBtn = document.getElementById('zsuApplyBtn');
+  if (!preview) return;
+  if (!parsed || !parsed.rows.length) { preview.style.display = 'none'; return; }
+
+  var store = window.currentStore || 'gs';
+  var groups = window.salesGroups || {};
+  if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
+    groups = window.storeSalesGroupsMap[store] || {};
+  }
+  var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
+
+  var matchedRows = parsed.rows.filter(function(r) { return r.gid; });
+  var unmatchedRows = parsed.rows.filter(function(r) { return !r.gid; });
+  var totalWithData = matchedRows.filter(function(r) { return Object.keys(r.weekSales).length > 0; }).length;
+  var allOk = unmatchedRows.length === 0;
+
+  var html = '<div style="margin-bottom:10px;padding:10px 14px;border-radius:8px;background:' + (allOk ? '#ecfdf5' : '#fffbeb') + ';border:1px solid ' + (allOk ? '#34d399' : '#fbbf24') + ';">';
+  html += '<span style="font-size:11px;font-weight:800;color:' + (allOk ? '#065f46' : '#92400e') + ';">✅ ' + matchedRows.length + '개 매칭 | ⚠️ ' + unmatchedRows.length + '개 미매칭</span>';
+  if (parsed.unmatchedHeaders.length) {
+    html += '<div style="font-size:9px;color:#92400e;margin-top:4px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>';
+  }
+  html += '<div style="font-size:9px;color:#6b7280;margin-top:4px;">주차 매출(7일 합계) ÷ 7 = 일평균 기준으로 반영됩니다.</div>';
+  html += '</div>';
+
+  if (matchedRows.length) {
+    html += '<div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:6px;">✅ 매칭된 구역</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;">';
+    html += '<thead><tr style="background:#f0f9ff;"><th style="padding:5px 8px;text-align:left;color:#0369a1;font-weight:800;">조닝번호</th><th style="padding:5px 8px;text-align:left;color:#374151;font-weight:700;">그룹명</th><th style="padding:5px 8px;text-align:left;color:#059669;font-weight:700;">반영 주차 (일평균)</th></tr></thead><tbody>';
+    matchedRows.forEach(function(r) {
+      var g = groups[r.gid] || {};
+      var wkSummary = Object.keys(r.weekSales).map(function(wid) {
+        var wObj = ws.find(function(x) { return x.id === wid; });
+        var lbl = wObj ? wObj.label : wid;
+        var daily = Math.round(r.weekSales[wid] / 7 * 10) / 10;
+        return lbl + '→' + daily + '만';
+      }).join(', ');
+      html += '<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:4px 8px;font-weight:700;color:#374151;">' + r.raw + '</td>';
+      html += '<td style="padding:4px 8px;color:#374151;">' + (g.label || r.gid) + '</td>';
+      html += '<td style="padding:4px 8px;color:#059669;font-size:9px;">' + (wkSummary || '매출 없음') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  if (unmatchedRows.length) {
+    html += '<details style="margin-top:8px;"><summary style="font-size:11px;font-weight:800;color:#92400e;cursor:pointer;padding:6px 8px;background:#fffbeb;border-radius:6px;">⚠️ 미매칭 구역 ' + unmatchedRows.length + '개 (펼치기)</summary>';
+    html += '<div style="margin-top:6px;padding:8px;background:#fef9f0;border-radius:6px;font-size:10px;color:#92400e;">';
+    unmatchedRows.forEach(function(r) { html += '<div style="padding:2px 0;">• ' + r.raw + '</div>'; });
+    html += '</div></details>';
+  }
+
+  preview.style.display = 'block';
+  preview.innerHTML = html;
+
+  if (applyBtn) {
+    var canApply = matchedRows.length > 0 && totalWithData > 0;
+    applyBtn.disabled = !canApply;
+    applyBtn.style.background = canApply ? '#059669' : '#94a3b8';
+    applyBtn.style.cursor = canApply ? 'pointer' : 'not-allowed';
+  }
+}
+
+/* ── 도면에 적용 ── */
+function applyZoneSalesUpload() {
+  var parsed = window._zsuParsed;
+  if (!parsed || !parsed.rows.length) return;
+
+  var store = window.currentStore || 'gs';
+  if (!window.weeklySalesStore) window.weeklySalesStore = {};
+  if (!window.weeklySalesStore[store]) window.weeklySalesStore[store] = {};
+
+  var groups = window.salesGroups || {};
+  if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
+    groups = window.storeSalesGroupsMap[store] || {};
+  }
+  var allZones = typeof zones !== 'undefined' ? zones : [];
+  var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  var appliedCount = 0;
+  var affectedMonths = new Set();
+
+  parsed.rows.forEach(function(r) {
+    if (!r.gid) return;
+    var g = groups[r.gid];
+    if (!g) return;
+    var zids = (g.zoneIds || []).filter(function(zid) {
+      return allZones.find(function(z) { return z.id === zid; });
+    });
+
+    Object.keys(r.weekSales).forEach(function(wid) {
+      var weekTotal = r.weekSales[wid];
+      var dailyAvg = Math.round(weekTotal / 7 * 10) / 10;
+
+      var wd = window.weeklySalesStore[store][wid];
+      if (!wd) {
+        wd = { salesData: {}, areaData: {}, salesGroups: {}, salesGroupData: {} };
+        window.weeklySalesStore[store][wid] = wd;
+      }
+      if (!wd.salesData) wd.salesData = {};
+      if (!wd.areaData) wd.areaData = {};
+      if (!wd.salesGroupData) wd.salesGroupData = {};
+      if (!wd.salesGroups) wd.salesGroups = {};
+
+      if (!wd.salesGroups[r.gid]) {
+        wd.salesGroups[r.gid] = JSON.parse(JSON.stringify(g));
+      }
+
+      var existingArea = (wd.salesGroupData[r.gid] && wd.salesGroupData[r.gid].area) || 0;
+      wd.salesGroupData[r.gid] = { sales: dailyAvg, area: existingArea };
+
+      if (zids.length > 0 && dailyAvg > 0) {
+        var salesPerZone = Math.round(dailyAvg / zids.length / 10) * 10 || 1;
+        zids.forEach(function(zid) { wd.salesData[zid] = salesPerZone; });
+      }
+
+      var wObj = ws.find(function(w) { return w.id === wid; });
+      if (wObj !== undefined && wObj !== null) affectedMonths.add(wObj.mo);
+      appliedCount++;
+    });
+  });
+
+  affectedMonths.forEach(function(moIdx) {
+    if (typeof _updateMonthlyAggregateFromWeeks === 'function') {
+      _updateMonthlyAggregateFromWeeks(store, moIdx);
+    }
+  });
+
+  if (typeof syncToFirebase === 'function') syncToFirebase();
+  if (typeof renderSalesView === 'function') renderSalesView();
+
+  var modal = document.getElementById('zoneSalesUploadModal');
+  if (modal) modal.remove();
+  showToast('✅ ' + appliedCount + '개 주차 매출 반영 완료!');
+}
+
+/* ── 모달 열기 ── */
+function openZoneSalesUploadModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  var existing = document.getElementById('zoneSalesUploadModal');
+  if (existing) { existing.remove(); }
+
+  var modal = document.createElement('div');
+  modal.id = 'zoneSalesUploadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+  modal.innerHTML = [
+    '<div style="background:#fff;border-radius:16px;width:640px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">',
+    '<div style="background:linear-gradient(135deg,#065f46,#059669);padding:18px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">',
+    '<div><div style="font-size:16px;font-weight:900;color:#fff;">📥 구역 매출 업로드</div>',
+    '<div style="font-size:10px;color:#a7f3d0;margin-top:3px;">조닝번호 기준 자동 매핑 → 주차별 일평균 매출 → 도면 색상 자동 반영</div></div>',
+    '<button onclick="document.getElementById(\'zoneSalesUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>',
+    '</div>',
+    '<div style="padding:14px 20px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;flex-shrink:0;">',
+    '<div style="font-size:11px;font-weight:800;color:#065f46;margin-bottom:8px;">📋 엑셀 형식</div>',
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px;">',
+    '<div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:10px;"><div style="font-weight:800;color:#065f46;margin-bottom:5px;">A열: 조닝번호</div><div style="color:#6b7280;line-height:1.6;">1-1<br>1-2<br>2-1</div></div>',
+    '<div style="background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:10px;"><div style="font-weight:800;color:#059669;margin-bottom:5px;">B열~: 주차 헤더 + 7일 합계(만원)</div><div style="color:#6b7280;line-height:1.6;">W01 | W02 | …<br>7000 | 6500 | …</div></div>',
+    '</div>',
+    '<div style="margin-top:8px;font-size:9px;color:#6b7280;background:#fff;border-radius:6px;padding:6px 10px;border:1px solid #d1fae5;">💡 주차 헤더: <b>W01</b>, <b>1월 1주</b>, <b>12/29~1/4</b> 형식 모두 지원</div>',
+    '</div>',
+    '<div style="padding:16px 20px;flex-shrink:0;">',
+    '<label id="zsuDropZone" for="zsuFileInput" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:2.5px dashed #34d399;border-radius:12px;padding:24px;cursor:pointer;background:#f0fdf4;transition:all .2s;" ondragover="event.preventDefault();this.style.borderColor=\'#059669\';this.style.background=\'#dcfce7\';" ondragleave="this.style.borderColor=\'#34d399\';this.style.background=\'#f0fdf4\';" ondrop="event.preventDefault();this.style.borderColor=\'#34d399\';this.style.background=\'#f0fdf4\';handleZoneSalesFile(event.dataTransfer.files[0]);">',
+    '<div style="font-size:32px;">📥</div>',
+    '<div style="font-size:13px;font-weight:700;color:#059669;">클릭하거나 파일을 드래그하세요</div>',
+    '<div style="font-size:10px;color:#6b7280;">.xlsx / .xls / .csv 지원</div>',
+    '</label>',
+    '<input id="zsuFileInput" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleZoneSalesFile(this.files[0])"/>',
+    '</div>',
+    '<div id="zsuPreview" style="flex:1;overflow-y:auto;padding:0 20px 8px;display:none;"></div>',
+    '<div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">',
+    '<button id="zsuApplyBtn" onclick="applyZoneSalesUpload()" disabled style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#94a3b8;color:#fff;border:none;border-radius:8px;cursor:not-allowed;">도면에 적용하기</button>',
+    '<button onclick="document.getElementById(\'zoneSalesUploadModal\').remove()" style="flex:1;font-family:inherit;font-size:12px;font-weight:700;padding:10px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;border-radius:8px;cursor:pointer;">닫기</button>',
+    '</div>',
+    '</div>'
+  ].join('');
+
+  document.body.appendChild(modal);
+}
+</script>
 
 <!-- ════ 주차 전체 배치 복사 ════ -->
 <div id="weekCopyModal" onclick="if(event.target===this)closeWeekCopyModal()">
