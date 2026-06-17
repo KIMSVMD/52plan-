@@ -198,6 +198,8 @@ body.omap-view-active .nav { display: none; }
 /* 평당매출 탭: 월별 탭만 별도 표시 */
 #salesMonthNav { display: none; background:#fff; border-bottom:1px solid #e5e7eb; flex-shrink:0; z-index:200; }
 body.sales-view-active #salesMonthNav { display: block; }
+#salesNavWeeks { flex-shrink:0; }
+.sales-week-tab { font-size:11px !important; padding:4px 11px !important; }
 
 /* Row 1: current week info + arrows */
 .nav-top{display:flex;align-items:center;gap:8px;padding:7px 14px;border-bottom:1px solid var(--border);background:#fff;}
@@ -1916,6 +1918,10 @@ body.viewer-mode #salesMonthNav > div > button{
    // 각 월 데이터는 해당 월에 저장된 그룹만 사용 (전역 백필 제거 — 월간 오염 방지)
    window.monthlySalesStore[store] = _loadedMonthly;
  }
+ if (!window.weeklySalesStore) window.weeklySalesStore = {};
+ if (data.weeklySales) {
+   window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
+ }
  // 현재 지점이면 활성 변수에도 즉시 적용
  if (store === (window.currentStore || 'gs')) {
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
@@ -2104,6 +2110,10 @@ body.viewer-mode #salesMonthNav > div > button{
    var _loadedMonthly2 = JSON.parse(JSON.stringify(data.monthlySales));
    // 각 월 데이터는 해당 월에 저장된 그룹만 사용 (전역 백필 제거 — 월간 오염 방지)
    window.monthlySalesStore[store] = _loadedMonthly2;
+ }
+ if (!window.weeklySalesStore) window.weeklySalesStore = {};
+ if (data.weeklySales) {
+   window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
  }
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
  window.areaData = JSON.parse(JSON.stringify(data.areaData || {}));
@@ -2885,6 +2895,11 @@ window.onerror = function(msg, src, line, col, err) {
    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><rect x="5" y="1" width="9" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="1" y="4" width="9" height="11" rx="2" fill="rgba(124,58,237,.15)" stroke="currentColor" stroke-width="1.7"/></svg>
    그룹 복사
  </button>
+ </div>
+ <!-- 주차 서브탭 행 -->
+ <div id="salesNavWeeks" style="display:none;align-items:center;gap:0;padding:0 10px 0 14px;border-bottom:1px solid #dde5f4;min-height:30px;background:#f0f4ff;">
+  <span style="font-size:9px;font-weight:800;color:#6b7280;letter-spacing:.5px;margin-right:8px;white-space:nowrap;">주차</span>
+  <div id="salesNavWeekBtns" style="display:flex;overflow-x:auto;flex:1;scrollbar-width:none;gap:0;"></div>
  </div>
 </div>
 
@@ -7620,6 +7635,13 @@ window._getSavePayload = function(store) {
  Object.keys(_rawMonthly).forEach(function(mk) {
    saveMonthlySales[mk] = JSON.parse(JSON.stringify(_rawMonthly[mk]));
  });
+ // ── 주차별 평당매출 데이터 ──
+ if (!window.weeklySalesStore) window.weeklySalesStore = {};
+ var _rawWeekly = window.weeklySalesStore[store] || {};
+ var saveWeeklySales = {};
+ Object.keys(_rawWeekly).forEach(function(wk) {
+   saveWeeklySales[wk] = JSON.parse(JSON.stringify(_rawWeekly[wk]));
+ });
 
  const payload = {
  name: allNames[store] || store,
@@ -7642,6 +7664,7 @@ window._getSavePayload = function(store) {
  salesGroupData: saveSalesGroupData,
  labelOffsets: saveLabelOffsets,
  monthlySales: saveMonthlySales,
+ weeklySales: saveWeeklySales,
     productMaster: JSON.parse(JSON.stringify(window.productMaster || [])),
     zoneProducts: JSON.parse(JSON.stringify(window.zoneProducts || {})),
     productSalesData: (function() {
@@ -10954,6 +10977,59 @@ function calcSalesMetrics() {
  });
  }
 
+ // ── 월 탭: 주차 데이터가 있으면 주차별 집계 ──
+ const _hasWeeklyForMonth = !isAggregate &&
+  (window.currentSalesWeek === null || window.currentSalesWeek === undefined) &&
+  _monthHasWeeklyData(window.currentStore || 'gs', window.currentSalesMonth);
+ if (_hasWeeklyForMonth) {
+  const _wStore = window.currentStore || 'gs';
+  const _ws = window.weeklySalesStore && window.weeklySalesStore[_wStore];
+  const _moIdx = window.currentSalesMonth;
+  const _monthWeeks = _weeksForMonth(_moIdx);
+  const _weeksWithData = _monthWeeks.filter(function(w) {
+   var _wd = _ws && _ws[w.id];
+   return _wd && (Object.keys(_wd.salesData||{}).length > 0 || Object.keys(_wd.salesGroupData||{}).length > 0);
+  });
+  const _wAggSales = {}, _wAggCounts = {}, _wAggArea = {};
+  _weeksWithData.forEach(function(w) {
+   const _wd = _ws[w.id];
+   const _sd = _wd.salesData || {};
+   const _ad = _wd.areaData || {};
+   dataZones.forEach(function(z) {
+    const s = _sd[z.id] || 0;
+    const a = _ad[z.id] || 0;
+    if (a > 0 && s > 0) {
+     _wAggSales[z.id] = (_wAggSales[z.id] || 0) + s / a;
+     _wAggCounts[z.id] = (_wAggCounts[z.id] || 0) + 1;
+     _wAggArea[z.id] = a;
+    }
+   });
+  });
+  const _wAggPerSales = {};
+  dataZones.forEach(function(z) {
+   _wAggPerSales[z.id] = (_wAggCounts[z.id] > 0) ? _wAggSales[z.id] / _wAggCounts[z.id] : 0;
+  });
+  const _wAllPS = dataZones.map(function(z){ return _wAggPerSales[z.id]||0; }).filter(function(v){return v>0;});
+  const _wAvgPS = _wAllPS.length ? _wAllPS.reduce(function(a,b){return a+b;},0)/_wAllPS.length : 1;
+  const _wTotalArea = dataZones.reduce(function(s,z){ return s+(_wAggArea[z.id]||0); },0);
+  const _wTotalSales = dataZones.reduce(function(s,z){ return s+(_wAggPerSales[z.id]||0)*(_wAggArea[z.id]||0); },0);
+  return dataZones.map(function(z) {
+   const perSales = _wAggPerSales[z.id] || 0;
+   const area = _wAggArea[z.id] || 0.1;
+   const sales = perSales * area;
+   const contrib = _wTotalSales > 0 ? sales / _wTotalSales : 0;
+   const areaShare = _wTotalArea > 0 ? area / _wTotalArea : 0;
+   const effIdx = areaShare > 0 ? contrib / areaShare : 0;
+   let grade;
+   if (effIdx >= 1.2) grade = 'A';
+   else if (effIdx >= 0.8) grade = 'B';
+   else grade = 'C';
+   const isDead = perSales === 0 || perSales < _wAvgPS * 0.3;
+   const _catGuess = guessCategoryChar(z);
+   return { z, sales, area, perSales, contrib, areaShare, effIdx, grade, isDead, avgPerSales: _wAvgPS, totalSales: _wTotalSales, totalArea: _wTotalArea, catChar: _catGuess };
+  });
+ }
+
  // ── 특정 월 또는 월별 데이터 없는 종합: 기존 방식 ──
  // 평수 기본값: areaData가 없으면 cellCount 기반 추정 (0.1 사용 금지 — 극단적 perSales 방지)
  function _defaultArea(z) {
@@ -11084,6 +11160,9 @@ function fmtEff(n) { return Math.round(n * 10) / 10; }
 /* ── 월별 평당매출: 기존 MONTHS(idx 0-11) 연동 ── */
 // currentSalesMonth: null=종합, 0~11=해당 월 인덱스 (MONTHS[idx].idx 와 동일)
 window.currentSalesMonth = (window.currentSalesMonth !== undefined) ? window.currentSalesMonth : null;
+// currentSalesWeek: null=월 전체(누적), 'W01' 등=특정 주차
+window.currentSalesWeek = (window.currentSalesWeek !== undefined) ? window.currentSalesWeek : null;
+if (!window.weeklySalesStore) window.weeklySalesStore = {};
 
 /* ── 월 인덱스 → 스토어 키 변환 ── */
 function _salesMonthKey(idx) {
@@ -11135,6 +11214,111 @@ function saveSalesMonthData(monthIdx) {
  if (typeof syncToFirebase === 'function') syncToFirebase();
 }
 
+/* ── 해당 월의 WEEKS 배열 반환 ── */
+function _weeksForMonth(moIdx) {
+ return (typeof WEEKS !== 'undefined' ? WEEKS : []).filter(function(w) { return w.mo === moIdx; });
+}
+
+/* ── 해당 월에 주차 데이터가 하나라도 있는지 확인 ── */
+function _monthHasWeeklyData(store, moIdx) {
+ var ws = window.weeklySalesStore && window.weeklySalesStore[store];
+ if (!ws) return false;
+ return _weeksForMonth(moIdx).some(function(w) {
+  var wd = ws[w.id];
+  return wd && (Object.keys(wd.salesData||{}).length > 0 || Object.keys(wd.salesGroupData||{}).length > 0);
+ });
+}
+
+/* ── 주차 데이터 로드 ── */
+function getSalesWeekData(weekId) {
+ if (!window.weeklySalesStore) window.weeklySalesStore = {};
+ if (!window.weeklySalesStore[currentStore]) window.weeklySalesStore[currentStore] = {};
+ var wd = window.weeklySalesStore[currentStore][weekId] || {};
+ var fallbackGroups =
+  (window.storeSalesGroupsMap && window.storeSalesGroupsMap[currentStore] && Object.keys(window.storeSalesGroupsMap[currentStore]).length > 0)
+   ? window.storeSalesGroupsMap[currentStore]
+   : (window.salesGroups && Object.keys(window.salesGroups).length > 0 ? window.salesGroups : {});
+ return {
+  salesData: wd.salesData || {},
+  areaData: wd.areaData || {},
+  salesGroups: (wd.salesGroups && Object.keys(wd.salesGroups).length > 0) ? wd.salesGroups : JSON.parse(JSON.stringify(fallbackGroups)),
+  salesGroupData: wd.salesGroupData || {}
+ };
+}
+
+/* ── 주차별 데이터를 합산해 monthlySalesStore 갱신 (종합 탭 정확도 유지) ── */
+function _updateMonthlyAggregateFromWeeks(store, moIdx) {
+ if (moIdx === null || moIdx === undefined) return;
+ var ws = window.weeklySalesStore && window.weeklySalesStore[store];
+ if (!ws) return;
+ var monthWeeks = _weeksForMonth(moIdx);
+ var aggSalesData = {};
+ var aggAreaData = {};
+ monthWeeks.forEach(function(w) {
+  var wd = ws[w.id];
+  if (!wd) return;
+  var sd = wd.salesData || {};
+  var ad = wd.areaData || {};
+  Object.keys(sd).forEach(function(zid) {
+   aggSalesData[zid] = (aggSalesData[zid] || 0) + (sd[zid] || 0);
+  });
+  Object.keys(ad).forEach(function(zid) {
+   if (ad[zid] > 0) aggAreaData[zid] = ad[zid];
+  });
+ });
+ if (!window.monthlySalesStore) window.monthlySalesStore = {};
+ if (!window.monthlySalesStore[store]) window.monthlySalesStore[store] = {};
+ var monthKey = _salesMonthKey(moIdx);
+ var existing = window.monthlySalesStore[store][monthKey] || {};
+ window.monthlySalesStore[store][monthKey] = Object.assign({}, existing, {
+  salesData: aggSalesData,
+  areaData: aggAreaData
+ });
+}
+
+/* ── 현재 활성 데이터를 주차별로 저장 + Firebase 동기화 ── */
+function saveSalesWeekData(weekId) {
+ if (!weekId) return;
+ if (!window.weeklySalesStore) window.weeklySalesStore = {};
+ if (!window.weeklySalesStore[currentStore]) window.weeklySalesStore[currentStore] = {};
+ var hasData = Object.keys(window.salesData||{}).length > 0
+  || Object.keys(window.salesGroupData||{}).length > 0
+  || Object.keys(window.salesGroups||{}).length > 0;
+ if (!hasData) return;
+ window.weeklySalesStore[currentStore][weekId] = {
+  salesData: JSON.parse(JSON.stringify(window.salesData || {})),
+  areaData: JSON.parse(JSON.stringify(window.areaData || {})),
+  salesGroups: JSON.parse(JSON.stringify(_getActiveGroups(currentStore))),
+  salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
+ };
+ _updateMonthlyAggregateFromWeeks(currentStore, window.currentSalesMonth);
+ if (typeof syncToFirebase === 'function') syncToFirebase();
+}
+
+/* ── 주차 전환: 이전 주차 저장 → 새 주차 데이터 로드 ── */
+function switchSalesWeek(weekId) {
+ var prevWeek = window.currentSalesWeek;
+ if (prevWeek) {
+  saveSalesWeekData(prevWeek);
+ }
+ window.currentSalesWeek = weekId || null;
+ if (!weekId) {
+  // 월 전체(누적) 뷰: salesData를 비워 calcSalesMetrics 주차 집계 분기로 진입
+  window.salesData = {};
+  window.areaData = {};
+  window.salesGroups = {};
+  window.salesGroupData = {};
+ } else {
+  var wd = getSalesWeekData(weekId);
+  window.salesData = JSON.parse(JSON.stringify(wd.salesData));
+  window.areaData = JSON.parse(JSON.stringify(wd.areaData));
+  window.salesGroups = JSON.parse(JSON.stringify(wd.salesGroups));
+  window.salesGroupData = JSON.parse(JSON.stringify(wd.salesGroupData));
+ }
+ renderSalesView();
+ renderSalesMonthNav();
+}
+
 /* ── 평당매출 전용 월별 탭 렌더 (상단 salesMonthNav) ── */
 function renderSalesMonthNav() {
  const container = document.getElementById('salesNavMonths');
@@ -11151,11 +11335,13 @@ function renderSalesMonthNav() {
 
  // 1월 ~ 12월
  (typeof MONTHS !== 'undefined' ? MONTHS : []).forEach(function(m) {
- const hasData = (function() {
- if (!window.monthlySalesStore || !window.monthlySalesStore[currentStore]) return false;
- const md = window.monthlySalesStore[currentStore]['m' + m.idx];
- return md && (Object.keys(md.salesData || {}).length > 0 || Object.keys(md.salesGroupData || {}).length > 0);
+ const hasMonthlyData = (function() {
+  if (!window.monthlySalesStore || !window.monthlySalesStore[currentStore]) return false;
+  const md = window.monthlySalesStore[currentStore]['m' + m.idx];
+  return md && (Object.keys(md.salesData || {}).length > 0 || Object.keys(md.salesGroupData || {}).length > 0);
  })();
+ const hasWeeklyData = _monthHasWeeklyData(currentStore, m.idx);
+ const hasData = hasMonthlyData || hasWeeklyData;
  const isActive = curMon === m.idx;
  const btn = document.createElement('button');
  btn.className = 'mo-tab' + (isActive ? ' active' : '');
@@ -11163,18 +11349,58 @@ function renderSalesMonthNav() {
  btn.innerHTML = m.label + (hasData ? '<span class="mo-event-dot" style="background:#38bdf8;"></span>' : '');
  btn.title = m.label + (hasData ? ' (데이터 있음)' : '');
  btn.onclick = (function(idx) { return function() {
- switchSalesMonth(idx);
- renderSalesMonthNav();
+  switchSalesMonth(idx);
+  renderSalesMonthNav();
  }; })(m.idx);
  container.appendChild(btn);
  });
+
+ // ── 주차 서브탭 ──
+ const weekRow = document.getElementById('salesNavWeeks');
+ const weekBtns = document.getElementById('salesNavWeekBtns');
+ if (!weekRow || !weekBtns) return;
+ weekBtns.innerHTML = '';
+ if (curMon !== null && curMon !== undefined) {
+  weekRow.style.display = 'flex';
+  const store = currentStore;
+  const ws = window.weeklySalesStore && window.weeklySalesStore[store];
+  const curWeek = window.currentSalesWeek;
+  // "월 전체" 서브탭
+  const allWkBtn = document.createElement('button');
+  allWkBtn.className = 'mo-tab sales-week-tab' + (curWeek === null || curWeek === undefined ? ' active' : '');
+  allWkBtn.textContent = '월 전체';
+  allWkBtn.onclick = function() { switchSalesWeek(null); };
+  weekBtns.appendChild(allWkBtn);
+  // 해당 월 주차 서브탭
+  _weeksForMonth(curMon).forEach(function(w) {
+   var wd = ws && ws[w.id];
+   var hasWkData = wd && (Object.keys(wd.salesData||{}).length > 0 || Object.keys(wd.salesGroupData||{}).length > 0);
+   var isActiveWk = curWeek === w.id;
+   var wBtn = document.createElement('button');
+   wBtn.className = 'mo-tab sales-week-tab' + (isActiveWk ? ' active' : '');
+   wBtn.style.position = 'relative';
+   wBtn.innerHTML = w.wom + '주' + (hasWkData ? '<span class="mo-event-dot" style="background:#38bdf8;"></span>' : '');
+   wBtn.title = w.label + ' (' + w.dates + ')';
+   wBtn.onclick = (function(wid) { return function() { switchSalesWeek(wid); }; })(w.id);
+   weekBtns.appendChild(wBtn);
+  });
+ } else {
+  weekRow.style.display = 'none';
+ }
 }
 
 /* ── 월 전환: 이전 월 저장 → 새 월 데이터 로드 → 도면 위치 유지한 채 내용만 갱신 ── */
 function switchSalesMonth(monthIdx) {
+ const prevWeek = window.currentSalesWeek;
+ // 주차 뷰였으면 주차 데이터 먼저 저장 (monthlySalesStore 집계도 갱신)
+ if (prevWeek) {
+  saveSalesWeekData(prevWeek);
+ }
+ window.currentSalesWeek = null;
+
  const prev = window.currentSalesMonth;
- // 이전 월 데이터 저장 — salesData/areaData/salesGroupData에 실제 데이터 있을 때만 덮어씀
- if (prev !== null && prev !== undefined) {
+ // 이전 월 데이터 저장 — 주차 모드였으면 이미 위에서 처리됨 → 직접 저장 스킵
+ if (prev !== null && prev !== undefined && !prevWeek) {
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
  if (!window.monthlySalesStore[currentStore]) window.monthlySalesStore[currentStore] = {};
  const prevKey = _salesMonthKey(prev);
@@ -16008,13 +16234,26 @@ function applySalesData() {
  if (!Object.keys(_activeGrps).length && hasGroups) _activeGrps = groups;
 
  if (_curMo !== null && _curMo !== undefined) {
-  // 특정 월 슬롯에 저장
-  window.monthlySalesStore[currentStore][_salesMonthKey(_curMo)] = {
-   salesData:      JSON.parse(JSON.stringify(window.salesData)),
-   areaData:       JSON.parse(JSON.stringify(window.areaData)),
-   salesGroups:    JSON.parse(JSON.stringify(_activeGrps)),
-   salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData))
-  };
+  // 주차 탭이 활성화된 경우 주차 저장소에 저장 (monthlySalesStore 집계도 자동 갱신)
+  if (window.currentSalesWeek) {
+   if (!window.weeklySalesStore) window.weeklySalesStore = {};
+   if (!window.weeklySalesStore[currentStore]) window.weeklySalesStore[currentStore] = {};
+   window.weeklySalesStore[currentStore][window.currentSalesWeek] = {
+    salesData:      JSON.parse(JSON.stringify(window.salesData)),
+    areaData:       JSON.parse(JSON.stringify(window.areaData)),
+    salesGroups:    JSON.parse(JSON.stringify(_activeGrps)),
+    salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData))
+   };
+   _updateMonthlyAggregateFromWeeks(currentStore, _curMo);
+  } else {
+   // 월 전체 직접 입력 (주차 데이터 없는 레거시 달)
+   window.monthlySalesStore[currentStore][_salesMonthKey(_curMo)] = {
+    salesData:      JSON.parse(JSON.stringify(window.salesData)),
+    areaData:       JSON.parse(JSON.stringify(window.areaData)),
+    salesGroups:    JSON.parse(JSON.stringify(_activeGrps)),
+    salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData))
+   };
+  }
  } else {
   // 종합 탭: curMonthIdx 슬롯에도 저장 (손실 방지)
   var _fallbackIdx = (typeof curMonthIdx !== 'undefined') ? curMonthIdx : new Date().getMonth();
