@@ -2942,7 +2942,7 @@ window.onerror = function(msg, src, line, col, err) {
 
 <!-- ═══ 그룹 복사/가져오기 모달 ═══ -->
 <div id="copyGroupsModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" onclick="if(event.target===this)closeCopyGroupsModal()">
- <div style="background:#fff;border-radius:14px;width:400px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;font-family:'Pretendard',sans-serif;">
+ <div style="background:#fff;border-radius:14px;width:540px;max-width:96vw;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;font-family:'Pretendard',sans-serif;">
   <div style="background:#7c3aed;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
    <div>
     <div style="font-size:13px;font-weight:800;color:#fff;">📋 그룹 구성 복사 / 가져오기</div>
@@ -2952,11 +2952,12 @@ window.onerror = function(msg, src, line, col, err) {
   </div>
   <div style="padding:18px;">
    <div style="display:flex;gap:0;border:1.5px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:14px;">
-    <button id="cgmTabCopyTo" onclick="setCgmMode('copyTo')" style="flex:1;padding:8px 6px;border:none;background:#7c3aed;color:#fff;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;">현재 월 → 다른 달 복사</button>
-    <button id="cgmTabCopyFrom" onclick="setCgmMode('copyFrom')" style="flex:1;padding:8px 6px;border:none;background:#f3f4f6;color:#6b7280;font-family:inherit;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;">다른 달 → 현재 월 가져오기</button>
+    <button id="cgmTabCopyTo" onclick="setCgmMode('copyTo')" style="flex:1;padding:8px 4px;border:none;border-right:1px solid #e5e7eb;background:#7c3aed;color:#fff;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;">현재 월 → 다른 달</button>
+    <button id="cgmTabCopyFrom" onclick="setCgmMode('copyFrom')" style="flex:1;padding:8px 4px;border:none;border-right:1px solid #e5e7eb;background:#f3f4f6;color:#6b7280;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;">다른 달 → 현재 월</button>
+    <button id="cgmTabCopyWeek" onclick="setCgmMode('copyWeek')" style="flex:1;padding:8px 4px;border:none;background:#f3f4f6;color:#6b7280;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;">주차 단위 복사</button>
    </div>
    <div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:8px;" id="cgmSubLabel">대상 월 선택 <span style="font-weight:400;color:#9ca3af;">(중복 선택 가능)</span></div>
-   <div id="cgmTargetList" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;"></div>
+   <div id="cgmTargetList" style="margin-bottom:14px;max-height:220px;overflow-y:auto;"></div>
    <div id="cgmWarning" style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:10px;color:#92400e;margin-bottom:14px;">
     ⚠️ 선택한 월의 <b>그룹 구성(구역 묶음)</b>을 현재 월과 동일하게 덮어씁니다.<br>매출 데이터는 유지됩니다.
    </div>
@@ -17953,24 +17954,35 @@ function setCgmMode(mode) {
   var curMon = window.currentSalesMonth;
   var tabTo   = document.getElementById('cgmTabCopyTo');
   var tabFrom = document.getElementById('cgmTabCopyFrom');
+  var tabWeek = document.getElementById('cgmTabCopyWeek');
   var subLbl  = document.getElementById('cgmSubLabel');
   var warning = document.getElementById('cgmWarning');
   var applyBtn= document.getElementById('cgmApplyBtn');
   var srcLabel= document.getElementById('cgmSrcLabel');
+  var _inact = 'background:#f3f4f6;color:#6b7280;';
+  var _act   = 'background:#7c3aed;color:#fff;';
+  if (tabTo)   tabTo.style.cssText   = tabTo.style.cssText.replace(/background:[^;]+;color:[^;]+;/, mode==='copyTo'   ? _act : _inact);
+  if (tabFrom) tabFrom.style.cssText = tabFrom.style.cssText.replace(/background:[^;]+;color:[^;]+;/, mode==='copyFrom' ? _act : _inact);
+  if (tabWeek) tabWeek.style.cssText = tabWeek.style.cssText.replace(/background:[^;]+;color:[^;]+;/, mode==='copyWeek' ? _act : _inact);
+
   if (mode === 'copyTo') {
-    if (tabTo)   { tabTo.style.background='#7c3aed'; tabTo.style.color='#fff'; }
-    if (tabFrom) { tabFrom.style.background='#f3f4f6'; tabFrom.style.color='#6b7280'; }
     if (subLbl)  subLbl.innerHTML = '복사할 <b>대상 월</b> 선택 <span style="font-weight:400;color:#9ca3af;">(중복 선택 가능)</span>';
-    if (warning) warning.innerHTML = '⚠️ 선택한 월의 <b>그룹 구성(구역 묶음)</b>을 현재 <b>' + MONTH_LABELS[curMon] + '</b>과 동일하게 덮어씁니다.<br>매출 데이터는 유지됩니다.';
+    if (warning) warning.innerHTML = '⚠️ 선택한 월의 <b>그룹 구성+면적+목표</b>를 현재 <b>' + MONTH_LABELS[curMon] + '</b>과 동일하게 덮어씁니다.<br>매출 데이터는 유지됩니다.';
     if (applyBtn) applyBtn.textContent = '복사 적용';
     if (srcLabel) srcLabel.textContent = '원본: ' + MONTH_LABELS[curMon] + ' → 선택한 달로 복사';
-  } else {
-    if (tabTo)   { tabTo.style.background='#f3f4f6'; tabTo.style.color='#6b7280'; }
-    if (tabFrom) { tabFrom.style.background='#7c3aed'; tabFrom.style.color='#fff'; }
+  } else if (mode === 'copyFrom') {
     if (subLbl)  subLbl.innerHTML = '<b>가져올 원본 월</b> 선택 <span style="font-weight:400;color:#9ca3af;">(1개만 선택)</span>';
-    if (warning) warning.innerHTML = '⚠️ 선택한 달의 그룹 구성을 <b>현재 ' + MONTH_LABELS[curMon] + '에 덮어씁니다.</b><br>현재 월의 그룹 구성이 대체됩니다. 매출 데이터는 유지됩니다.';
+    if (warning) warning.innerHTML = '⚠️ 선택한 달의 그룹 구성+면적+목표를 <b>현재 ' + MONTH_LABELS[curMon] + '에 덮어씁니다.</b><br>현재 월의 그룹 구성이 대체됩니다. 매출 데이터는 유지됩니다.';
     if (applyBtn) applyBtn.textContent = '가져오기 적용';
     if (srcLabel) srcLabel.textContent = '선택한 달 → ' + MONTH_LABELS[curMon] + '으로 가져오기';
+  } else { /* copyWeek */
+    var wsArr0 = typeof WEEKS !== 'undefined' ? WEEKS : [];
+    var cwObj = window.currentSalesWeek ? wsArr0.find(function(w){return w.id===window.currentSalesWeek;}) : null;
+    var wkLbl = cwObj ? cwObj.label : (MONTH_LABELS[curMon] + ' 현재 주차');
+    if (subLbl)  subLbl.innerHTML = '복사할 <b>대상 주차</b> 선택 <span style="font-weight:400;color:#9ca3af;">(중복 선택 가능)</span>';
+    if (warning) warning.innerHTML = '⚠️ 선택한 주차의 <b>그룹 구성·면적·목표</b>를 <b>' + wkLbl + '</b> 기준으로 덮어씁니다.<br>각 주차의 매출 데이터는 유지됩니다.';
+    if (applyBtn) applyBtn.textContent = '주차 복사 적용';
+    if (srcLabel) srcLabel.textContent = '원본: ' + wkLbl + ' → 선택한 주차로 복사';
   }
   _cgmRenderMonthBtns();
 }
@@ -17981,6 +17993,74 @@ function _cgmRenderMonthBtns() {
   var list = document.getElementById('cgmTargetList');
   if (!list) return;
   list.innerHTML = '';
+
+  if (_cgmMode === 'copyWeek') {
+    /* ── 주차 선택 모드 ── */
+    list.style.display = 'block';
+    var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+    var curWkId = window.currentSalesWeek || null;
+    /* 월별로 그룹화 */
+    var byMo = {};
+    var moOrder = [];
+    wsArr.forEach(function(w) {
+      if (w.id === curWkId) return;
+      if (!byMo[w.mo]) { byMo[w.mo] = []; moOrder.push(w.mo); }
+      byMo[w.mo].push(w);
+    });
+    /* 중복 제거 */
+    moOrder = moOrder.filter(function(v, i, a) { return a.indexOf(v) === i; });
+    moOrder.forEach(function(mo) {
+      var weeks = byMo[mo];
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:7px;';
+
+      /* 월 레이블 버튼 (해당 월 전체 선택) */
+      var moBtn = document.createElement('button');
+      moBtn.textContent = MONTH_LABELS[mo] || (mo+1+'월');
+      moBtn.style.cssText = 'padding:3px 8px;border-radius:14px;border:1.5px solid #7c3aed;background:#f5f3ff;color:#7c3aed;font-family:inherit;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap;flex-shrink:0;';
+      moBtn.onclick = (function(ws) {
+        return function() {
+          var allSel = ws.every(function(w) {
+            var b = list.querySelector('button[data-wkid="' + w.id + '"]');
+            return b && b.dataset.selected === '1';
+          });
+          ws.forEach(function(w) {
+            var b = list.querySelector('button[data-wkid="' + w.id + '"]');
+            if (!b) return;
+            var ns = !allSel;
+            b.dataset.selected = ns ? '1' : '0';
+            b.style.background = ns ? '#7c3aed' : '#f9fafb';
+            b.style.color = ns ? '#fff' : '#374151';
+            b.style.borderColor = ns ? '#7c3aed' : '#e5e7eb';
+          });
+        };
+      })(weeks);
+      row.appendChild(moBtn);
+
+      weeks.forEach(function(w) {
+        var btn = document.createElement('button');
+        btn.textContent = w.label;
+        btn.dataset.wkid = w.id;
+        btn.dataset.selected = '0';
+        btn.style.cssText = 'padding:4px 9px;border-radius:16px;border:1.5px solid #e5e7eb;background:#f9fafb;color:#374151;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;transition:all .12s;';
+        btn.onclick = function() {
+          var sel = btn.dataset.selected === '1';
+          btn.dataset.selected = sel ? '0' : '1';
+          btn.style.background = sel ? '#f9fafb' : '#7c3aed';
+          btn.style.color = sel ? '#374151' : '#fff';
+          btn.style.borderColor = sel ? '#e5e7eb' : '#7c3aed';
+        };
+        row.appendChild(btn);
+      });
+      list.appendChild(row);
+    });
+    return;
+  }
+
+  /* ── 월 선택 모드 (copyTo / copyFrom) ── */
+  list.style.display = 'flex';
+  list.style.flexWrap = 'wrap';
+  list.style.gap = '6px';
   for (var i = 0; i < 12; i++) {
     if (i === curMon) continue;
     (function(idx) {
@@ -18065,6 +18145,7 @@ function applyCopyGroups() {
     if (!Object.keys(srcGroups).length) { showToast('현재 월에 그룹 구성이 없습니다.'); return; }
     var srcAreaData = JSON.parse(JSON.stringify(window.areaData || {}));
     var srcSgd = JSON.parse(JSON.stringify(window.salesGroupData || {}));
+    var srcTargets = JSON.parse(JSON.stringify((window.salesTargets && window.salesTargets[currentStore]) || {}));
     var copiedTo = [];
     btns.forEach(function(btn) {
       var idx = parseInt(btn.dataset.targetIdx, 10);
@@ -18073,7 +18154,8 @@ function applyCopyGroups() {
       window.monthlySalesStore[currentStore][key] = Object.assign({}, existing, {
         salesGroups: JSON.parse(JSON.stringify(srcGroups)),
         areaData: JSON.parse(JSON.stringify(srcAreaData)),
-        salesGroupData: _cgmMergeArea(existing.salesGroupData, srcSgd)
+        salesGroupData: _cgmMergeArea(existing.salesGroupData, srcSgd),
+        salesTargets: JSON.parse(JSON.stringify(srcTargets))
       });
       _cgmApplyAreaToWeeks(idx, srcAreaData, srcGroups, srcSgd);
       copiedTo.push(MONTH_LABELS[idx]);
@@ -18081,8 +18163,9 @@ function applyCopyGroups() {
     if (typeof syncToFirebase === 'function') syncToFirebase();
     if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
     closeCopyGroupsModal();
-    showToast('✅ ' + copiedTo.join(', ') + '에 그룹 구성+면적 복사 완료!');
-  } else {
+    showToast('✅ ' + copiedTo.join(', ') + '에 그룹 구성+면적+목표 복사 완료!');
+
+  } else if (_cgmMode === 'copyFrom') {
     var srcIdx = parseInt(btns[0].dataset.targetIdx, 10);
     var srcKey = _salesMonthKey(srcIdx);
     var srcMD = (window.monthlySalesStore[currentStore] || {})[srcKey] || {};
@@ -18090,15 +18173,23 @@ function applyCopyGroups() {
     if (!Object.keys(srcGroups2).length) { showToast(MONTH_LABELS[srcIdx] + '에 저장된 그룹 구성이 없습니다.'); return; }
     var srcAreaData2 = srcMD.areaData || {};
     var srcSgd2 = srcMD.salesGroupData || {};
+    var srcTargets2 = srcMD.salesTargets || {};
     window.salesGroups = JSON.parse(JSON.stringify(srcGroups2));
     window.areaData = Object.assign({}, window.areaData, srcAreaData2);
     window.salesGroupData = _cgmMergeArea(window.salesGroupData, srcSgd2);
+    if (Object.keys(srcTargets2).length) {
+      if (!window.salesTargets) window.salesTargets = {};
+      window.salesTargets[currentStore] = JSON.parse(JSON.stringify(srcTargets2));
+      if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
+      window.storeSalesTargetsMap[currentStore] = JSON.parse(JSON.stringify(srcTargets2));
+    }
     var curKey = _salesMonthKey(curMon);
     var curExisting = window.monthlySalesStore[currentStore][curKey] || {};
     window.monthlySalesStore[currentStore][curKey] = Object.assign({}, curExisting, {
       salesGroups: JSON.parse(JSON.stringify(srcGroups2)),
       areaData: Object.assign({}, curExisting.areaData || {}, srcAreaData2),
-      salesGroupData: _cgmMergeArea(curExisting.salesGroupData, srcSgd2)
+      salesGroupData: _cgmMergeArea(curExisting.salesGroupData, srcSgd2),
+      salesTargets: JSON.parse(JSON.stringify(srcTargets2))
     });
     _cgmApplyAreaToWeeks(curMon, srcAreaData2, srcGroups2, srcSgd2);
     if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
@@ -18110,7 +18201,35 @@ function applyCopyGroups() {
     if (typeof syncToFirebase === 'function') syncToFirebase();
     if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
     closeCopyGroupsModal();
-    showToast('✅ ' + MONTH_LABELS[srcIdx] + ' 그룹 구성+면적을 현재 월에 가져왔습니다!');
+    showToast('✅ ' + MONTH_LABELS[srcIdx] + ' 그룹 구성+면적+목표를 현재 월에 가져왔습니다!');
+
+  } else { /* copyWeek */
+    var wkBtns = document.querySelectorAll('#cgmTargetList button[data-wkid][data-selected="1"]');
+    if (!wkBtns.length) { showToast('주차를 선택하세요.'); return; }
+    var srcGroupsW = JSON.parse(JSON.stringify(window.salesGroups || {}));
+    if (!Object.keys(srcGroupsW).length) { showToast('현재 월에 그룹 구성이 없습니다.'); return; }
+    var srcAreaW  = JSON.parse(JSON.stringify(window.areaData || {}));
+    var srcSgdW   = JSON.parse(JSON.stringify(window.salesGroupData || {}));
+    if (!window.weeklySalesStore) window.weeklySalesStore = {};
+    if (!window.weeklySalesStore[currentStore]) window.weeklySalesStore[currentStore] = {};
+    var copiedWeeks = [];
+    wkBtns.forEach(function(btn) {
+      var wid = btn.dataset.wkid;
+      var wd = window.weeklySalesStore[currentStore][wid];
+      if (!wd) {
+        wd = { salesData:{}, areaData: JSON.parse(JSON.stringify(srcAreaW)), salesGroups: JSON.parse(JSON.stringify(srcGroupsW)), salesGroupData:{} };
+        window.weeklySalesStore[currentStore][wid] = wd;
+      } else {
+        wd.areaData    = JSON.parse(JSON.stringify(srcAreaW));
+        wd.salesGroups = JSON.parse(JSON.stringify(srcGroupsW));
+        wd.salesGroupData = _cgmMergeArea(wd.salesGroupData, srcSgdW);
+      }
+      var wObj = (typeof WEEKS !== 'undefined' ? WEEKS : []).find(function(w) { return w.id === wid; });
+      copiedWeeks.push(wObj ? wObj.label : wid);
+    });
+    if (typeof syncToFirebase === 'function') syncToFirebase();
+    closeCopyGroupsModal();
+    showToast('✅ ' + copiedWeeks.join(', ') + '에 그룹 구성+면적 복사 완료!');
   }
 }
 
