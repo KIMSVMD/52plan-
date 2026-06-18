@@ -2937,7 +2937,6 @@ window.onerror = function(msg, src, line, col, err) {
  </div>
  <!-- 주차 서브탭 행 (도면 탭 nav-weeks와 동일 스타일) -->
  <div id="salesNavWeeks" style="display:none;align-items:center;gap:6px;padding:7px 14px;border-bottom:1px solid var(--border);min-height:48px;background:#f3f4f6;">
-  <span id="salesNavWkBadge" style="display:none;font-family:'DM Mono',monospace;font-size:9px;font-weight:500;padding:2px 7px;border-radius:3px;background:var(--dark);color:#aaa;white-space:nowrap;letter-spacing:.3px;flex-shrink:0;"></span>
   <div id="salesNavWeekBtns" style="display:flex;overflow-x:auto;flex:1;scrollbar-width:none;gap:6px;align-items:center;padding:2px 0;"></div>
  </div>
 </div>
@@ -11466,7 +11465,6 @@ function renderSalesMonthNav() {
  // ── 주차 서브탭 (도면 탭 wk-btn 카드 스타일) ──
  const weekRow = document.getElementById('salesNavWeeks');
  const weekBtns = document.getElementById('salesNavWeekBtns');
- const wkBadge = document.getElementById('salesNavWkBadge');
  if (!weekRow || !weekBtns) return;
  weekBtns.innerHTML = '';
  if (curMon !== null && curMon !== undefined) {
@@ -11474,12 +11472,6 @@ function renderSalesMonthNav() {
   const store = currentStore;
   const ws = window.weeklySalesStore && window.weeklySalesStore[store];
   const curWeek = window.currentSalesWeek;
-
-  // W19 뱃지 (현재 선택된 주차 ID)
-  if (wkBadge) {
-   wkBadge.textContent = curWeek || '';
-   wkBadge.style.display = curWeek ? 'inline-block' : 'none';
-  }
 
   // "월 전체" 서브탭 (mo-tab 스타일 유지 — 카드가 아닌 탭)
   const allWkBtn = document.createElement('button');
@@ -11511,7 +11503,6 @@ function renderSalesMonthNav() {
   });
  } else {
   weekRow.style.display = 'none';
-  if (wkBadge) wkBadge.style.display = 'none';
  }
 }
 
