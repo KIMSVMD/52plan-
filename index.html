@@ -18027,35 +18027,72 @@ function applyCopyGroups() {
   var btns = document.querySelectorAll('#cgmTargetList button[data-selected="1"]');
   if (!btns.length) { showToast('월을 선택하세요.'); return; }
 
+  /* ── 면적(area)만 복사하고 매출(sales)은 보존하는 공통 헬퍼 ── */
+  function _cgmMergeArea(targetSgd, srcSgd) {
+    /* targetSgd: 대상 월의 salesGroupData, srcSgd: 원본 salesGroupData
+       area 필드만 복사, sales 필드는 절대 건드리지 않음 */
+    var merged = JSON.parse(JSON.stringify(targetSgd || {}));
+    Object.keys(srcSgd || {}).forEach(function(gid) {
+      if (!merged[gid]) merged[gid] = {};
+      if (srcSgd[gid].area !== undefined) merged[gid].area = srcSgd[gid].area;
+    });
+    return merged;
+  }
+  function _cgmApplyAreaToWeeks(targetMonIdx, srcAreaData, srcGroups, srcSgd) {
+    /* 대상 월의 weeklySalesStore 각 주차에 areaData·salesGroups·salesGroupData.area 갱신
+       매출(salesData, salesGroupData.sales)은 절대 건드리지 않음 */
+    if (!window.weeklySalesStore || !window.weeklySalesStore[currentStore]) return;
+    var ws = window.weeklySalesStore[currentStore];
+    (_weeksForMonth ? _weeksForMonth(targetMonIdx) : []).forEach(function(w) {
+      var wd = ws[w.id];
+      if (!wd) return;
+      wd.areaData = JSON.parse(JSON.stringify(srcAreaData));
+      wd.salesGroups = JSON.parse(JSON.stringify(srcGroups));
+      wd.salesGroupData = _cgmMergeArea(wd.salesGroupData, srcSgd);
+    });
+  }
+
   if (_cgmMode === 'copyTo') {
     var srcGroups = JSON.parse(JSON.stringify(window.salesGroups || {}));
     if (!Object.keys(srcGroups).length) { showToast('현재 월에 그룹 구성이 없습니다.'); return; }
+    var srcAreaData = JSON.parse(JSON.stringify(window.areaData || {}));
+    var srcSgd = JSON.parse(JSON.stringify(window.salesGroupData || {}));
     var copiedTo = [];
     btns.forEach(function(btn) {
       var idx = parseInt(btn.dataset.targetIdx, 10);
       var key = _salesMonthKey(idx);
       var existing = window.monthlySalesStore[currentStore][key] || {};
       window.monthlySalesStore[currentStore][key] = Object.assign({}, existing, {
-        salesGroups: JSON.parse(JSON.stringify(srcGroups))
+        salesGroups: JSON.parse(JSON.stringify(srcGroups)),
+        areaData: JSON.parse(JSON.stringify(srcAreaData)),
+        salesGroupData: _cgmMergeArea(existing.salesGroupData, srcSgd)
       });
+      _cgmApplyAreaToWeeks(idx, srcAreaData, srcGroups, srcSgd);
       copiedTo.push(MONTH_LABELS[idx]);
     });
     if (typeof syncToFirebase === 'function') syncToFirebase();
     if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
     closeCopyGroupsModal();
-    showToast('✅ ' + copiedTo.join(', ') + '에 그룹 구성 복사 완료!');
+    showToast('✅ ' + copiedTo.join(', ') + '에 그룹 구성+면적 복사 완료!');
   } else {
     var srcIdx = parseInt(btns[0].dataset.targetIdx, 10);
     var srcKey = _salesMonthKey(srcIdx);
     var srcMD = (window.monthlySalesStore[currentStore] || {})[srcKey] || {};
     var srcGroups2 = srcMD.salesGroups || {};
     if (!Object.keys(srcGroups2).length) { showToast(MONTH_LABELS[srcIdx] + '에 저장된 그룹 구성이 없습니다.'); return; }
+    var srcAreaData2 = srcMD.areaData || {};
+    var srcSgd2 = srcMD.salesGroupData || {};
     window.salesGroups = JSON.parse(JSON.stringify(srcGroups2));
+    window.areaData = Object.assign({}, window.areaData, srcAreaData2);
+    window.salesGroupData = _cgmMergeArea(window.salesGroupData, srcSgd2);
     var curKey = _salesMonthKey(curMon);
     var curExisting = window.monthlySalesStore[currentStore][curKey] || {};
     window.monthlySalesStore[currentStore][curKey] = Object.assign({}, curExisting, {
-      salesGroups: JSON.parse(JSON.stringify(srcGroups2))
+      salesGroups: JSON.parse(JSON.stringify(srcGroups2)),
+      areaData: Object.assign({}, curExisting.areaData || {}, srcAreaData2),
+      salesGroupData: _cgmMergeArea(curExisting.salesGroupData, srcSgd2)
     });
+    _cgmApplyAreaToWeeks(curMon, srcAreaData2, srcGroups2, srcSgd2);
     if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
     _safeSaveGroups(currentStore, window.salesGroups);
     var _gcS = document.getElementById('gc-sales');
@@ -18065,7 +18102,7 @@ function applyCopyGroups() {
     if (typeof syncToFirebase === 'function') syncToFirebase();
     if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
     closeCopyGroupsModal();
-    showToast('✅ ' + MONTH_LABELS[srcIdx] + ' 그룹 구성을 현재 월에 가져왔습니다!');
+    showToast('✅ ' + MONTH_LABELS[srcIdx] + ' 그룹 구성+면적을 현재 월에 가져왔습니다!');
   }
 }
 
@@ -18702,14 +18739,23 @@ function applyZoneSalesUpload() {
       var weekTotal = acc.weekSales[wid];
       var dailyAvg = Math.round(weekTotal / 7 * 10) / 10;
       var wd = window.weeklySalesStore[store][wid];
-      if (!wd) { wd = { salesData:{}, areaData:{}, salesGroups:{}, salesGroupData:{} }; window.weeklySalesStore[store][wid] = wd; }
-      ['salesData','areaData','salesGroupData','salesGroups'].forEach(function(k) { if (!wd[k]) wd[k] = {}; });
+      if (!wd) {
+        /* 신규 주차: areaData는 현재 window.areaData를 복사 — 빈 {} 금지(기본값 추정 폭등 방지) */
+        wd = { salesData:{}, areaData: JSON.parse(JSON.stringify(window.areaData || {})), salesGroups:{}, salesGroupData:{} };
+        window.weeklySalesStore[store][wid] = wd;
+      }
+      ['salesData','salesGroupData','salesGroups'].forEach(function(k) { if (!wd[k]) wd[k] = {}; });
+      /* areaData가 없는 기존 항목도 보정 */
+      if (!wd.areaData) wd.areaData = JSON.parse(JSON.stringify(window.areaData || {}));
+      /* salesGroups: 없을 때만 추가 */
       if (!wd.salesGroups[gid]) wd.salesGroups[gid] = JSON.parse(JSON.stringify(g));
-      var existingArea = (wd.salesGroupData[gid] && wd.salesGroupData[gid].area) || 0;
-      wd.salesGroupData[gid] = { sales: dailyAvg, area: existingArea };
+      /* salesGroupData: sales만 부분 업데이트 — area는 절대 건드리지 않음 */
+      if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
+      wd.salesGroupData[gid].sales = dailyAvg;
+      /* salesData: 구역별 일평균 배분 — areaData는 건드리지 않음 */
       if (zids.length > 0 && dailyAvg > 0) {
-        var spz = Math.round(dailyAvg / zids.length / 10) * 10 || 1;
-        zids.forEach(function(zid) { wd.salesData[zid] = spz; });
+        var spz = Math.round(dailyAvg / zids.length / 10) * 10;
+        if (spz > 0) zids.forEach(function(zid) { wd.salesData[zid] = spz; });
       }
       var wObj = wsArr.find(function(w) { return w.id === wid; });
       if (wObj) affectedMonths.add(wObj.mo);
