@@ -11184,6 +11184,14 @@ function _normSalesGroupKey(v) {
 function _getCurrentSalesGroupDataMap() {
  var cur = window.currentSalesMonth;
  var store = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+ // 월 전체 보기 + 주차 데이터가 있는 달: salesGroupData를 무시하고 빈 객체 반환
+ // 이유: Firebase 콜백이 monthlySalesStore(합산값)를 window.salesGroupData에 복원하더라도
+ //      _getSalesGroupTotals가 gMetrics(올바른 주차 평균)에서 그룹 합계를 계산하도록 강제
+ if ((window.currentSalesWeek === null || window.currentSalesWeek === undefined) &&
+     cur !== null && cur !== undefined &&
+     typeof _monthHasWeeklyData === 'function' && _monthHasWeeklyData(store, cur)) {
+  return {};
+ }
  var direct = window.salesGroupData || {};
  if (direct && Object.keys(direct).length) return direct;
  if (cur !== null && cur !== undefined &&
@@ -11343,7 +11351,20 @@ function getSalesWeekData(weekId) {
    탭 재진입·Firebase sync 등 어떤 경로로 monthlySalesStore가 전역을 덮어써도
    이 함수 한 번으로 올바른 주차 데이터로 복원됨 */
 function _ensureWeekGlobals() {
-  if (!window.currentSalesWeek) return;
+  if (!window.currentSalesWeek) {
+    // 월 전체 보기 + 주차 데이터 있는 달: monthlySalesStore가 합산 salesData를 복원했을 때 비워줌
+    // (_hasWeeklyForMonth 분기가 weeklySalesStore에서 직접 읽으므로 window.salesData 비워도 OK)
+    var _ewStore = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+    var _ewMo = window.currentSalesMonth;
+    if (_ewMo !== null && _ewMo !== undefined &&
+        typeof _monthHasWeeklyData === 'function' && _monthHasWeeklyData(_ewStore, _ewMo)) {
+      window.salesData      = {};
+      window.areaData       = {};
+      window.salesGroupData = {};
+      console.log('[MONTH-WEEKLY-GUARD] 월 전체 + 주차 데이터 있음 — salesData/salesGroupData 비움');
+    }
+    return;
+  }
   var _wd = getSalesWeekData(window.currentSalesWeek);
   window.salesData      = JSON.parse(JSON.stringify(_wd.salesData));
   window.areaData       = JSON.parse(JSON.stringify(_wd.areaData));
@@ -11473,14 +11494,6 @@ function renderSalesMonthNav() {
   const ws = window.weeklySalesStore && window.weeklySalesStore[store];
   const curWeek = window.currentSalesWeek;
 
-  // "월 전체" 서브탭 (mo-tab 스타일 유지 — 카드가 아닌 탭)
-  const allWkBtn = document.createElement('button');
-  allWkBtn.className = 'mo-tab' + (curWeek === null || curWeek === undefined ? ' active' : '');
-  allWkBtn.style.cssText = 'height:46px;padding:0 12px;border-radius:5px;border:1.5px solid var(--border);background:#fff;margin-right:2px;';
-  allWkBtn.textContent = '월 전체';
-  allWkBtn.onclick = function() { switchSalesWeek(null); };
-  weekBtns.appendChild(allWkBtn);
-
   // 해당 월 주차 — wk-btn 카드 스타일 (도면 탭과 동일)
   _weeksForMonth(curMon).forEach(function(w) {
    var wd = ws && ws[w.id];
@@ -11555,6 +11568,9 @@ function switchSalesMonth(monthIdx) {
    window.salesGroups = JSON.parse(JSON.stringify(_loadedGroups));
    window.salesGroupData = JSON.parse(JSON.stringify(md.salesGroupData || {}));
  }
+
+ // 월 전체 + 주차 데이터 있는 달: monthlySalesStore 합산값 정리 (올바른 주차 평균이 사용되도록)
+ if (typeof _ensureWeekGlobals === 'function') _ensureWeekGlobals();
 
  // 도면이 이미 렌더된 경우: 위치 유지하며 색상·패널만 갱신
  const gcSales = document.getElementById('gc-sales');
