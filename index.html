@@ -15328,12 +15328,16 @@ function openSalesDataModal() {
   if (window.currentSalesWeek) {
     // 주차 탭 선택 중: weeklySalesStore가 단일 출처
     var _wkd = getSalesWeekData(window.currentSalesWeek);
+    console.log('[SDM OPEN] currentSalesWeek=', window.currentSalesWeek,
+      '| weeklySalesStore salesGroupData=', JSON.stringify(_wkd.salesGroupData).slice(0,200),
+      '| window.salesGroupData=', JSON.stringify(window.salesGroupData||{}).slice(0,200));
     window.salesGroupData = JSON.parse(JSON.stringify(_wkd.salesGroupData));
     window.salesData      = JSON.parse(JSON.stringify(_wkd.salesData));
     window.areaData       = JSON.parse(JSON.stringify(_wkd.areaData));
     if (_wkd.salesGroups && Object.keys(_wkd.salesGroups).length > 0) {
       window.salesGroups = JSON.parse(JSON.stringify(_wkd.salesGroups));
     }
+    console.log('[SDM OPEN] 동기화 후 salesGroupData=', JSON.stringify(window.salesGroupData).slice(0,200));
   } else if (_omo !== null && _omo !== undefined &&
       window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
     // 월 전체 뷰: monthlySalesStore에서 읽기 (레거시 또는 집계)
@@ -19154,6 +19158,21 @@ function applyZoneSalesUpload() {
   affectedMonths.forEach(function(moIdx) {
     if (typeof _updateMonthlyAggregateFromWeeks === 'function') _updateMonthlyAggregateFromWeeks(store, moIdx);
   });
+
+  /* 현재 활성 주차가 업로드 대상에 포함되면 전역 변수도 즉시 동기화
+     (window.salesData/salesGroupData는 switchSalesWeek에서 deep copy로 로드됐으므로
+      weeklySalesStore 수정이 자동 반영되지 않음 — 명시적으로 재로드) */
+  if (window.currentSalesWeek && usedWids.indexOf(window.currentSalesWeek) >= 0) {
+    var _activeWd = getSalesWeekData(window.currentSalesWeek);
+    window.salesData      = JSON.parse(JSON.stringify(_activeWd.salesData));
+    window.areaData       = JSON.parse(JSON.stringify(_activeWd.areaData));
+    window.salesGroupData = JSON.parse(JSON.stringify(_activeWd.salesGroupData));
+    if (_activeWd.salesGroups && Object.keys(_activeWd.salesGroups).length > 0) {
+      window.salesGroups = JSON.parse(JSON.stringify(_activeWd.salesGroups));
+    }
+    console.log('[ZSU APPLY] 전역 동기화 완료 — salesGroupData=', JSON.stringify(window.salesGroupData).slice(0,200));
+  }
+
   if (typeof syncToFirebase === 'function') syncToFirebase();
   if (typeof renderSalesView === 'function') renderSalesView();
   var modal = document.getElementById('zoneSalesUploadModal');
