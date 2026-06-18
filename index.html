@@ -19278,14 +19278,26 @@ function openZoneSalesUploadModal() {
     + '</div>';
   document.body.appendChild(modal);
 
-  /* 이전 적용 내역 스냅샷 버튼 */
+  /* 이전 적용 내역 스냅샷 버튼 — 현재 선택된 월에 해당하는 것만 표시 */
   var curStore = window.currentStore || 'gs';
+  var _curMo   = window.currentSalesMonth; // 현재 선택된 월 인덱스 (0-11 or null)
   var snapSection = document.getElementById('zsuSnapSection');
+  console.log('[ZSU MODAL] store=', curStore, '| currentSalesMonth=', _curMo,
+    '| 전체 스냅샷 키:', window._zsuSnapshot ? Object.keys(window._zsuSnapshot) : []);
   if (snapSection && window._zsuSnapshot) {
     var moNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
     var wsArr2 = typeof WEEKS !== 'undefined' ? WEEKS : [];
     var snaps = Object.keys(window._zsuSnapshot).filter(function(k) {
-      return window._zsuSnapshot[k].store === curStore;
+      var sn = window._zsuSnapshot[k];
+      if (sn.store !== curStore) return false;
+      // 현재 월 필터: currentSalesMonth가 설정된 경우 해당 월 키만 포함
+      if (_curMo !== null && _curMo !== undefined) {
+        var moIdxArr = k.replace(curStore + '_', '').split('_').map(Number).filter(function(n){return !isNaN(n);});
+        var matches = moIdxArr.indexOf(_curMo) >= 0;
+        console.log('[ZSU MODAL] 키=', k, '| moIdxArr=', moIdxArr, '| 현재월=', _curMo, '| 매칭=', matches);
+        return matches;
+      }
+      return true; // 종합 탭이면 전체 표시
     }).sort(function(a, b) {
       return (window._zsuSnapshot[b].appliedAt||0) - (window._zsuSnapshot[a].appliedAt||0);
     });
@@ -19310,6 +19322,9 @@ function openZoneSalesUploadModal() {
       });
       sHtml += '</div>';
       snapSection.innerHTML = sHtml;
+    } else if (_curMo !== null && _curMo !== undefined) {
+      // 현재 월에 해당하는 내역 없음
+      snapSection.innerHTML = '<div style="padding:8px 0 4px;font-size:10px;color:#9ca3af;">이 달 업로드 내역 없음</div>';
     }
   }
 
