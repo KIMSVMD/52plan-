@@ -13324,6 +13324,25 @@ function showSalesZoneCard(m, zEl) {
  '</div>';
  card.appendChild(bigNum);
 
+ // ── 목표 평당매출 (설정된 경우만) ──
+ var _tgtPS = _getSalesTarget(m.z.id);
+ if (_tgtPS && _tgtPS > 0) {
+   var _achPct = Math.round(m.perSales / _tgtPS * 100);
+   var _achColor = _achPct >= SALES_TARGET_PCT_GREEN ? '#16a34a'
+     : _achPct >= SALES_TARGET_PCT_YELLOW ? '#ca8a04' : '#dc2626';
+   var _achBg = _achPct >= SALES_TARGET_PCT_GREEN ? '#dcfce7'
+     : _achPct >= SALES_TARGET_PCT_YELLOW ? '#fef9c3' : '#fee2e2';
+   var tgtRow = document.createElement('div');
+   tgtRow.style.cssText = 'padding:6px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:' + _achBg + ';';
+   tgtRow.innerHTML =
+     '<div style="font-size:9px;color:#6b7280;font-weight:600;">목표 평당매출</div>' +
+     '<div style="display:flex;align-items:center;gap:6px;">' +
+     '<span style="font-size:11px;font-weight:700;color:#374151;">' + Math.round(_tgtPS).toLocaleString() + '만/평</span>' +
+     '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _achColor + ';color:#fff;">달성 ' + _achPct + '%</span>' +
+     '</div>';
+   card.appendChild(tgtRow);
+ }
+
  // ── 지표 3칸 ──
  const grid3 = document.createElement('div');
  grid3.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #f1f5f9;';
