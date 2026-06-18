@@ -2159,6 +2159,8 @@ body.viewer-mode #salesMonthNav > div > button{
    if (_rcMD.salesGroupData) window.salesGroupData = JSON.parse(JSON.stringify(_rcMD.salesGroupData));
   }
  }
+ // 주차 선택 중이면 Firebase/monthly 덮어쓰기 결과를 weeklySalesStore로 복원
+ if (typeof _ensureWeekGlobals === 'function') _ensureWeekGlobals();
  // 평당매출 탭이 열려있으면 갱신
  if (typeof renderSalesView === 'function' && document.getElementById('salesWrap') &&
  document.getElementById('salesWrap').style.display !== 'none') {
@@ -10668,7 +10670,7 @@ function switchView(view) {
  document.body.classList.remove('omap-view-active');
  if (window._presenceUpdateTab) window._presenceUpdateTab('sales');
  renderSalesMonthNav();
- // 평당매출 탭 진입 시: 도면에서 보던 월을 항상 그대로 이어받음
+ // 평당매출 탭 진입 시: 도면에서 보던 월을 이어받되, 주차 선택 중이면 주차 데이터 우선
  {
  const syncMonth = (typeof curMonthIdx !== 'undefined') ? curMonthIdx : null;
  if (syncMonth !== null && syncMonth !== undefined) {
@@ -10679,6 +10681,8 @@ function switchView(view) {
  window.salesGroups = JSON.parse(JSON.stringify(_md.salesGroups));
  window.salesGroupData = JSON.parse(JSON.stringify(_md.salesGroupData));
  }
+ // 주차 선택 중이면 monthlySalesStore 로드 결과를 weeklySalesStore로 덮어씀
+ _ensureWeekGlobals();
  }
  renderSalesMonthNav();
  // ── 도면 스크롤 비율 → pending에 복사 (switchView 시작부에서 저장된 값 사용) ──
@@ -11334,6 +11338,20 @@ function getSalesWeekData(weekId) {
   salesGroups: (wd.salesGroups && Object.keys(wd.salesGroups).length > 0) ? wd.salesGroups : JSON.parse(JSON.stringify(fallbackGroups)),
   salesGroupData: wd.salesGroupData || {}
  };
+}
+
+/* ── 주차 선택 중이면 전역 변수를 weeklySalesStore로 덮어씀 (단일 진실 소스 보장) ──
+   탭 재진입·Firebase sync 등 어떤 경로로 monthlySalesStore가 전역을 덮어써도
+   이 함수 한 번으로 올바른 주차 데이터로 복원됨 */
+function _ensureWeekGlobals() {
+  if (!window.currentSalesWeek) return;
+  var _wd = getSalesWeekData(window.currentSalesWeek);
+  window.salesData      = JSON.parse(JSON.stringify(_wd.salesData));
+  window.areaData       = JSON.parse(JSON.stringify(_wd.areaData));
+  window.salesGroupData = JSON.parse(JSON.stringify(_wd.salesGroupData));
+  if (_wd.salesGroups && Object.keys(_wd.salesGroups).length > 0)
+    window.salesGroups = JSON.parse(JSON.stringify(_wd.salesGroups));
+  console.log('[WEEK-GUARD] ' + window.currentSalesWeek + ' 전역 복원 — salesGroupData keys:', Object.keys(window.salesGroupData||{}).length, '| salesData keys:', Object.keys(window.salesData||{}).length);
 }
 
 /* ── 주차별 데이터를 합산해 monthlySalesStore 갱신 (종합 탭 정확도 유지) ── */
