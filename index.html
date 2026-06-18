@@ -2248,8 +2248,9 @@ body.viewer-mode #salesMonthNav > div > button{
   try {
    const _oSnap = await get(ref(db, 'plan2026/_global/zoningMcOverrides'));
    if (_oSnap.exists()) {
-    window.zoningMcOverrides = _oSnap.val();
-    console.log('[FIREBASE GLOBAL] zoningMcOverrides 로드:', (window.zoningMcOverrides||[]).length, '개');
+    var _ov = _oSnap.val();
+    window.zoningMcOverrides = (Array.isArray(_ov) || typeof _ov !== 'object' || !_ov) ? {} : _ov;
+    console.log('[FIREBASE GLOBAL] zoningMcOverrides 로드:', Object.keys(window.zoningMcOverrides||{}).length, '개');
    }
   } catch(e) { console.warn('[FIREBASE GLOBAL] zoningMcOverrides 로드 실패', e); }
  })();
@@ -18437,7 +18438,7 @@ function showResetConfirm(zoneName, monthLabel) {
 ═══════════════════════════════════════════════ */
 window._zoningMcMapDefault = [{mc:"바나나",z:"0"},{mc:"오렌지",z:"3"},{mc:"딸기",z:"3-2"},{mc:"수박",z:"1-1"},{mc:"토마토",z:"2"},{mc:"토마토(가공)",z:"2"},{mc:"키위",z:"3-1"},{mc:"체리",z:"3-2"},{mc:"아보카도",z:"3-2"},{mc:"수입포도",z:"3-2"},{mc:"수입기타",z:"3-2"},{mc:"수입망고",z:"3-2"},{mc:"자몽",z:"3-2"},{mc:"레몬",z:"3-2"},{mc:"수수료-청과",z:"3-3"},{mc:"사과",z:"4"},{mc:"배",z:"4"},{mc:"포도",z:"4"},{mc:"밤",z:"4"},{mc:"계절과일(냉장)",z:"4"},{mc:"참외",z:"1-2"},{mc:"감(냉동)",z:"5-1"},{mc:"냉동과일",z:"5-1"},{mc:"계절과일",z:"5-2"},{mc:"포장과일",z:"5-2"},{mc:"간편과일",z:"5-2"},{mc:"과실선물세트",z:"5-2"},{mc:"샐러드류",z:"6"},{mc:"엽채류기타(건조)",z:"6"},{mc:"엽채류기타(냉장)",z:"6"},{mc:"샐러드류(냉장)",z:"6"},{mc:"근채류기타",z:"6"},{mc:"수입채소",z:"6"},{mc:"두부",z:"7-1"},{mc:"두부(기타)",z:"7-1"},{mc:"두부수수료",z:"7-1"},{mc:"콩나물",z:"7-2"},{mc:"숙주",z:"7-2"},{mc:"콩나물수수료",z:"7-2"},{mc:"숙주수수료",z:"7-2"},{mc:"판란",z:"8"},{mc:"캡슐란",z:"8"},{mc:"채소-수수료",z:"9"},{mc:"수수료 기타",z:"9"},{mc:"친환경채소 수수료",z:"9"},{mc:"채소-수수료(PD)",z:"9"},{mc:"채소-수수료(실온)",z:"9"},{mc:"옥수수",z:"9"},{mc:"간편식",z:"10-1"},{mc:"양곡류",z:"10-2"},{mc:"잡곡류",z:"10-2"},{mc:"가공기타",z:"10-2"},{mc:"고추",z:"11-1"},{mc:"오이",z:"11-1"},{mc:"호박",z:"11-1"},{mc:"과채기타",z:"11-1"},{mc:"파프리카",z:"11-1"},{mc:"단호박",z:"11-1"},{mc:"건강/약용류",z:"11-1"},{mc:"감자",z:"11-2"},{mc:"무우",z:"11-2"},{mc:"고구마",z:"11-2"},{mc:"양파",z:"11-2"},{mc:"마늘",z:"11-2"},{mc:"마늘(냉장)",z:"11-2"},{mc:"배추",z:"11-3"},{mc:"파",z:"11-3"},{mc:"시금치",z:"11-3"},{mc:"엽채류기타",z:"11-3"},{mc:"양채류",z:"11-3"},{mc:"고추가루",z:"11-3"},{mc:"표고버섯",z:"12"},{mc:"버섯기타",z:"12"},{mc:"새송이 버섯",z:"12"},{mc:"표고버섯(건조)",z:"12"},{mc:"버섯기타(건조)",z:"12"},{mc:"일산 로컬 푸드-수수료",z:"13"},{mc:"로컬-수수료(냉장)",z:"13"},{mc:"일산로컬푸드_수수료(2D)",z:"13"},{mc:"로컬-수수료",z:"13"},{mc:"오아시스 식품",z:"13"},{mc:"건과류",z:"14-1"},{mc:"견과류",z:"14-1"},{mc:"건멸치",z:"14-2"},{mc:"건오징어",z:"14-2"},{mc:"생김",z:"14-2"},{mc:"황태류",z:"14-2"},{mc:"멸치_수수료",z:"14-2"},{mc:"진미채",z:"15"},{mc:"진미채(냉장)",z:"15"},{mc:"쥐포류",z:"15"},{mc:"천연조미료",z:"15"},{mc:"갈치(냉동)",z:"16"},{mc:"노르웨이고등어(냉동)",z:"16"},{mc:"연어(냉동)",z:"16"},{mc:"국산고등어(냉동)",z:"16"},{mc:"수입선어(냉동)",z:"16"},{mc:"살류(냉동)",z:"16"},{mc:"명태",z:"16"},{mc:"새우",z:"16"},{mc:"낙지",z:"16"},{mc:"굴(냉동)",z:"16"},{mc:"꽃게(냉동)",z:"16"},{mc:"패류(냉장)",z:"16"},{mc:"굴비",z:"16"},{mc:"새우살",z:"16"},{mc:"전복(냉동)",z:"16"},{mc:"명태코다리",z:"16"},{mc:"수산HMR(냉동)",z:"16"},{mc:"꽃게",z:"17"},{mc:"굴",z:"17"},{mc:"패류",z:"17"},{mc:"전복",z:"17"},{mc:"살류",z:"18"},{mc:"삼치",z:"18"},{mc:"조기",z:"18"},{mc:"연어",z:"18"},{mc:"구색어",z:"18"},{mc:"갈치",z:"18"},{mc:"국산고등어",z:"18"},{mc:"수입선어",z:"18"},{mc:"자반고등어",z:"18"},{mc:"오징어",z:"18"},{mc:"전감류",z:"19"},{mc:"젓갈류",z:"19"},{mc:"수산HMR",z:"19"},{mc:"젓갈류-수수료",z:"19"},{mc:"회초밥-수수료",z:"19"},{mc:"탕볶음-수수료",z:"19"},{mc:"한우등심",z:"21"},{mc:"한우채끝",z:"21"},{mc:"한우안심",z:"21"},{mc:"한우정육",z:"21"},{mc:"한우갈비",z:"21"},{mc:"한우부산물",z:"21"},{mc:"한우양지",z:"21"},{mc:"수입갈비",z:"22"},{mc:"수입등심",z:"22"},{mc:"수입부채살",z:"22"},{mc:"수입가공",z:"22"},{mc:"수입정육",z:"22"},{mc:"수입양지",z:"22"},{mc:"수입돈육",z:"22"},{mc:"수입 와규",z:"22"},{mc:"돈삼겹살",z:"23"},{mc:"돈목심",z:"23"},{mc:"돈갈비",z:"23"},{mc:"돈앞다리",z:"23"},{mc:"돼지기타",z:"23"},{mc:"돈삼겹살(냉동)",z:"23"},{mc:"돈목심(냉동)",z:"23"},{mc:"계육가공",z:"24"},{mc:"계육가공(실온)",z:"24"},{mc:"생닭육",z:"24"},{mc:"닭절단육",z:"24"},{mc:"닭부분육",z:"24"},{mc:"토종닭",z:"24"},{mc:"생오리",z:"24"},{mc:"오리가공",z:"24"},{mc:"계육가공(냉동)",z:"24"},{mc:"양념불고기",z:"25"},{mc:"양념구이용",z:"25"},{mc:"양념스테이크",z:"25"},{mc:"양념육선물세트",z:"25"},{mc:"델리간편조리(지정)",z:"25"},{mc:"델리간편조리",z:"25"},{mc:"델리갈비가공",z:"25"},{mc:"웰빙돼지 뒷다리",z:"26"},{mc:"웰빙돼지 삼겹",z:"26"},{mc:"웰빙돼지 목심",z:"26"},{mc:"웰빙돼지 앞다리",z:"26"},{mc:"웰빙돼지 갈비",z:"26"},{mc:"웰빙돼지 등심",z:"26"},{mc:"웰빙돼지 안심",z:"26"},{mc:"웰빙돼지 기타",z:"26"},{mc:"양념델리 수수료",z:"27"},{mc:"델리간편조리(실온)",z:"27"},{mc:"제주관",z:"27"},{mc:"제주관_수수료",z:"27"},{mc:"제주관(냉동)",z:"27"},{mc:"포기김치(면세)",z:"28"},{mc:"맛김치(면세)",z:"28"},{mc:"총각김치(면세)",z:"28"},{mc:"열무김치(면세)",z:"28"},{mc:"소포장김치(실온)",z:"28"},{mc:"기타김치",z:"28"},{mc:"소포장김치",z:"28"},{mc:"떡갈비",z:"29"},{mc:"동그랑땡",z:"29"},{mc:"돈까스/생선까스",z:"29"},{mc:"냉동스테이크",z:"29"},{mc:"튀김류",z:"29"},{mc:"냉동밥/죽",z:"29"},{mc:"냉동떡/면",z:"29"},{mc:"냉동피자",z:"29"},{mc:"안주류",z:"29"},{mc:"기타냉동식품",z:"29"},{mc:"손만두",z:"30"},{mc:"군만두",z:"30"},{mc:"물만두",z:"30"},{mc:"교자만두",z:"30"},{mc:"딤섬&만두피",z:"30"},{mc:"치킨너겟",z:"30"},{mc:"치킨텐더",z:"30"},{mc:"윙.봉",z:"30"},{mc:"핫도그",z:"30"},{mc:"냉동빵/케이크",z:"30"},{mc:"디저트",z:"30"},{mc:"컵아이스크림",z:"30"},{mc:"막대아이스크림",z:"30"},{mc:"콘아이스크림",z:"30"},{mc:"샌드아이스크림",z:"30"},{mc:"수입아이스크림",z:"30"},{mc:"사각햄",z:"31"},{mc:"프랑크햄",z:"31"},{mc:"비엔나햄",z:"31"},{mc:"김밥햄",z:"31"},{mc:"슬라이스햄",z:"31"},{mc:"베이컨",z:"31"},{mc:"닭고기햄",z:"31"},{mc:"기타소시지",z:"31"},{mc:"기타소시지",z:"31"},{mc:"기타소시지(실온)",z:"31"},{mc:"사각어묵",z:"31"},{mc:"국탕용어묵",z:"31"},{mc:"핫바/고급어묵",z:"31"},{mc:"맛살(일반)",z:"31"},{mc:"맛살(프리미엄)",z:"31"},{mc:"유부초밥재료",z:"31"},{mc:"곤약",z:"31"},{mc:"단무지",z:"31"},{mc:"절임류",z:"31"},{mc:"냉장국/탕/찌개",z:"31"},{mc:"냉장분식",z:"31"},{mc:"낫또",z:"31"},{mc:"냉장드레싱",z:"31"},{mc:"냉장반찬",z:"31"},{mc:"냉장 양념/장",z:"31"},{mc:"단무지(실온)",z:"31"},{mc:"절임류(실온)",z:"31"},{mc:"냉장분식(애슐리)",z:"31"},{mc:"냉장반찬(실온)",z:"32"},{mc:"냉장냉면류",z:"32"},{mc:"냉장우동류",z:"32"},{mc:"냉장스파게티류",z:"32"},{mc:"냉장중화면류",z:"32"},{mc:"냉장떡류",z:"32"},{mc:"냉장면사리",z:"32"},{mc:"냉장육수",z:"32"},{mc:"냉장쌀국수",z:"32"},{mc:"냉장쫄면",z:"32"},{mc:"냉장메밀면",z:"32"},{mc:"냉장떡류(실온)",z:"32"},{mc:"냉장면사리(실온)",z:"32"},{mc:"냉장육수(실온)",z:"32"},{mc:"기타냉장면",z:"32"},{mc:"일반생수",z:"33"},{mc:"기능성첨가생수",z:"33"},{mc:"성인두유",z:"33"},{mc:"오렌지음료",z:"34"},{mc:"포도음료",z:"34"},{mc:"기타과즙음료(팩)",z:"34"},{mc:"토마토음료",z:"34"},{mc:"알로에음료",z:"34"},{mc:"기타야채음료",z:"34"},{mc:"과즙병세트음료",z:"34"},{mc:"곡식음료",z:"34"},{mc:"오렌지음료(실온)",z:"34"},{mc:"포도음료(실온)",z:"34"},{mc:"기타과즙음료(실온)",z:"34"},{mc:"콜라",z:"35"},{mc:"사이다",z:"35"},{mc:"과즙탄산",z:"35"},{mc:"탄산수",z:"35"},{mc:"이온음료",z:"35"},{mc:"숙취제거음료",z:"35"},{mc:"건강세트음료",z:"35"},{mc:"어린이음료",z:"35"},{mc:"커피음료",z:"35"},{mc:"혼합차음료",z:"35"},{mc:"섬유음료",z:"35"},{mc:"홍차음료",z:"35"},{mc:"수입생수",z:"35"},{mc:"액상발효유",z:"36"},{mc:"액상농후발효유",z:"36"},{mc:"호상농후발효유",z:"36"},{mc:"액상발효유(실온)",z:"36"},{mc:"액상농후발효유(실온)",z:"36"},{mc:"호상농후발효유(실온)",z:"36"},{mc:"멸균유",z:"37"},{mc:"흰우유",z:"37"},{mc:"저지방우유",z:"37"},{mc:"강화우유",z:"37"},{mc:"가공우유",z:"37"},{mc:"냉장젤리류",z:"38"},{mc:"냉장컵커피/음료",z:"38"},{mc:"가공우유(실온)",z:"38"},{mc:"기타유제품류",z:"38"},{mc:"기타치즈(실온)",z:"39"},{mc:"기타유제품류(실온)",z:"39"},{mc:"냉장커피(실온)",z:"39"},{mc:"연성치즈",z:"39"},{mc:"경성치즈",z:"39"},{mc:"가공치즈",z:"39"},{mc:"기타치즈",z:"39"},{mc:"버터",z:"39"},{mc:"마아가린",z:"39"},{mc:"가공치즈(실온)",z:"39"},{mc:"버터(실온)",z:"39"},{mc:"스위티 와인",z:"40"},{mc:"드라이 와인",z:"40"},{mc:"직수입와인",z:"40"},{mc:"수입위스키",z:"40"},{mc:"리큐르",z:"40"},{mc:"럼/진",z:"40"},{mc:"와인세트",z:"40"},{mc:"민속주",z:"40"},{mc:"보드카",z:"40"},{mc:"위스키세트",z:"40"},{mc:"\"민속주,약주세트\"",z:"40"},{mc:"맥주캔",z:"41"},{mc:"맥주지",z:"41"},{mc:"맥주PET",z:"41"},{mc:"수입맥주캔",z:"41"},{mc:"소주지",z:"41"},{mc:"소주PET",z:"41"},{mc:"약주",z:"41"},{mc:"탁주",z:"41"},{mc:"청주",z:"41"},{mc:"중국술",z:"41"},{mc:"과실주",z:"41"},{mc:"무알콜 맥주",z:"41"},{mc:"탁주(실온)",z:"41"},{mc:"청주(ED)",z:"41"},{mc:"공병",z:"41"},{mc:"과일기타",z:"42"},{mc:"식빵",z:"42"},{mc:"일반빵",z:"42"},{mc:"수입빵",z:"42"},{mc:"기타빵",z:"42"},{mc:"봉지면(일반)",z:"43-1"},{mc:"봉지면(짜장)",z:"43-1"},{mc:"봉지면(냉면)",z:"43-1"},{mc:"봉지면(쫄면)",z:"43-1"},{mc:"봉지면(비빔)",z:"43-1"},{mc:"용기면",z:"43-2"},{mc:"당면",z:"43-2"},{mc:"국수",z:"43-2"},{mc:"기타면류",z:"43-2"},{mc:"맨밥",z:"44"},{mc:"잡곡밥",z:"44"},{mc:"컵밥",z:"44"},{mc:"떡볶이",z:"44"},{mc:"후리가께",z:"44"},{mc:"기타즉석류",z:"44"},{mc:"조미도시락김",z:"45"},{mc:"생김",z:"45"},{mc:"조미도시락김",z:"45"},{mc:"조미전장김",z:"45"},{mc:"김자반",z:"45"},{mc:"미역",z:"45"},{mc:"탕류",z:"46"},{mc:"레토르트",z:"46"},{mc:"스프",z:"47"},{mc:"죽",z:"47"},{mc:"카레짜장",z:"47"},{mc:"복숭아",z:"48"},{mc:"파인애플",z:"48"},{mc:"후르츠칵테일",z:"48"},{mc:"두류",z:"48"},{mc:"옥수수홀",z:"48"},{mc:"피클",z:"48"},{mc:"채소기타",z:"48"},{mc:"참치",z:"48"},{mc:"꽁치",z:"48"},{mc:"고등어",z:"48"},{mc:"골뱅이",z:"48"},{mc:"수산기타",z:"48"},{mc:"돈육통조림",z:"48"},{mc:"계육통조림",z:"48"},{mc:"어포류",z:"48"},{mc:"우동류",z:"48"},{mc:"채소기타(냉장)",z:"48"},{mc:"통조림기타",z:"48"},{mc:"대두유",z:"49"},{mc:"옥수수유",z:"49"},{mc:"참기름",z:"49"},{mc:"들기름",z:"49"},{mc:"올리브유",z:"49"},{mc:"포도씨유",z:"49"},{mc:"카놀라유",z:"49"},{mc:"아보카도오일",z:"49"},{mc:"기타유지류",z:"49"},{mc:"육포",z:"49"},{mc:"견과류",z:"49"},{mc:"어육소세지",z:"49"},{mc:"고추장",z:"50"},{mc:"된장",z:"50"},{mc:"쌈장",z:"50"},{mc:"혼합장",z:"50"},{mc:"진간장",z:"50"},{mc:"양조간장",z:"50"},{mc:"국간장",z:"50"},{mc:"조림간장",z:"50"},{mc:"향신간장",z:"50"},{mc:"기타 장류",z:"50"},{mc:"케찹",z:"51"},{mc:"마요네즈",z:"51"},{mc:"드레싱",z:"51"},{mc:"스파게티소스",z:"51"},{mc:"머스타드소스",z:"51"},{mc:"양념장",z:"51"},{mc:"돈까스/스테이크",z:"51"},{mc:"굴소스",z:"51"},{mc:"동남아소스",z:"51"},{mc:"중화소스",z:"51"},{mc:"기타소스류",z:"51"},{mc:"스파게티",z:"51"},{mc:"웰빙과자 유기농/무농",z:"52"},{mc:"전통과자/화과자류",z:"52"},{mc:"씨리얼",z:"52"},{mc:"수입기타",z:"52"},{mc:"기타스넥",z:"52"},{mc:"부침가루",z:"53"},{mc:"튀김가루",z:"53"},{mc:"빵가루",z:"53"},{mc:"밀가루",z:"53"},{mc:"가공전분",z:"53"},{mc:"홈베이킹재료",z:"53"},{mc:"기타분말",z:"53"},{mc:"볶음깨",z:"54-1"},{mc:"물엿",z:"54-1"},{mc:"식초",z:"54-1"},{mc:"식초(희석식)",z:"54-1"},{mc:"액젓",z:"54-1"},{mc:"설탕",z:"54-1"},{mc:"맛술(조미료)",z:"54-1"},{mc:"설탕(PD)",z:"54-1"},{mc:"화학조미료(PD)",z:"54-1"},{mc:"기타조미료",z:"54-1"},{mc:"면세소금",z:"54-2"},{mc:"과세소금",z:"54-2"},{mc:"화학조미료",z:"54-2"},{mc:"천연조미료",z:"54-2"},{mc:"액상조미료",z:"54-2"},{mc:"겨자/와사비",z:"54-2"},{mc:"향신료",z:"54-2"},{mc:"후추",z:"54-2"},{mc:"면세소금(PD)",z:"54-2"},{mc:"과세소금(PD)",z:"54-2"},{mc:"파이",z:"55-1"},{mc:"비스켓",z:"55-1"},{mc:"쿠키",z:"55-1"},{mc:"웨하스",z:"55-1"},{mc:"샌드",z:"55-1"},{mc:"크래커",z:"55-1"},{mc:"감자스낵",z:"55-1"},{mc:"고구마스낵",z:"55-1"},{mc:"쌀스낵",z:"55-1"},{mc:"옥수수스낵",z:"55-1"},{mc:"밀가루스넥",z:"55-1"},{mc:"기타이유식",z:"55-1"},{mc:"유아음료",z:"55-1"},{mc:"기타영유아식",z:"55-1"},{mc:"바초콜렛",z:"55-2"},{mc:"쉘초콜렛",z:"55-2"},{mc:"판초콜렛",z:"55-2"},{mc:"가공초콜렛",z:"55-2"},{mc:"기타초콜렛",z:"55-2"},{mc:"하드캔디",z:"55-2"},{mc:"소프트캔디",z:"55-2"},{mc:"카라멜",z:"55-2"},{mc:"\"젤리,푸딩\"",z:"55-2"},{mc:"껌",z:"55-2"},{mc:"원두커피",z:"56"},{mc:"원두커피일회용",z:"56"},{mc:"코코아가공",z:"56"},{mc:"시럽",z:"56"},{mc:"커피용품",z:"56"},{mc:"인스턴트커피믹스",z:"56"},{mc:"라떼",z:"56"},{mc:"캡슐원두커피",z:"56"},{mc:"녹차(단일)",z:"56"},{mc:"기타침출차",z:"56"},{mc:"기타곡류차",z:"56"},{mc:"기타차류",z:"56"},{mc:"분말차",z:"56"},{mc:"액상차",z:"56"},{mc:"보리차",z:"56"},{mc:"커피선물세트",z:"56"},{mc:"땡",z:"57"},{mc:"종합비타민",z:"57"},{mc:"단백질보충용(음료)",z:"57"},{mc:"단백질보충용(파우더)",z:"57"},{mc:"홍삼",z:"57"},{mc:"수면케어",z:"57"},{mc:"꿀.면역",z:"57"},{mc:"다이어트",z:"57"},{mc:"이너뷰티",z:"57"},{mc:"건기식기타",z:"57"},{mc:"장건강",z:"57"},{mc:"간건강",z:"57"},{mc:"눈건강",z:"57"},{mc:"혈행건강",z:"57"},{mc:"뼈관절건강",z:"57"},{mc:"인지개선",z:"57"},{mc:"건강분말",z:"57"},{mc:"건강음료",z:"57"},{mc:"수세미",z:"58"},{mc:"랩",z:"58"},{mc:"백",z:"58"},{mc:"호일",z:"58"},{mc:"고무장갑",z:"58"},{mc:"위생장갑",z:"58"},{mc:"애견간식",z:"58"},{mc:"애견(판매분)",z:"58"},{mc:"치약",z:"59"},{mc:"치솔",z:"59"},{mc:"가글",z:"59"},{mc:"어린이칫약",z:"59"},{mc:"어린이칫솔",z:"59"},{mc:"구강보조용품",z:"59"},{mc:"위생대날개형",z:"59"},{mc:"위생대오버나이트",z:"59"},{mc:"위생대팬티라이너",z:"59"},{mc:"위생대삽입형",z:"59"},{mc:"성인용기저귀",z:"59"},{mc:"성인용기저귀(용품)",z:"59"},{mc:"팬티형대형",z:"59"},{mc:"팬티형특대형",z:"59"},{mc:"팬티형점포",z:"59"},{mc:"밴드",z:"59"},{mc:"마스크/핫팩",z:"59"},{mc:"위생용품 기타",z:"59"},{mc:"면도기",z:"59"},{mc:"쉐이빙폼",z:"59"},{mc:"일반물티슈",z:"60"},{mc:"유아용물티슈",z:"60"},{mc:"휴대용물티슈",z:"60"},{mc:"물티슈기획",z:"60"},{mc:"물티슈 기타",z:"60"},{mc:"롤키친타올",z:"60"},{mc:"뽑아쓰는키친타올",z:"60"},{mc:"키친타올기획",z:"60"},{mc:"키친타올기타",z:"60"},{mc:"섬유탈취제",z:"60"},{mc:"방향제",z:"60"},{mc:"제습제",z:"60"},{mc:"탈취제(냉장고)",z:"60"},{mc:"주거청소용품",z:"60"},{mc:"행주",z:"60"},{mc:"애견용품",z:"60"},{mc:"종이컵류",z:"60"},{mc:"PS컵류",z:"60"},{mc:"접시류",z:"60"},{mc:"도시락류",z:"60"},{mc:"공기류",z:"60"},{mc:"활저류",z:"60"},{mc:"부탄가스",z:"60"},{mc:"바퀴 살충제",z:"60"},{mc:"\"파리,모기 살충제\"",z:"60"},{mc:"방충제",z:"60"},{mc:"면도날",z:"60"},{mc:"일회용품 기타",z:"60"},{mc:"캠핑가스",z:"60"},{mc:"방향/탈취제",z:"60"},{mc:"식기세척기주방세제",z:"61"},{mc:"세탁조세정제",z:"61"},{mc:"세정제기타",z:"61"},{mc:"변기 세정제",z:"61"},{mc:"배수구/싱크 세정제",z:"61"},{mc:"욕실세정제",z:"61"},{mc:"주방세정제",z:"61"},{mc:"곰팡이세정제",z:"61"},{mc:"다목적 세정제(락스)",z:"61"},{mc:"주방세척용품",z:"61"},{mc:"미용비누",z:"62"},{mc:"훼이셜폼",z:"62"},{mc:"핸드워시",z:"62"},{mc:"훼이셜케어기타",z:"62"},{mc:"샴푸",z:"62"},{mc:"린스",z:"62"},{mc:"트리트먼트",z:"62"},{mc:"헤어스타일링",z:"62"},{mc:"염모제",z:"62"},{mc:"여행용세트",z:"62"},{mc:"바디워시",z:"62"},{mc:"바디로션",z:"62"},{mc:"립케어",z:"62"},{mc:"핸드/풋케어",z:"62"},{mc:"유아바스",z:"62"},{mc:"일반섬유유연제",z:"63-1"},{mc:"고농축 섬유유연제",z:"63-1"},{mc:"시트/향기 지속제",z:"63-1"},{mc:"일반주방세제",z:"63-2"},{mc:"고농축주방세제",z:"63-2"},{mc:"분말 세탁세제",z:"63-3"},{mc:"다목적 세탁세제",z:"63-3"},{mc:"액상세탁세제",z:"63-3"},{mc:"울전용 세탁세제",z:"63-3"},{mc:"표백제",z:"63-3"},{mc:"보조 세탁세제",z:"63-3"},{mc:"시트/캡슐 세탁세제",z:"63-3"},{mc:"3겹화장지",z:"64"},{mc:"프리미엄화장지",z:"64"},{mc:"미용티슈",z:"64"},{mc:"미용티슈기획",z:"64"},{mc:"보습미용티슈",z:"64"},{mc:"휴대용미용티슈",z:"64"},{mc:"냅킨",z:"64"},{mc:"조리기구",z:"65"},{mc:"솥/냄비/찜솥",z:"65"},{mc:"주방(판매분)",z:"65"},{mc:"후라이팬/구이팬",z:"65"},{mc:"도자기/글라스",z:"65"},{mc:"보온보냉/물병",z:"65"},{mc:"저장/밀폐용기",z:"65"},{mc:"주방정리용품",z:"65"},{mc:"주방잡화(판매분)",z:"65"},{mc:"주방잡화(판매분/ED)",z:"65"},{mc:"침장(판매분)",z:"65"},{mc:"욕실세탁수납용품",z:"65"},{mc:"청소/욕실(판매분)",z:"65"},{mc:"욕실화류",z:"65"},{mc:"청소용품",z:"65"},{mc:"청소용품(ED)",z:"65"},{mc:"장바구니/카트",z:"65"},{mc:"차량용품",z:"65"},{mc:"멀티탭",z:"65"},{mc:"일반공구",z:"65"},{mc:"전구",z:"65"},{mc:"알카라인건전지",z:"65"},{mc:"조명",z:"65"},{mc:"선풍기",z:"65"},{mc:"우산",z:"65"},{mc:"이지웨어",z:"65"},{mc:"건전지",z:"65"},{mc:"안전/보수/공구",z:"65"},{mc:"양말",z:"65"},{mc:"화장품/소품",z:"65"},{mc:"화장품(판매분)",z:"65"},{mc:"언더웨어",z:"65"},{mc:"잡화(판매분)",z:"65"},{mc:"델리바이애슐리",z:"66-1"},{mc:"TOGO즉석 반찬",z:"66-2"},{mc:"TOGO즉석 조리 행사",z:"66-2"},{mc:"간편식",z:"20"},{mc:"990원",z:"55-3"},{mc:"직수입",z:"67"},{mc:"이불류",z:"65"},{mc:"타올류",z:"65"},{mc:"수도/샤워용품(수전)",z:"65"},{mc:"전기요/매트",z:"65"},{mc:"한우양지(냉동)",z:"21"},{mc:"돈등심",z:"23"},{mc:"오리가공(실온)",z:"24"},{mc:"양념불고기(냉동)",z:"25"},{mc:"일산 로컬 푸드-수수료(건나물)",z:"13"},{mc:"나물기타",z:"11-3"},{mc:"계란가공(냉장)",z:"8"},{mc:"친환경 채소",z:"9"},{mc:"메론",z:"1-1"},{mc:"고구마(가공)",z:"6"},{mc:"자두",z:"4"},{mc:"복숭아",z:"4"},{mc:"선물세트",z:"15"},{mc:"빙수재료",z:"48"},{mc:"샴페인",z:"40"},{mc:"위생대일반형",z:"60"},{mc:"화장품(샵)",z:"59"},{mc:"생활용품 기타",z:"59"},{mc:"유아로션",z:"59"},{mc:"콘돔",z:"59"},{mc:"렌즈세정액",z:"59"},{mc:"요지류",z:"57"},{mc:"수저/양식기",z:"65"},{mc:"베개류",z:"65"}];
 if (!window.zoningMcMap) window.zoningMcMap = JSON.parse(JSON.stringify(window._zoningMcMapDefault));
-if (!window.zoningMcOverrides) window.zoningMcOverrides = [];
+if (!window.zoningMcOverrides || Array.isArray(window.zoningMcOverrides)) window.zoningMcOverrides = {};
 
 /* ── Firebase 저장 ── */
 function syncZoningMcMap() {
@@ -18447,7 +18448,7 @@ function syncZoningMcMap() {
 }
 function syncZoningMcOverrides() {
   if (typeof window._firebaseSaveGlobal === 'function') {
-    window._firebaseSaveGlobal('zoningMcOverrides', JSON.parse(JSON.stringify(window.zoningMcOverrides || [])));
+    window._firebaseSaveGlobal('zoningMcOverrides', JSON.parse(JSON.stringify(window.zoningMcOverrides || {})));
   }
 }
 
@@ -18459,46 +18460,6 @@ function _zsuNormText(s) {
     .replace(/　/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-/* ── 주차별 override 조회: 해당 MC+wid에 override가 있으면 조닝번호 문자열, 없으면 null ──
-   규칙 우선순위: single(0) > range(1) > from(2), 같은 우선순위면 배열 인덱스 앞이 우선 */
-function _zsuResolveOverride(mc, wid) {
-  var rules = window.zoningMcOverrides || [];
-  if (!rules.length || !mc || !wid) return null;
-  var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
-  var wObj = null;
-  for (var wi = 0; wi < ws.length; wi++) { if (ws[wi].id === wid) { wObj = ws[wi]; break; } }
-  if (!wObj) return null;
-  var normMc = _zsuNormText(mc);
-  function _wIdx(moV, womV) { return moV * 100 + womV; }
-  var curIdx = _wIdx(wObj.mo, wObj.wom);
-  var matched = [];
-  for (var ri = 0; ri < rules.length; ri++) {
-    var r = rules[ri];
-    if (_zsuNormText(r.mc) !== normMc) continue;
-    var covers = false;
-    if (r.type === 'single') {
-      var fid = _zsuParseWeekId(r.from);
-      if (fid === wid) covers = true;
-    } else if (r.type === 'range') {
-      var fid2 = _zsuParseWeekId(r.from), tid2 = _zsuParseWeekId(r.to);
-      var fo2 = null, to2 = null;
-      for (var wi2 = 0; wi2 < ws.length; wi2++) {
-        if (ws[wi2].id === fid2) fo2 = ws[wi2];
-        if (ws[wi2].id === tid2) to2 = ws[wi2];
-      }
-      if (fo2 && to2 && curIdx >= _wIdx(fo2.mo, fo2.wom) && curIdx <= _wIdx(to2.mo, to2.wom)) covers = true;
-    } else if (r.type === 'from') {
-      var fid3 = _zsuParseWeekId(r.from), fo3 = null;
-      for (var wi3 = 0; wi3 < ws.length; wi3++) { if (ws[wi3].id === fid3) { fo3 = ws[wi3]; break; } }
-      if (fo3 && curIdx >= _wIdx(fo3.mo, fo3.wom)) covers = true;
-    }
-    if (covers) matched.push({ z: r.z, priority: r.type === 'single' ? 0 : r.type === 'range' ? 1 : 2, idx: ri });
-  }
-  if (!matched.length) return null;
-  matched.sort(function(a, b) { return a.priority - b.priority || a.idx - b.idx; });
-  return matched[0].z;
 }
 
 /* ── 조닝번호/MC명 → {gid, via} ── */
@@ -18649,6 +18610,7 @@ function handleZoneSalesFile(file) {
           var row = rows[r];
           var raw = _xlsZoningVal(row[0]);
           if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
+          var mr = _zsuMatchGroup(raw);
           var weekSales = {};
           for (var c2 = 1; c2 < row.length && (c2 - 1) < weekIds.length; c2++) {
             var wid2 = weekIds[c2 - 1];
@@ -18656,39 +18618,14 @@ function handleZoneSalesFile(file) {
             var val = parseFloat(String(row[c2] || '0').replace(/,/g, '')) || 0;
             if (val > 0) weekSales[wid2] = val / 10000;  /* 원 단위 → 만원 */
           }
-          var defaultMr = _zsuMatchGroup(raw);
-          var perWeekGid = {};
-          var rowHasOverride = false;
-          Object.keys(weekSales).forEach(function(wk3) {
-            var ovZ = _zsuResolveOverride(raw, wk3);
-            if (ovZ !== null) {
-              rowHasOverride = true;
-              var groups2 = window.salesGroups || {};
-              var store2 = window.currentStore || 'gs';
-              if (!Object.keys(groups2).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store2]) {
-                groups2 = window.storeSalesGroupsMap[store2] || {};
-              }
-              var ovGid = null;
-              for (var g_ov in groups2) {
-                if (groups2[g_ov].number && String(groups2[g_ov].number).trim() === ovZ) { ovGid = g_ov; break; }
-              }
-              perWeekGid[wk3] = ovGid;
-            } else {
-              perWeekGid[wk3] = defaultMr.gid;
-            }
-          });
-          rawRows.push({ raw: raw, gid: defaultMr.gid, via: defaultMr.via, weekSales: weekSales, perWeekGid: perWeekGid, hasOverride: rowHasOverride });
-          Object.keys(weekSales).forEach(function(wk3) {
-            var gid3 = perWeekGid[wk3];
-            if (gid3) {
-              if (!groupAccum[gid3]) groupAccum[gid3] = { weekSales: {}, mcNames: [], overrideMcs: [] };
-              if (groupAccum[gid3].mcNames.indexOf(raw) < 0) groupAccum[gid3].mcNames.push(raw);
-              if (rowHasOverride && gid3 !== defaultMr.gid && groupAccum[gid3].overrideMcs.indexOf(raw) < 0) {
-                groupAccum[gid3].overrideMcs.push(raw);
-              }
-              groupAccum[gid3].weekSales[wk3] = (groupAccum[gid3].weekSales[wk3] || 0) + weekSales[wk3];
-            }
-          });
+          rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales });
+          if (mr.gid) {
+            if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
+            if (groupAccum[mr.gid].mcNames.indexOf(raw) < 0) groupAccum[mr.gid].mcNames.push(raw);
+            Object.keys(weekSales).forEach(function(wk) {
+              groupAccum[mr.gid].weekSales[wk] = (groupAccum[mr.gid].weekSales[wk] || 0) + weekSales[wk];
+            });
+          }
         }
         console.log('[ZSU] 13) 행 매칭 완료 — 매칭 구역:', Object.keys(groupAccum).length, '/ 전체 행:', rawRows.length);
 
@@ -18724,7 +18661,7 @@ function _zsuShowError(msg) {
   }
 }
 
-/* ── 미리보기 렌더 ── */
+/* ── 미리보기 렌더 (품목별 드롭다운) ── */
 function _zsuRenderPreview(parsed) {
   var preview = document.getElementById('zsuPreview');
   var applyBtn = document.getElementById('zsuApplyBtn');
@@ -18737,58 +18674,87 @@ function _zsuRenderPreview(parsed) {
     groups = window.storeSalesGroupsMap[store] || {};
   }
   var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
-  var groupAccum = parsed.groupAccum || {};
-  var matchedGids = Object.keys(groupAccum);
-  var unmatchedRows = parsed.rawRows.filter(function(r) {
-    if (r.gid) return false;
-    var pg = r.perWeekGid || {};
-    return !Object.keys(r.weekSales || {}).some(function(wk) { return pg[wk]; });
+  var overrides = window.zoningMcOverrides || {};
+
+  /* 그룹 정렬: 조닝번호 숫자 기준 */
+  var groupArr = [];
+  for (var gk in groups) {
+    groupArr.push({ gid: gk, number: String(groups[gk].number||'').trim(), label: groups[gk].label||gk });
+  }
+  groupArr.sort(function(a, b) {
+    var ap = a.number.split('-'), bp = b.number.split('-');
+    var av = parseInt(ap[0]||0,10)*100+parseInt(ap[1]||0,10);
+    var bv = parseInt(bp[0]||0,10)*100+parseInt(bp[1]||0,10);
+    return av - bv || a.number.localeCompare(b.number);
   });
-  var totalWithData = matchedGids.filter(function(gid) { return Object.keys(groupAccum[gid].weekSales).length > 0; }).length;
-  var allOk = unmatchedRows.length === 0;
 
-  var html = '<div style="margin-bottom:10px;padding:10px 14px;border-radius:8px;background:' + (allOk?'#ecfdf5':'#fffbeb') + ';border:1px solid ' + (allOk?'#34d399':'#fbbf24') + ';">';
-  html += '<span style="font-size:11px;font-weight:800;color:' + (allOk?'#065f46':'#92400e') + ';">✅ ' + matchedGids.length + '개 구역 매칭 | ⚠️ ' + unmatchedRows.length + '개 행 미매칭</span>';
-  if ((parsed.unmatchedHeaders||[]).length) html += '<div style="font-size:9px;color:#92400e;margin-top:3px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>';
-  html += '<div style="font-size:9px;color:#6b7280;margin-top:3px;">7일 합계 ÷ 7 = 일평균 기준 반영 · 같은 조닝 품목은 자동 합산됩니다.</div>';
-  html += '</div>';
+  /* 행별 유효 gid 계산 (고정 예외 > 기본 매칭) */
+  var rawRows = parsed.rawRows;
+  var effectiveGids = rawRows.map(function(rr) {
+    var norm = _zsuNormText(rr.raw);
+    if (overrides[norm] && overrides[norm].z) {
+      for (var gg in groups) {
+        if (groups[gg].number && String(groups[gg].number).trim() === overrides[norm].z) return gg;
+      }
+    }
+    return rr.gid;
+  });
 
-  if (matchedGids.length) {
-    html += '<div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:6px;">✅ 반영될 구역 (' + matchedGids.length + '개)</div>';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:12px;">';
-    html += '<thead><tr style="background:#f0f9ff;"><th style="padding:5px 8px;text-align:left;color:#0369a1;">조닝</th><th style="padding:5px 8px;text-align:left;color:#374151;">그룹명</th><th style="padding:5px 8px;text-align:left;color:#7c3aed;">품목</th><th style="padding:5px 8px;text-align:left;color:#059669;">주차별 일평균</th></tr></thead><tbody>';
-    matchedGids.forEach(function(gid) {
-      var acc = groupAccum[gid];
-      var g = groups[gid] || {};
-      var wkSummary = Object.keys(acc.weekSales).map(function(wid) {
-        var wObj = wsArr.find(function(x) { return x.id === wid; });
-        return (wObj ? wObj.label : wid) + '→' + (Math.round(acc.weekSales[wid]/7*10)/10) + '만';
-      }).join(', ');
-      html += '<tr style="border-bottom:1px solid #f1f5f9;">';
-      html += '<td style="padding:4px 8px;font-weight:700;color:#0369a1;">' + (g.number||'') + '</td>';
-      html += '<td style="padding:4px 8px;color:#374151;">' + (g.label||gid) + '</td>';
-      html += '<td style="padding:4px 8px;color:#7c3aed;font-size:9px;">' + (acc.mcNames||[]).join(', ')
-        + ((acc.overrideMcs||[]).length > 0 ? ' <span style="background:#fef3c7;color:#92400e;font-size:8px;padding:1px 4px;border-radius:3px;margin-left:4px;">주차 예외</span>' : '')
-        + '</td>';
-      html += '<td style="padding:4px 8px;color:#059669;font-size:9px;">' + (wkSummary||'매출없음') + '</td>';
-      html += '</tr>';
+  var totalMatched = effectiveGids.filter(function(g) { return g; }).length;
+  var unmatchedCnt = rawRows.length - totalMatched;
+  var allOk = unmatchedCnt === 0;
+
+  var html = '<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:' + (allOk?'#ecfdf5':'#fffbeb') + ';border:1px solid ' + (allOk?'#34d399':'#fbbf24') + ';">'
+    + '<span style="font-size:11px;font-weight:800;color:' + (allOk?'#065f46':'#92400e') + ';">✅ ' + totalMatched + '개 품목 매칭 | ⚠️ ' + unmatchedCnt + '개 미매칭</span>'
+    + ((parsed.unmatchedHeaders||[]).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">구역이 틀렸으면 드롭다운에서 바로 수정하세요. "유지" 체크 시 다음 업로드에도 자동 적용됩니다.</div>'
+    + '</div>';
+
+  html += '<table style="width:100%;border-collapse:collapse;font-size:10px;">'
+    + '<thead><tr style="background:#f8fafc;position:sticky;top:0;z-index:1;">'
+    + '<th style="padding:5px 8px;text-align:left;color:#374151;font-weight:700;width:22%;">MC명</th>'
+    + '<th style="padding:5px 8px;text-align:left;color:#0369a1;font-weight:700;width:40%;">배정 구역</th>'
+    + '<th style="padding:5px 4px;text-align:center;color:#d97706;font-weight:700;width:10%;">유지</th>'
+    + '<th style="padding:5px 8px;text-align:left;color:#059669;font-weight:700;width:28%;">주차별 일평균</th>'
+    + '</tr></thead><tbody>';
+
+  rawRows.forEach(function(rr, idx) {
+    var effGid = effectiveGids[idx];
+    var norm = _zsuNormText(rr.raw);
+    var hasPin = !!overrides[norm];
+    var isUnmatched = !effGid;
+    var mcEsc = rr.raw.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    var rowBg = isUnmatched ? 'background:#fef2f2;' : (hasPin ? 'background:#fefce8;' : '');
+
+    var wkSummary = Object.keys(rr.weekSales||{}).sort().map(function(wid) {
+      var wObj = wsArr.find(function(x) { return x.id === wid; });
+      return (wObj ? wObj.label : wid) + ':' + (Math.round((rr.weekSales[wid]||0)/7*10)/10) + '만';
+    }).join(' ');
+
+    var selHtml = '<select id="zsu_sel_' + idx + '" style="font-family:inherit;font-size:10px;padding:2px 4px;border:1.5px solid ' + (isUnmatched?'#fca5a5':'#e5e7eb') + ';border-radius:5px;outline:none;width:100%;max-width:220px;">'
+      + '<option value=""' + (!effGid?' selected':'') + '>— 미매칭 —</option>';
+    groupArr.forEach(function(g) {
+      var lbl = (g.number ? g.number+' · ' : '') + g.label;
+      selHtml += '<option value="' + g.gid + '"' + (g.gid===effGid?' selected':'') + '>' + lbl.replace(/</g,'&lt;') + '</option>';
     });
-    html += '</tbody></table>';
-  }
+    selHtml += '</select>'
+      + (hasPin ? ' <span style="background:#fef3c7;color:#92400e;font-size:8px;padding:1px 3px;border-radius:3px;">📌</span>' : '');
 
-  if (unmatchedRows.length) {
-    html += '<details style="margin-top:8px;"><summary style="font-size:11px;font-weight:800;color:#92400e;cursor:pointer;padding:6px 8px;background:#fffbeb;border-radius:6px;">⚠️ 미매칭 행 ' + unmatchedRows.length + '개 (펼치기)</summary>';
-    html += '<div style="margin-top:6px;padding:8px;background:#fef9f0;border-radius:6px;font-size:10px;color:#92400e;">';
-    unmatchedRows.forEach(function(r) {
-      html += '<div style="padding:2px 0;">• ' + r.raw + (r.via ? ' <span style="color:#9ca3af;">(' + r.via + ')</span>' : '') + '</div>';
-    });
-    html += '</div></details>';
-  }
+    html += '<tr style="border-bottom:1px solid #f1f5f9;' + rowBg + '">'
+      + '<td style="padding:3px 8px;font-weight:600;color:#374151;">' + mcEsc
+      + (rr.via && !hasPin ? '<div style="font-size:8px;color:#9ca3af;">' + rr.via.replace(/</g,'&lt;') + '</div>' : '')
+      + '</td>'
+      + '<td style="padding:3px 6px;">' + selHtml + '</td>'
+      + '<td style="padding:3px 4px;text-align:center;"><input type="checkbox" id="zsu_chk_' + idx + '"' + (hasPin?' checked':'') + ' style="cursor:pointer;accent-color:#d97706;" title="체크 시 다음 업로드에도 이 구역으로 자동 배정"/></td>'
+      + '<td style="padding:3px 8px;color:#6b7280;font-size:9px;">' + (wkSummary||'매출없음') + '</td>'
+      + '</tr>';
+  });
 
+  html += '</tbody></table>';
   preview.style.display = 'block';
   preview.innerHTML = html;
   if (applyBtn) {
-    var can = matchedGids.length > 0 && totalWithData > 0;
+    var can = totalMatched > 0;
     applyBtn.disabled = !can;
     applyBtn.style.background = can ? '#059669' : '#94a3b8';
     applyBtn.style.cursor = can ? 'pointer' : 'not-allowed';
@@ -18798,7 +18764,7 @@ function _zsuRenderPreview(parsed) {
 /* ── 도면에 적용 ── */
 function applyZoneSalesUpload() {
   var parsed = window._zsuParsed;
-  if (!parsed || !parsed.groupAccum) return;
+  if (!parsed || !parsed.rawRows) return;
   var store = window.currentStore || 'gs';
   if (!window.weeklySalesStore) window.weeklySalesStore = {};
   if (!window.weeklySalesStore[store]) window.weeklySalesStore[store] = {};
@@ -18809,33 +18775,66 @@ function applyZoneSalesUpload() {
   }
   var allZones = typeof zones !== 'undefined' ? zones : [];
   var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  if (!window.zoningMcOverrides || Array.isArray(window.zoningMcOverrides)) window.zoningMcOverrides = {};
+
+  /* 1) 드롭다운 DOM 읽어서 유효 groupAccum 재계산 */
+  var groupAccum = {};
+  var overridesChanged = false;
+  parsed.rawRows.forEach(function(rr, idx) {
+    var sel = document.getElementById('zsu_sel_' + idx);
+    var chk = document.getElementById('zsu_chk_' + idx);
+    var selGid = sel ? (sel.value || null) : null;
+    var persist = chk ? chk.checked : false;
+    var norm = _zsuNormText(rr.raw);
+
+    if (selGid) {
+      if (!groupAccum[selGid]) groupAccum[selGid] = { weekSales: {}, mcNames: [] };
+      if (groupAccum[selGid].mcNames.indexOf(rr.raw) < 0) groupAccum[selGid].mcNames.push(rr.raw);
+      Object.keys(rr.weekSales||{}).forEach(function(wid) {
+        groupAccum[selGid].weekSales[wid] = (groupAccum[selGid].weekSales[wid] || 0) + (rr.weekSales[wid] || 0);
+      });
+    }
+
+    /* 고정 예외 저장/갱신 */
+    if (persist) {
+      var g = groups[selGid];
+      if (selGid && g && g.number) {
+        var zNum = String(g.number).trim();
+        var existing = window.zoningMcOverrides[norm];
+        if (!existing || existing.z !== zNum) {
+          window.zoningMcOverrides[norm] = { z: zNum, displayName: rr.raw };
+          overridesChanged = true;
+        }
+      } else if (!selGid && window.zoningMcOverrides[norm]) {
+        delete window.zoningMcOverrides[norm];
+        overridesChanged = true;
+      }
+    }
+  });
+  if (overridesChanged) syncZoningMcOverrides();
+
+  /* 2) weeklySalesStore에 반영 */
   var appliedCount = 0;
   var affectedMonths = new Set();
 
-  Object.keys(parsed.groupAccum).forEach(function(gid) {
-    var acc = parsed.groupAccum[gid];
+  Object.keys(groupAccum).forEach(function(gid) {
+    var acc = groupAccum[gid];
     var g = groups[gid];
     if (!g) return;
     var zids = (g.zoneIds || []).filter(function(zid) { return allZones.find(function(z) { return z.id === zid; }); });
-
     Object.keys(acc.weekSales).forEach(function(wid) {
       var weekTotal = acc.weekSales[wid];
       var dailyAvg = Math.round(weekTotal / 7 * 10) / 10;
       var wd = window.weeklySalesStore[store][wid];
       if (!wd) {
-        /* 신규 주차: areaData는 현재 window.areaData를 복사 — 빈 {} 금지(기본값 추정 폭등 방지) */
         wd = { salesData:{}, areaData: JSON.parse(JSON.stringify(window.areaData || {})), salesGroups:{}, salesGroupData:{} };
         window.weeklySalesStore[store][wid] = wd;
       }
       ['salesData','salesGroupData','salesGroups'].forEach(function(k) { if (!wd[k]) wd[k] = {}; });
-      /* areaData가 없는 기존 항목도 보정 */
       if (!wd.areaData) wd.areaData = JSON.parse(JSON.stringify(window.areaData || {}));
-      /* salesGroups: 없을 때만 추가 */
       if (!wd.salesGroups[gid]) wd.salesGroups[gid] = JSON.parse(JSON.stringify(g));
-      /* salesGroupData: sales만 부분 업데이트 — area는 절대 건드리지 않음 */
       if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
       wd.salesGroupData[gid].sales = dailyAvg;
-      /* salesData: 구역별 일평균 배분 — areaData는 건드리지 않음 */
       if (zids.length > 0 && dailyAvg > 0) {
         var spz = Math.round(dailyAvg / zids.length / 10) * 10;
         if (spz > 0) zids.forEach(function(zid) { wd.salesData[zid] = spz; });
@@ -18853,7 +18852,7 @@ function applyZoneSalesUpload() {
   if (typeof renderSalesView === 'function') renderSalesView();
   var modal = document.getElementById('zoneSalesUploadModal');
   if (modal) modal.remove();
-  showToast('✅ ' + appliedCount + '개 주차 매출 반영 완료!');
+  showToast('✅ ' + appliedCount + '개 주차 매출 반영 완료!' + (overridesChanged ? ' · 예외 고정 저장됨' : ''));
 }
 
 /* ── 업로드 모달 ── */
@@ -18865,7 +18864,7 @@ function openZoneSalesUploadModal() {
   modal.id = 'zoneSalesUploadModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
   modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
-  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:660px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
     + '<div style="background:linear-gradient(135deg,#065f46,#059669);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
     + '<div><div style="font-size:15px;font-weight:900;color:#fff;">📥 구역 매출 업로드</div>'
     + '<div style="font-size:10px;color:#a7f3d0;margin-top:2px;">MC명 or 조닝번호 → 자동 매핑 → 주차별 일평균 → 도면 반영</div></div>'
@@ -18932,7 +18931,7 @@ function openZoningMcMapModal() {
     + '<input id="zmcSearch" type="text" placeholder="MC명 또는 조닝번호 검색..." oninput="_renderZmcTable()" style="font-family:inherit;font-size:12px;padding:6px 10px;border:1.5px solid #c4b5fd;border-radius:7px;outline:none;flex:1;min-width:140px;"/>'
     + '<button onclick="_zmcResetToDefault()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#fff;border:1.5px solid #c4b5fd;color:#6d28d9;border-radius:7px;cursor:pointer;white-space:nowrap;">기본값 복원</button>'
     + '<button onclick="syncZoningMcMap();showToast(\'☁️ Firebase 저장 완료\');" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#7c3aed;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">☁️ Firebase 저장</button>'
-    + '<button id="zmcOverrideBtn" onclick="openZoningMcOverrideModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#d97706;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">⏱️ 주차별 예외 (<span id="zmcOverrideCnt">' + (window.zoningMcOverrides||[]).length + '</span>개)</button>'
+    + '<button onclick="openZoningMcOverrideListModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#d97706;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📌 예외 고정 (<span id="zmcOverrideCnt">' + Object.keys(window.zoningMcOverrides||{}).length + '</span>개)</button>'
     + '</div>'
     + '<div style="padding:10px 16px;background:#faf5ff;border-bottom:1px solid #e9d5ff;flex-shrink:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
     + '<span style="font-size:10px;font-weight:700;color:#6d28d9;white-space:nowrap;">➕ 추가:</span>'
@@ -19015,136 +19014,79 @@ function _zmcResetToDefault() {
 }
 
 /* ═══════════════════════════════════════════════
-   주차별 MC override 관리 모달
+   예외 고정 목록 모달 (단순 목록 + 삭제)
 ═══════════════════════════════════════════════ */
-function openZoningMcOverrideModal() {
+function openZoningMcOverrideListModal() {
   if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
-  var ex = document.getElementById('zoningMcOverrideModal');
+  var ex = document.getElementById('zoningMcPinListModal');
   if (ex) ex.remove();
   var modal = document.createElement('div');
-  modal.id = 'zoningMcOverrideModal';
+  modal.id = 'zoningMcPinListModal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9800;display:flex;align-items:center;justify-content:center;';
   modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
-
-  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:760px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
-    + '<div style="background:linear-gradient(135deg,#92400e,#d97706);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
-    + '<div><div style="font-size:15px;font-weight:900;color:#fff;">⏱️ 주차별 MC 예외 규칙</div>'
-    + '<div style="font-size:10px;color:#fde68a;margin-top:2px;">특정 주차에 MC를 기본표와 다른 조닝번호로 연결 · 기본표보다 우선 적용</div></div>'
-    + '<button onclick="document.getElementById(\'zoningMcOverrideModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:560px;max-width:96vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#92400e,#d97706);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:14px;font-weight:900;color:#fff;">📌 예외 고정 목록</div>'
+    + '<div style="font-size:10px;color:#fde68a;margin-top:1px;">업로드 시 이 품목들은 아래 구역으로 자동 배정됩니다</div></div>'
+    + '<button onclick="document.getElementById(\'zoningMcPinListModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
     + '</div>'
-    /* 도움말 */
-    + '<div style="padding:8px 16px;background:#fffbeb;border-bottom:1px solid #fde68a;flex-shrink:0;font-size:10px;color:#92400e;line-height:1.6;">'
-    + '<strong>유형 안내:</strong> 단일주차 — 딱 1주, 범위 — 시작~종료, ~부터 — 시작주차부터 이후 전체<br>'
-    + '주차 입력 예: <code>W19</code> · <code>5월 1주</code> · <code>12/29~1/4</code> | 우선순위: 단일 &gt; 범위 &gt; ~부터'
+    + '<div style="padding:8px 12px;background:#fffbeb;border-bottom:1px solid #fde68a;flex-shrink:0;font-size:10px;color:#92400e;">'
+    + '매출 업로드 미리보기에서 드롭다운을 바꾸고 <strong>"유지"</strong>를 체크한 뒤 적용하면 추가됩니다.'
     + '</div>'
-    /* 추가 폼 */
-    + '<div style="padding:10px 16px;background:#fefce8;border-bottom:1px solid #fde68a;flex-shrink:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
-    + '<span style="font-size:10px;font-weight:700;color:#92400e;white-space:nowrap;">➕ 추가:</span>'
-    + '<input id="zmoNewMc" type="text" placeholder="MC명" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #fcd34d;border-radius:6px;outline:none;flex:1;min-width:100px;"/>'
-    + '<input id="zmoNewZ" type="text" placeholder="조닝번호" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #fcd34d;border-radius:6px;outline:none;width:80px;"/>'
-    + '<select id="zmoNewType" onchange="_zmoTypeChange()" style="font-family:inherit;font-size:11px;padding:5px 6px;border:1.5px solid #fcd34d;border-radius:6px;outline:none;">'
-    + '<option value="single">단일주차</option><option value="range">범위</option><option value="from">~부터</option>'
-    + '</select>'
-    + '<input id="zmoNewFrom" type="text" placeholder="주차(시작)" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #fcd34d;border-radius:6px;outline:none;width:90px;"/>'
-    + '<input id="zmoNewTo" type="text" placeholder="주차(종료)" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #fcd34d;border-radius:6px;outline:none;width:90px;display:none;"/>'
-    + '<button onclick="_zmcAddOverride()" style="font-family:inherit;font-size:11px;font-weight:700;padding:5px 14px;background:#d97706;border:none;color:#fff;border-radius:6px;cursor:pointer;white-space:nowrap;">추가</button>'
-    + '</div>'
-    /* 테이블 */
-    + '<div id="zmoTableWrap" style="flex:1;overflow-y:auto;padding:0 4px 8px;"></div>'
-    /* 푸터 */
+    + '<div id="zmcPinListWrap" style="flex:1;overflow-y:auto;padding:8px;"></div>'
     + '<div style="padding:10px 16px;border-top:1px solid #fde68a;background:#fffbeb;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
-    + '<span style="font-size:10px;color:#9ca3af;">총 <span id="zmoCnt">0</span>개 규칙</span>'
+    + '<span style="font-size:10px;color:#9ca3af;">총 <span id="zmcPinCnt">0</span>개</span>'
     + '<button onclick="syncZoningMcOverrides();_zmoUpdateParentCount();showToast(\'☁️ Firebase 저장 완료\')" style="font-family:inherit;font-size:11px;font-weight:800;padding:6px 18px;background:#d97706;border:none;color:#fff;border-radius:7px;cursor:pointer;">☁️ Firebase 저장</button>'
     + '</div>'
     + '</div>';
-
   document.body.appendChild(modal);
-  _renderZmcOverrideTable();
+  _renderZmcPinList();
 }
 
-function _zmoTypeChange() {
-  var t = (document.getElementById('zmoNewType')||{}).value;
-  var toEl = document.getElementById('zmoNewTo');
-  var fromEl = document.getElementById('zmoNewFrom');
-  if (toEl) toEl.style.display = (t === 'range') ? '' : 'none';
-  if (fromEl) fromEl.placeholder = (t === 'single') ? '주차' : (t === 'from') ? '시작주차' : '시작주차';
-}
-
-function _renderZmcOverrideTable() {
-  var wrap = document.getElementById('zmoTableWrap');
+function _renderZmcPinList() {
+  var wrap = document.getElementById('zmcPinListWrap');
   if (!wrap) return;
-  var arr = window.zoningMcOverrides || [];
-  var cntEl = document.getElementById('zmoCnt');
-  if (cntEl) cntEl.textContent = arr.length;
-  if (!arr.length) {
-    wrap.innerHTML = '<div style="padding:32px;text-align:center;color:#9ca3af;font-size:12px;">등록된 예외 규칙이 없습니다</div>';
+  var ov = window.zoningMcOverrides || {};
+  var keys = Object.keys(ov);
+  var cntEl = document.getElementById('zmcPinCnt');
+  if (cntEl) cntEl.textContent = keys.length;
+  if (!keys.length) {
+    wrap.innerHTML = '<div style="padding:32px;text-align:center;color:#9ca3af;font-size:12px;">고정된 예외 없음</div>';
     return;
   }
-  var typeLabel = { single: '단일주차', range: '범위', from: '~부터' };
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-  html += '<thead><tr style="background:#fef3c7;position:sticky;top:0;z-index:1;">'
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">'
+    + '<thead><tr style="background:#fef3c7;position:sticky;top:0;">'
     + '<th style="padding:6px 10px;text-align:left;color:#92400e;">MC명</th>'
-    + '<th style="padding:6px 10px;text-align:left;color:#059669;">조닝번호</th>'
-    + '<th style="padding:6px 10px;text-align:left;color:#6d28d9;">유형</th>'
-    + '<th style="padding:6px 10px;text-align:left;color:#374151;">적용 범위</th>'
+    + '<th style="padding:6px 10px;text-align:left;color:#059669;">고정 구역</th>'
     + '<th style="padding:6px 10px;width:60px;"></th>'
     + '</tr></thead><tbody>';
-  for (var i = 0; i < arr.length; i++) {
-    var r = arr[i];
-    var rangeStr = r.from || '';
-    if (r.type === 'range') rangeStr += ' ~ ' + (r.to || '');
-    else if (r.type === 'from') rangeStr += ' 이후';
-    var mcEsc = (r.mc||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  keys.forEach(function(normMc) {
+    var entry = ov[normMc];
+    var dispName = (entry.displayName||normMc).replace(/&/g,'&amp;');
+    var safeKey = normMc.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     html += '<tr style="border-bottom:1px solid #fef3c7;">'
-      + '<td style="padding:4px 10px;font-weight:700;color:#92400e;">' + mcEsc + '</td>'
-      + '<td style="padding:4px 10px;color:#059669;font-weight:700;">' + (r.z||'') + '</td>'
-      + '<td style="padding:4px 10px;color:#6d28d9;">' + (typeLabel[r.type]||r.type) + '</td>'
-      + '<td style="padding:4px 10px;color:#374151;">' + rangeStr + '</td>'
-      + '<td style="padding:4px 10px;text-align:right;"><button onclick="_zmcDeleteOverride(' + i + ')" style="font-size:10px;padding:3px 10px;background:#fee2e2;border:none;color:#dc2626;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:700;">삭제</button></td>'
+      + '<td style="padding:5px 10px;font-weight:700;color:#92400e;">' + dispName + '</td>'
+      + '<td style="padding:5px 10px;color:#059669;font-weight:700;">' + (entry.z||'').replace(/&/g,'&amp;') + '</td>'
+      + '<td style="padding:5px 10px;text-align:right;"><button onclick="_zmcClearPin(\'' + safeKey + '\')" style="font-size:10px;padding:3px 10px;background:#fee2e2;border:none;color:#dc2626;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:700;">삭제</button></td>'
       + '</tr>';
-  }
+  });
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
 
-function _zmcAddOverride() {
-  var mc = ((document.getElementById('zmoNewMc')||{}).value||'').trim();
-  var z = ((document.getElementById('zmoNewZ')||{}).value||'').trim();
-  var type = ((document.getElementById('zmoNewType')||{}).value||'single');
-  var from = ((document.getElementById('zmoNewFrom')||{}).value||'').trim();
-  var to = ((document.getElementById('zmoNewTo')||{}).value||'').trim();
-  if (!mc || !z || !from) { showToast('MC명, 조닝번호, 주차를 모두 입력하세요'); return; }
-  if (type === 'range' && !to) { showToast('범위 유형은 종료주차도 입력하세요'); return; }
-  /* 주차 유효성 확인 */
-  if (!_zsuParseWeekId(from)) { showToast('주차를 인식할 수 없습니다: ' + from); return; }
-  if (type === 'range' && !_zsuParseWeekId(to)) { showToast('종료주차를 인식할 수 없습니다: ' + to); return; }
-  if (!window.zoningMcOverrides) window.zoningMcOverrides = [];
-  var rule = { mc: mc, z: z, type: type, from: from };
-  if (type === 'range') rule.to = to;
-  window.zoningMcOverrides.push(rule);
-  /* 입력 초기화 */
-  ['zmoNewMc','zmoNewZ','zmoNewFrom','zmoNewTo'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  _renderZmcOverrideTable();
-  _zmoUpdateParentCount();
-  showToast('✅ 추가: ' + mc + ' → ' + z + ' (' + type + ')');
-}
-
-function _zmcDeleteOverride(idx) {
-  var arr = window.zoningMcOverrides || [];
-  if (idx < 0 || idx >= arr.length) return;
-  var r = arr[idx];
-  if (!confirm('삭제: ' + r.mc + ' → ' + r.z + ' (' + r.type + ')?')) return;
-  arr.splice(idx, 1);
-  _renderZmcOverrideTable();
+function _zmcClearPin(normMc) {
+  var ov = window.zoningMcOverrides || {};
+  if (!ov[normMc]) return;
+  var name = (ov[normMc].displayName||normMc);
+  if (!confirm(name + ' 예외 고정을 삭제합니까?')) return;
+  delete ov[normMc];
+  _renderZmcPinList();
   _zmoUpdateParentCount();
 }
 
 function _zmoUpdateParentCount() {
   var el = document.getElementById('zmcOverrideCnt');
-  if (el) el.textContent = (window.zoningMcOverrides||[]).length;
+  if (el) el.textContent = Object.keys(window.zoningMcOverrides||{}).length;
 }
 </script>
 
