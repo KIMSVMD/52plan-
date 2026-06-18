@@ -18401,10 +18401,20 @@ function syncZoningMcMap() {
   }
 }
 
+/* ── 전각 문자 → 반각 정규화 (전각숫자·전각공백 → 반각) ── */
+function _zsuNormText(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 0x30); })
+    .replace(/　/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /* ── 조닝번호/MC명 → {gid, via} ── */
 function _zsuMatchGroup(str) {
   if (!str) return { gid: null, via: null };
-  var s = String(str).trim();
+  var s = _zsuNormText(str);
   var store = window.currentStore || 'gs';
   var groups = window.salesGroups || {};
   if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
@@ -18432,14 +18442,31 @@ function _zsuMatchGroup(str) {
   return { gid: null, via: null };
 }
 
-/* ── 주차 헤더 → WEEKS.id ── */
+/* ── 주차 헤더 → WEEKS.id (전각 정규화 + N월M주 패턴 매칭 포함) ── */
 function _zsuParseWeekId(h) {
   if (!h) return null;
-  h = String(h).trim();
+  var norm = _zsuNormText(h);
+  if (!norm) return null;
   var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
-  for (var i = 0; i < ws.length; i++) { if (ws[i].id === h) return ws[i].id; }
-  for (var i = 0; i < ws.length; i++) { if (ws[i].dates === h) return ws[i].id; }
-  for (var i = 0; i < ws.length; i++) { if (ws[i].label === h) return ws[i].id; }
+  // 1) id / dates / label 직접 매칭 (정규화 후)
+  for (var i = 0; i < ws.length; i++) { if (ws[i].id === norm) return ws[i].id; }
+  for (var i = 0; i < ws.length; i++) { if (ws[i].dates === norm) return ws[i].id; }
+  for (var i = 0; i < ws.length; i++) { if (ws[i].label === norm) return ws[i].id; }
+  // 2) "N월 M주" 또는 "N월M주" 패턴 → mo(0-base) + wom 매칭
+  var m = norm.match(/^(\d+)월\s*(\d+)주/);
+  if (m) {
+    var mo = parseInt(m[1], 10) - 1;
+    var wom = parseInt(m[2], 10);
+    for (var j = 0; j < ws.length; j++) {
+      if (ws[j].mo === mo && ws[j].wom === wom) return ws[j].id;
+    }
+  }
+  // 3) "W숫자" 대소문자 무시
+  var mW = norm.match(/^[Ww](\d+)$/);
+  if (mW) {
+    var padded = 'W' + String(parseInt(mW[1], 10)).padStart(2, '0');
+    for (var k = 0; k < ws.length; k++) { if (ws[k].id === padded) return ws[k].id; }
+  }
   return null;
 }
 
@@ -18458,7 +18485,7 @@ function _xlsZoningVal(val) {
     var m = d.getUTCMonth() + 1, day = d.getUTCDate();
     if (m >= 1 && m <= 12 && day >= 1 && day <= 31) return m + '-' + day;
   }
-  return String(val == null ? '' : val).trim();
+  return _zsuNormText(val == null ? '' : String(val));
 }
 
 /* ── 파일 파싱 + 그룹별 매출 누산 ── */
@@ -18531,14 +18558,14 @@ function handleZoneSalesFile(file) {
         for (var r = 1; r < rows.length; r++) {
           var row = rows[r];
           var raw = _xlsZoningVal(row[0]);
-          if (!raw) continue;
+          if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
           var mr = _zsuMatchGroup(raw);
           var weekSales = {};
           for (var c2 = 1; c2 < row.length && (c2 - 1) < weekIds.length; c2++) {
             var wid2 = weekIds[c2 - 1];
             if (!wid2) continue;
             var val = parseFloat(String(row[c2] || '0').replace(/,/g, '')) || 0;
-            if (val > 0) weekSales[wid2] = val;
+            if (val > 0) weekSales[wid2] = val / 10000;  /* 원 단위 → 만원 */
           }
           rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales });
           if (mr.gid) {
