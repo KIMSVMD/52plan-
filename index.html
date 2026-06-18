@@ -18661,6 +18661,18 @@ function _zsuShowError(msg) {
   }
 }
 
+/* ── 스냅샷 moKey 헬퍼 ── */
+function _zsuMoKey(store, weekIds) {
+  var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  var moSet = {};
+  (weekIds || []).forEach(function(wid) {
+    var w = wsArr.find(function(x) { return x.id === wid; });
+    if (w != null && w.mo != null) moSet[w.mo] = 1;
+  });
+  var sorted = Object.keys(moSet).map(Number).sort(function(a,b){return a-b;});
+  return store + '_' + (sorted.length ? sorted.join('_') : 'x');
+}
+
 /* ── 주차별 effective gid 헬퍼 ── */
 function _zsuEffGidForWeek(normMc, wid, rrGid, groups, overrides) {
   var ov = (overrides || {})[normMc];
@@ -18753,13 +18765,15 @@ function _zsuRenderPreview(parsed) {
   rawRows.forEach(function(rr, idx) {
     var norm = _zsuNormText(rr.raw);
     var ov = overrides[norm];
-    var hasPin = !!ov;
+    /* 스냅샷 복원 시 pinned 상태 우선 사용 */
+    var hasPin = (rr._savedPinned !== undefined) ? rr._savedPinned : !!ov;
     var mcEsc = rr.raw.replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
-    /* 주차별 effective gid */
+    /* 주차별 effective gid: 스냅샷 복원값 > 현재 overrides */
     var weekGids = {};
     usedWids.forEach(function(wid) {
-      weekGids[wid] = _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides);
+      weekGids[wid] = (rr._savedWeekGidMap && rr._savedWeekGidMap[wid])
+        || _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides);
     });
 
     var anyMatched = usedWids.some(function(wid) { return !!weekGids[wid]; });
@@ -18872,6 +18886,7 @@ function applyZoneSalesUpload() {
   /* 1) DOM 읽어서 품목×주차 단위 groupAccum 재계산 */
   var groupAccum = {};
   var overridesChanged = false;
+  var snapshotRows = [];
   console.log('[ZSU APPLY] ▶ 적용 시작 — rawRows:', parsed.rawRows.length, '/ usedWids:', usedWids.join(','));
 
   parsed.rawRows.forEach(function(rr, idx) {
@@ -18892,6 +18907,16 @@ function applyZoneSalesUpload() {
     });
 
     console.log('[ZSU APPLY] 행' + idx + ' "' + rr.raw + '" bulk=' + bulkGid + ' wkMap=' + JSON.stringify(weekGidMap));
+
+    /* 스냅샷용 행 데이터 수집 */
+    snapshotRows.push({
+      raw: rr.raw,
+      gid: rr.gid || null,
+      via: rr.via || null,
+      weekSales: JSON.parse(JSON.stringify(rr.weekSales || {})),
+      weekGidMap: JSON.parse(JSON.stringify(weekGidMap)),
+      pinned: persist
+    });
 
     /* 주차별 합산 */
     Object.keys(weekGidMap).forEach(function(wid) {
@@ -18955,6 +18980,16 @@ function applyZoneSalesUpload() {
 
   if (overridesChanged) syncZoningMcOverrides();
 
+  /* 스냅샷 저장 */
+  if (!window._zsuSnapshot) window._zsuSnapshot = {};
+  var _snapMoKey = _zsuMoKey(store, usedWids);
+  window._zsuSnapshot[_snapMoKey] = {
+    appliedAt: Date.now(),
+    store: store,
+    weekIds: usedWids.slice(),
+    rows: snapshotRows
+  };
+
   /* 2) weeklySalesStore에 반영 */
   var appliedCount = 0;
   var affectedMonths = new Set();
@@ -18997,6 +19032,30 @@ function applyZoneSalesUpload() {
   showToast('✅ ' + appliedCount + '개 주차 매출 반영 완료!' + (overridesChanged ? ' · 예외 고정 저장됨' : ''));
 }
 
+/* ── 스냅샷 복원 ── */
+function _zsuRestoreSnapshot(moKey) {
+  if (!window._zsuSnapshot) return;
+  var snap = window._zsuSnapshot[moKey];
+  if (!snap || !snap.rows || !snap.rows.length) return;
+  var parsed = {
+    weekIds: snap.weekIds || [],
+    rawRows: snap.rows.map(function(r) {
+      return {
+        raw: r.raw,
+        gid: r.gid || null,
+        via: r.via || null,
+        weekSales: r.weekSales || {},
+        _savedWeekGidMap: r.weekGidMap || {},
+        _savedPinned: r.pinned
+      };
+    }),
+    groupAccum: {},
+    unmatchedHeaders: []
+  };
+  window._zsuParsed = parsed;
+  _zsuRenderPreview(parsed);
+}
+
 /* ── 업로드 모달 ── */
 function openZoneSalesUploadModal() {
   if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
@@ -19017,14 +19076,15 @@ function openZoneSalesUploadModal() {
     + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">주차헤더: W01 · 1월 1주 · 12/29~1/4 형식 모두 지원 | 같은 조닝 품목은 자동 합산</div></div>'
     + '<button onclick="openZoningMcMapModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#f5f3ff;border:1.5px solid #7c3aed;color:#5b21b6;border-radius:7px;cursor:pointer;white-space:nowrap;">🗺️ MC 매핑표</button>'
     + '</div>'
-    + '<div style="padding:14px 20px;flex-shrink:0;">'
-    + '<label id="zsuDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #34d399;border-radius:12px;padding:20px;cursor:pointer;background:#f0fdf4;" ondragover="event.preventDefault();this.style.borderColor=\'#059669\'" ondragleave="this.style.borderColor=\'#34d399\'" ondrop="event.preventDefault();this.style.borderColor=\'#34d399\';handleZoneSalesFile(event.dataTransfer.files[0]);">'
-    + '<div style="font-size:28px;">📥</div>'
+    + '<div style="padding:10px 20px 0;flex-shrink:0;">'
+    + '<label id="zsuDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #34d399;border-radius:12px;padding:16px;cursor:pointer;background:#f0fdf4;" ondragover="event.preventDefault();this.style.borderColor=\'#059669\'" ondragleave="this.style.borderColor=\'#34d399\'" ondrop="event.preventDefault();this.style.borderColor=\'#34d399\';handleZoneSalesFile(event.dataTransfer.files[0]);">'
+    + '<div style="font-size:24px;">📥</div>'
     + '<div style="font-size:12px;font-weight:700;color:#059669;">클릭하거나 파일을 드래그하세요</div>'
     + '<div style="font-size:10px;color:#6b7280;">.xlsx / .xls / .csv 지원</div>'
     + '</label>'
     + '<input id="zsuFileInput" type="file" accept=".xlsx,.xls,.csv" style="display:none"/>'
     + '</div>'
+    + '<div id="zsuSnapSection" style="padding:0 20px;flex-shrink:0;"></div>'
     + '<div id="zsuPreview" style="flex:1;overflow-y:auto;padding:0 20px 8px;display:none;"></div>'
     + '<div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">'
     + '<button id="zsuApplyBtn" onclick="applyZoneSalesUpload()" disabled style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#94a3b8;color:#fff;border:none;border-radius:8px;cursor:not-allowed;">도면에 적용하기</button>'
@@ -19032,6 +19092,41 @@ function openZoneSalesUploadModal() {
     + '</div>'
     + '</div>';
   document.body.appendChild(modal);
+
+  /* 이전 적용 내역 스냅샷 버튼 */
+  var curStore = window.currentStore || 'gs';
+  var snapSection = document.getElementById('zsuSnapSection');
+  if (snapSection && window._zsuSnapshot) {
+    var moNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+    var wsArr2 = typeof WEEKS !== 'undefined' ? WEEKS : [];
+    var snaps = Object.keys(window._zsuSnapshot).filter(function(k) {
+      return window._zsuSnapshot[k].store === curStore;
+    }).sort(function(a, b) {
+      return (window._zsuSnapshot[b].appliedAt||0) - (window._zsuSnapshot[a].appliedAt||0);
+    });
+    if (snaps.length) {
+      var sHtml = '<div style="padding:8px 0 6px;">'
+        + '<span style="font-size:10px;font-weight:700;color:#374151;">📋 이전 적용 내역: </span>';
+      snaps.forEach(function(mk) {
+        var sn = window._zsuSnapshot[mk];
+        var wids = sn.weekIds || [];
+        var firstW = wsArr2.find(function(x) { return x.id === wids[0]; });
+        var lastW  = wsArr2.find(function(x) { return x.id === wids[wids.length - 1]; });
+        var rng = (firstW ? firstW.label : (wids[0]||'?'))
+          + (wids.length > 1 ? ' ~ ' + (lastW ? lastW.label : (wids[wids.length-1]||'?')) : '');
+        var moIdxArr = mk.replace(curStore + '_', '').split('_').map(Number).filter(function(n){return !isNaN(n);});
+        var moLbl = moIdxArr.map(function(i) { return moNames[i] || (i+1+'월'); }).join('/');
+        var dt = sn.appliedAt ? new Date(sn.appliedAt).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'}) : '';
+        var mkEsc = mk.replace(/'/g,"\\'");
+        sHtml += '<button onclick="_zsuRestoreSnapshot(\'' + mkEsc + '\')" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 9px;background:#ecfdf5;border:1.5px solid #34d399;color:#065f46;border-radius:7px;cursor:pointer;white-space:nowrap;margin-right:5px;">'
+          + moLbl + ' (' + rng + ')'
+          + (dt ? '<span style="font-weight:400;color:#6b7280;"> · ' + dt + '</span>' : '')
+          + '</button>';
+      });
+      sHtml += '</div>';
+      snapSection.innerHTML = sHtml;
+    }
+  }
 
   var zsuInput = document.getElementById('zsuFileInput');
   var zsuZone  = document.getElementById('zsuDropZone');
