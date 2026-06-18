@@ -15323,10 +15323,20 @@ function openSalesDataModal() {
   if (!isAdmin) { showToast('️ 관리자만 데이터를 입력할 수 있습니다'); return; }
   if (!document.getElementById('salesDataModal')) buildSalesDataModal();
 
-  // ── 모달 열기 전: 현재 월의 salesGroupData/salesGroups 확실하게 동기화 ──
+  // ── 모달 열기 전: 현재 주차/월의 데이터로 동기화 ──
   var _omo = window.currentSalesMonth;
-  if (_omo !== null && _omo !== undefined &&
+  if (window.currentSalesWeek) {
+    // 주차 탭 선택 중: weeklySalesStore가 단일 출처
+    var _wkd = getSalesWeekData(window.currentSalesWeek);
+    window.salesGroupData = JSON.parse(JSON.stringify(_wkd.salesGroupData));
+    window.salesData      = JSON.parse(JSON.stringify(_wkd.salesData));
+    window.areaData       = JSON.parse(JSON.stringify(_wkd.areaData));
+    if (_wkd.salesGroups && Object.keys(_wkd.salesGroups).length > 0) {
+      window.salesGroups = JSON.parse(JSON.stringify(_wkd.salesGroups));
+    }
+  } else if (_omo !== null && _omo !== undefined &&
       window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
+    // 월 전체 뷰: monthlySalesStore에서 읽기 (레거시 또는 집계)
     var _omd = window.monthlySalesStore[currentStore][_salesMonthKey(_omo)];
     if (_omd) {
       if (_omd.salesGroupData && Object.keys(_omd.salesGroupData).length > 0) {
