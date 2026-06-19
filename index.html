@@ -1725,7 +1725,7 @@ body.viewer-mode #salesMonthNav > div > button{
 <!-- Firebase SDK -->
 <script type="module">
  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
- import { getDatabase, ref, onValue, set, get, serverTimestamp, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+ import { getDatabase, ref, onValue, set, get, update, serverTimestamp, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
  // ══════════════════════════════════════════════════
  // ▼▼▼ 여기에 Firebase 설정을 붙여넣으세요 ▼▼▼
@@ -2230,6 +2230,22 @@ body.viewer-mode #salesMonthNav > div > button{
  syncUI('error', '저장 실패');
  console.error('Firebase save error:', e);
  }
+ };
+
+ // ── 특정 경로만 부분 업데이트 (동시 편집 충돌 방지용) ──
+ // set() 대신 update()를 사용하므로 다른 관리자가 수정한 경로는 덮어쓰지 않음
+ window._firebaseSavePartial = async function(store, updates) {
+  syncUI('syncing', '저장 중...');
+  try {
+   const ts = Date.now();
+   updates.savedAt = ts;
+   _myLastSavedAt[store] = ts;
+   await update(ref(db, 'plan2026/' + store), updates);
+   syncUI('saved', '저장됨 ');
+  } catch(e) {
+   syncUI('error', '저장 실패');
+   console.error('Firebase partial save error:', e);
+  }
  };
 
  // ── 전역 데이터(zoningMcMap 등) Firebase 저장/초기 로드 ──
@@ -8434,6 +8450,9 @@ function saveAll(){
  var allMap = window.storeMap || storeMap;
  var allData = { savedAt: new Date().toISOString(), stores: {} };
  Object.keys(allMap).forEach(function(store){ allData.stores[store] = buildStoreData(store); });
+ // 전역 데이터 (지점별 아님 — plan2026/_global/ 경로)
+ allData.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
+ allData.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
 
  var ts = _makeTimestamp();
  var storeCount = Object.keys(allMap).length;
@@ -8467,6 +8486,9 @@ function saveStore(store) {
  var storeName = allNames[store] || store;
  var data = { savedAt: new Date().toISOString(), stores: {} };
  data.stores[store] = buildStoreData(store);
+ // 전역 데이터 포함
+ data.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
+ data.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
  console.log('[saveStore]', storeName, '- zones:', data.stores[store].zones.length, '개');
  downloadJSON(data, '킴스클럽_2026도면_' + storeName + '_' + ts + '.json');
  showToast(' ' + storeName + ' JSON 저장 완료!');
@@ -8498,12 +8520,71 @@ function buildStoreData(store) {
  merged[wkId] = Object.assign({}, baseOv[wkId]||{}, sesOv[wkId]||{});
  });
 
+ var _isCur = (store === currentStore);
+ var _rot   = (window.storeRotations && window.storeRotations[store]) || (_isCur && typeof canvasRotation !== 'undefined' ? canvasRotation : 0);
+ var _trot  = (window.storeTextRot && window.storeTextRot[store]) || 0;
+ var _ctp   = (window.storeCatTagPos && window.storeCatTagPos[store]) || 'tl';
+ var _off   = (window.storeCanvasOffset && window.storeCanvasOffset[store]) || { r: 0, c: 0 };
+ var _ext   = (window.storeCanvasExtra && window.storeCanvasExtra[store]) || { r: 0, c: 0 };
+ var _seSo  = _isCur
+   ? JSON.parse(JSON.stringify(typeof seasonOverrides !== 'undefined' ? seasonOverrides : {}))
+   : JSON.parse(JSON.stringify((window.storeSeasonOverrides && window.storeSeasonOverrides[store]) || {}));
+
+ function _jc(v) { try { return JSON.parse(JSON.stringify(v || {})); } catch(e) { return {}; } }
+ function _jca(v) { try { return JSON.parse(JSON.stringify(v || [])); } catch(e) { return []; } }
+
+ // productSalesData: Firebase 금지문자 제거
+ function _skFix(o) {
+  if (!o || typeof o !== 'object') return o;
+  if (Array.isArray(o)) return o.map(_skFix);
+  var r = {};
+  Object.keys(o).forEach(function(k) {
+   var sk = k.replace(/[.#$\[\]\/()*\s]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || '_';
+   r[sk] = (o[k] && typeof o[k] === 'object') ? _skFix(o[k]) : o[k];
+  });
+  return r;
+ }
+
  return {
  name: allNames[store] || store,
  zones: sZones,
  userOverrides: merged,
- seasonOverrides: (store === currentStore) ? JSON.parse(JSON.stringify(seasonOverrides)) : {},
- catRegions: (catRegions[store] || []).map(function(r){ return Object.assign({},r); })
+ seasonOverrides: _seSo,
+ catRegions: (catRegions[store] || []).map(function(r){ return Object.assign({},r); }),
+ // 도면 설정
+ canvasRotation: _rot,
+ textRotation: _trot,
+ catTagPos: _ctp,
+ canvasOffsetR: _off.r || 0,
+ canvasOffsetC: _off.c || 0,
+ canvasExtraR: _ext.r || 0,
+ canvasExtraC: _ext.c || 0,
+ monthZoneOverrides: _jc(
+   (window.storeMonthZoneOverrides && window.storeMonthZoneOverrides[store]) ||
+   (_isCur && typeof monthZoneOverrides !== 'undefined' ? monthZoneOverrides : {})
+ ),
+ // 평당매출 데이터 (월별/주차별/구역별)
+ salesData: _jc((window.storeSalesDataMap && window.storeSalesDataMap[store]) || (_isCur ? window.salesData : {})),
+ areaData: _jc((window.storeAreaDataMap && window.storeAreaDataMap[store]) || (_isCur ? window.areaData : {})),
+ manualTotalSales: (window.storeManualSalesMap && window.storeManualSalesMap[store]) || (_isCur ? window.manualTotalSales || 0 : 0),
+ manualTotalArea: (window.storeManualAreaMap && window.storeManualAreaMap[store]) || (_isCur ? window.manualTotalArea || 0 : 0),
+ salesGroups: _jc((window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || (_isCur ? window.salesGroups : {})),
+ salesGroupData: _jc((window.storeSalesGroupDataMap && window.storeSalesGroupDataMap[store]) || (_isCur ? window.salesGroupData : {})),
+ labelOffsets: _jc((window.storeLabelOffsetsMap && window.storeLabelOffsetsMap[store]) || (_isCur ? window.salesLabelOffsets : {})),
+ monthlySales: _jc((window.monthlySalesStore && window.monthlySalesStore[store])),
+ weeklySales: _jc((window.weeklySalesStore && window.weeklySalesStore[store])),
+ salesTargets: _jc(
+   (window.storeSalesTargetsMap && window.storeSalesTargetsMap[store]) ||
+   (window.salesTargets && window.salesTargets[store])
+ ),
+ issueSelections: _jc(
+   (window._issueSelectionsStore && window._issueSelectionsStore[store]) ||
+   (_isCur ? window._issueSelections : {})
+ ),
+ // 상품/구역 매출 (현재 지점만 메모리에 있음)
+ productMaster: _isCur ? _jca(window.productMaster) : [],
+ zoneProducts: _isCur ? _jc(window.zoneProducts) : {},
+ productSalesData: _isCur ? _skFix(_jc(window.productSalesData)) : {}
  };
 }
 
@@ -8638,6 +8719,96 @@ function applyPendingJson() {
  _pendingJsonData = null;
  document.getElementById('jsonConfirmModal').style.display = 'none';
 
+ // 지점 단위 평당매출/설정 데이터 복원 헬퍼
+ function _restoreStoreExtras(code, sd) {
+  if (!sd) return;
+  var _isCur = (code === currentStore);
+  if (!window.monthlySalesStore) window.monthlySalesStore = {};
+  if (!window.weeklySalesStore) window.weeklySalesStore = {};
+  if (!window.storeSalesDataMap) window.storeSalesDataMap = {};
+  if (!window.storeAreaDataMap) window.storeAreaDataMap = {};
+  if (!window.storeManualSalesMap) window.storeManualSalesMap = {};
+  if (!window.storeManualAreaMap) window.storeManualAreaMap = {};
+  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
+  if (!window.storeSalesGroupDataMap) window.storeSalesGroupDataMap = {};
+  if (!window.storeLabelOffsetsMap) window.storeLabelOffsetsMap = {};
+  if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
+  if (!window.salesTargets) window.salesTargets = {};
+  if (!window._issueSelectionsStore) window._issueSelectionsStore = {};
+  if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
+  if (!window.storeSeasonOverrides) window.storeSeasonOverrides = {};
+  if (sd.monthlySales) {
+   window.monthlySalesStore[code] = JSON.parse(JSON.stringify(sd.monthlySales));
+  }
+  if (sd.weeklySales) {
+   window.weeklySalesStore[code] = JSON.parse(JSON.stringify(sd.weeklySales));
+  }
+  if (sd.salesData) window.storeSalesDataMap[code] = JSON.parse(JSON.stringify(sd.salesData));
+  if (sd.areaData) window.storeAreaDataMap[code] = JSON.parse(JSON.stringify(sd.areaData));
+  if (sd.manualTotalSales !== undefined) window.storeManualSalesMap[code] = sd.manualTotalSales;
+  if (sd.manualTotalArea !== undefined) window.storeManualAreaMap[code] = sd.manualTotalArea;
+  if (sd.salesGroups) window.storeSalesGroupsMap[code] = JSON.parse(JSON.stringify(sd.salesGroups));
+  if (sd.salesGroupData) window.storeSalesGroupDataMap[code] = JSON.parse(JSON.stringify(sd.salesGroupData));
+  if (sd.labelOffsets) window.storeLabelOffsetsMap[code] = JSON.parse(JSON.stringify(sd.labelOffsets));
+  if (sd.salesTargets) {
+   window.storeSalesTargetsMap[code] = JSON.parse(JSON.stringify(sd.salesTargets));
+   window.salesTargets[code] = JSON.parse(JSON.stringify(sd.salesTargets));
+  }
+  if (sd.issueSelections) window._issueSelectionsStore[code] = JSON.parse(JSON.stringify(sd.issueSelections));
+  if (sd.monthZoneOverrides) {
+   window.storeMonthZoneOverrides[code] = JSON.parse(JSON.stringify(sd.monthZoneOverrides));
+   if (_isCur && typeof monthZoneOverrides !== 'undefined') {
+    Object.keys(monthZoneOverrides).forEach(function(k){ delete monthZoneOverrides[k]; });
+    Object.assign(monthZoneOverrides, sd.monthZoneOverrides);
+   }
+  }
+  if (sd.seasonOverrides) {
+   window.storeSeasonOverrides[code] = JSON.parse(JSON.stringify(sd.seasonOverrides));
+  }
+  // 도면 회전/오프셋 설정
+  if (!window.storeRotations) window.storeRotations = {};
+  if (!window.storeTextRot) window.storeTextRot = {};
+  if (!window.storeCatTagPos) window.storeCatTagPos = {};
+  if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+  if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+  if (sd.canvasRotation !== undefined) window.storeRotations[code] = sd.canvasRotation;
+  if (sd.textRotation !== undefined) window.storeTextRot[code] = sd.textRotation;
+  if (sd.catTagPos !== undefined) window.storeCatTagPos[code] = sd.catTagPos;
+  if (sd.canvasOffsetR !== undefined || sd.canvasOffsetC !== undefined) {
+   window.storeCanvasOffset[code] = { r: sd.canvasOffsetR || 0, c: sd.canvasOffsetC || 0 };
+  }
+  if (sd.canvasExtraR !== undefined || sd.canvasExtraC !== undefined) {
+   window.storeCanvasExtra[code] = { r: sd.canvasExtraR || 0, c: sd.canvasExtraC || 0 };
+  }
+  // 현재 지점이면 활성 전역 변수에도 반영
+  if (_isCur) {
+   if (sd.salesData) window.salesData = JSON.parse(JSON.stringify(sd.salesData));
+   if (sd.areaData) window.areaData = JSON.parse(JSON.stringify(sd.areaData));
+   if (sd.manualTotalSales !== undefined) window.manualTotalSales = sd.manualTotalSales;
+   if (sd.manualTotalArea !== undefined) window.manualTotalArea = sd.manualTotalArea;
+   if (sd.salesGroups) window.salesGroups = JSON.parse(JSON.stringify(sd.salesGroups));
+   if (sd.salesGroupData) window.salesGroupData = JSON.parse(JSON.stringify(sd.salesGroupData));
+   if (sd.salesLabelOffsets) window.salesLabelOffsets = JSON.parse(JSON.stringify(sd.labelOffsets));
+   if (sd.issueSelections) window._issueSelections = JSON.parse(JSON.stringify(sd.issueSelections));
+   if (sd.productMaster) window.productMaster = JSON.parse(JSON.stringify(sd.productMaster));
+   if (sd.zoneProducts) window.zoneProducts = JSON.parse(JSON.stringify(sd.zoneProducts));
+   if (sd.productSalesData) window.productSalesData = JSON.parse(JSON.stringify(sd.productSalesData));
+  }
+ }
+
+ // 전역 데이터(조닝 매핑) 복원 헬퍼
+ function _restoreGlobal(d) {
+  if (!d) return;
+  if (d.zoningMcMap && Array.isArray(d.zoningMcMap)) {
+   window.zoningMcMap = JSON.parse(JSON.stringify(d.zoningMcMap));
+   if (typeof window._firebaseSaveGlobal === 'function') window._firebaseSaveGlobal('zoningMcMap', window.zoningMcMap);
+  }
+  if (d.zoningMcOverrides && typeof d.zoningMcOverrides === 'object') {
+   window.zoningMcOverrides = JSON.parse(JSON.stringify(d.zoningMcOverrides));
+   if (typeof window._firebaseSaveGlobal === 'function') window._firebaseSaveGlobal('zoningMcOverrides', window.zoningMcOverrides);
+  }
+ }
+
  if (loadedZones && loadedZones.length > 0) {
  zones.length = 0;
  loadedZones.forEach(z => zones.push(z));
@@ -8645,21 +8816,23 @@ function applyPendingJson() {
  Object.keys(userOverrides).forEach(k => delete userOverrides[k]);
  Object.assign(userOverrides, loadedOverrides);
  }
+ // 지점 데이터 소스: data.stores[currentStore] 우선, 없으면 data 루트 (Firebase 직접 형식)
+ const _sd = (data && data.stores && data.stores[currentStore]) || data;
  // seasonOverrides 복원
- if (_pendingJsonData === null && data && data.stores) {
- // 이미 null 처리됨, raw에서 가져옴
- }
- const rawSo = (data && data.stores && data.stores[window.currentStore || 'gs'] || {}).seasonOverrides;
+ const rawSo = (_sd && _sd.seasonOverrides);
  if (rawSo && typeof seasonOverrides !== 'undefined') {
  Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
  Object.assign(seasonOverrides, rawSo);
  }
  // catRegions 복원
- const rawCr = (data && data.catRegions) ||
- (data && data.stores && data.stores[window.currentStore||'gs'] && data.stores[window.currentStore||'gs'].catRegions);
+ const rawCr = (_sd && _sd.catRegions) || (data && data.catRegions);
  if(rawCr && Array.isArray(rawCr)){
  catRegions[currentStore] = JSON.parse(JSON.stringify(rawCr));
  }
+ // 평당매출/설정 전체 복원
+ _restoreStoreExtras(currentStore, _sd);
+ // 전역 데이터 복원
+ _restoreGlobal(data);
  if (typeof window._firebaseSave === 'function') window._firebaseSave(currentStore);
  selId = null;
  render(); renderPanel(); renderNav();
@@ -8675,14 +8848,18 @@ function applyPendingJson() {
  if (window.storeUserOverrides) window.storeUserOverrides[code] = sd.userOverrides || {};
  // catRegions 복원
  if(sd.catRegions && Array.isArray(sd.catRegions)) catRegions[code] = JSON.parse(JSON.stringify(sd.catRegions));
- // 현재 지점이면 seasonOverrides도 복원
+ // seasonOverrides 복원
  if (code === currentStore && sd.seasonOverrides && typeof seasonOverrides !== 'undefined') {
  Object.keys(seasonOverrides).forEach(k => delete seasonOverrides[k]);
  Object.assign(seasonOverrides, sd.seasonOverrides);
  }
+ // 평당매출/설정 전체 복원
+ _restoreStoreExtras(code, sd);
  window._firebaseSave(code);
  });
  }
+ // 전역 데이터 복원
+ _restoreGlobal(data);
  const codes = Object.keys(data.stores).join(', ');
  showToast(' 전체 백업 적용됨 (' + codes + ')');
  }
@@ -11306,7 +11483,15 @@ function saveSalesMonthData(monthIdx) {
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
  _safeSaveGroups(currentStore, window.salesGroups);
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ // 해당 월 경로만 부분 업데이트 → 다른 관리자가 수정 중인 월 데이터를 덮어쓰지 않음
+ if (typeof window._firebaseSavePartial === 'function') {
+  var _mk = _salesMonthKey(monthIdx);
+  var _partialUpdates = {};
+  _partialUpdates['monthlySales/' + _mk] = window.monthlySalesStore[currentStore][_mk];
+  window._firebaseSavePartial(currentStore, _partialUpdates);
+ } else if (typeof syncToFirebase === 'function') {
+  syncToFirebase();
+ }
 }
 
 /* ── 해당 월의 WEEKS 배열 반환 (wom 기준 중복 제거 — 다음 해 반복 항목 제외) ── */
@@ -11420,7 +11605,19 @@ function saveSalesWeekData(weekId) {
   salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
  };
  _updateMonthlyAggregateFromWeeks(currentStore, window.currentSalesMonth);
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ // 해당 주차 경로 + 월간 집계만 부분 업데이트 → 다른 관리자가 수정 중인 데이터를 덮어쓰지 않음
+ if (typeof window._firebaseSavePartial === 'function') {
+  var _wPartial = {};
+  _wPartial['weeklySales/' + weekId] = window.weeklySalesStore[currentStore][weekId];
+  if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined) {
+   var _wMk = _salesMonthKey(window.currentSalesMonth);
+   var _aggData = (window.monthlySalesStore[currentStore] || {})[_wMk];
+   if (_aggData) _wPartial['monthlySales/' + _wMk] = _aggData;
+  }
+  window._firebaseSavePartial(currentStore, _wPartial);
+ } else if (typeof syncToFirebase === 'function') {
+  syncToFirebase();
+ }
 }
 
 /* ── 주차 전환: 이전 주차 저장 → 새 주차 데이터 로드 ── */
