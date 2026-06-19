@@ -2127,12 +2127,11 @@ body.viewer-mode #salesMonthNav > div > button{
    window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets));
    window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets));
  }
- window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
- window.areaData = JSON.parse(JSON.stringify(data.areaData || {}));
+ // ── window.salesData/areaData/salesGroups/salesGroupData는 stale top-level(data.salesData)로
+ //    덮어쓰지 않는다. monthlySalesStore/weeklySalesStore(위에서 Firebase 최신값으로 갱신됨)
+ //    를 통해서만 복원 → 다른 관리자 변경은 monthlySalesStore/weeklySalesStore 경유로 반영됨.
  window.manualTotalSales = data.manualTotalSales || 0;
  window.manualTotalArea = data.manualTotalArea || 0;
- window.salesGroups = JSON.parse(JSON.stringify(data.salesGroups || {}));
- window.salesGroupData = JSON.parse(JSON.stringify(data.salesGroupData || {}));
  window.salesLabelOffsets= JSON.parse(JSON.stringify(data.labelOffsets || {}));
     window.productMaster = JSON.parse(JSON.stringify(data.productMaster || []));
     window.zoneProducts = JSON.parse(JSON.stringify(data.zoneProducts || {}));
@@ -2147,8 +2146,9 @@ body.viewer-mode #salesMonthNav > div > button{
       }
       return _sk(JSON.parse(JSON.stringify(data.productSalesData || {})));
     })();
- // currentSalesMonth 기준 월별 데이터 즉시 적용
- if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined && data.monthlySales) {
+ // 화면 활성 데이터 복원: monthlySalesStore/weeklySalesStore에서만 읽음
+ if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined) {
+  // 월 선택 중: monthlySalesStore에서 현재 월 데이터 복원
   var _rcMKey = 'm' + window.currentSalesMonth;
   var _rcMD = (window.monthlySalesStore[store] || {})[_rcMKey];
   if (_rcMD) {
@@ -2159,7 +2159,7 @@ body.viewer-mode #salesMonthNav > div > button{
    if (_rcMD.salesGroupData) window.salesGroupData = JSON.parse(JSON.stringify(_rcMD.salesGroupData));
   }
  }
- // 주차 선택 중이면 Firebase/monthly 덮어쓰기 결과를 weeklySalesStore로 복원
+ // 주차 선택 중이면 weeklySalesStore로 복원 (월 복원보다 우선)
  if (typeof _ensureWeekGlobals === 'function') _ensureWeekGlobals();
  // 평당매출 탭이 열려있으면 갱신
  if (typeof renderSalesView === 'function' && document.getElementById('salesWrap') &&
@@ -10059,6 +10059,7 @@ function switchStore(store) {
  showToast(s.name + ' 로드');
 
  // ── 새 지점 평당매출 데이터 복원 ──
+ // 1단계: top-level 캐시로 기본 복원
  window.salesData = Object.assign({}, (window.storeSalesDataMap && window.storeSalesDataMap[store]) || {});
  window.areaData = Object.assign({}, (window.storeAreaDataMap && window.storeAreaDataMap[store]) || {});
  window.manualTotalSales = (window.storeManualSalesMap && window.storeManualSalesMap[store]) || 0;
@@ -10066,6 +10067,27 @@ function switchStore(store) {
  window.salesGroups = Object.assign({}, (window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {});
  window.salesGroupData = Object.assign({}, (window.storeSalesGroupDataMap && window.storeSalesGroupDataMap[store]) || {});
  window.salesLabelOffsets = Object.assign({}, (window.storeLabelOffsetsMap && window.storeLabelOffsetsMap[store]) || {});
+ // 2단계: 현재 월/주차 컨텍스트에 맞는 데이터로 덮어씀
+ // (monthlySalesStore/weeklySalesStore가 항상 top-level 캐시보다 정확함)
+ if (window.currentSalesWeek) {
+  // 주차 선택 중: 새 지점의 해당 주차 데이터로 복원
+  var _swWd = typeof getSalesWeekData === 'function' ? getSalesWeekData(window.currentSalesWeek) : null;
+  if (_swWd && (Object.keys(_swWd.salesData||{}).length > 0 || Object.keys(_swWd.salesGroupData||{}).length > 0)) {
+   window.salesData      = JSON.parse(JSON.stringify(_swWd.salesData));
+   window.areaData       = JSON.parse(JSON.stringify(_swWd.areaData));
+   window.salesGroups    = JSON.parse(JSON.stringify(_swWd.salesGroups));
+   window.salesGroupData = JSON.parse(JSON.stringify(_swWd.salesGroupData));
+  }
+ } else if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined) {
+  // 월 선택 중: 새 지점의 해당 월 데이터로 복원
+  var _swMd = typeof getSalesMonthData === 'function' ? getSalesMonthData(window.currentSalesMonth) : null;
+  if (_swMd && (Object.keys(_swMd.salesData||{}).length > 0 || Object.keys(_swMd.salesGroupData||{}).length > 0)) {
+   window.salesData      = JSON.parse(JSON.stringify(_swMd.salesData));
+   window.areaData       = JSON.parse(JSON.stringify(_swMd.areaData));
+   window.salesGroups    = JSON.parse(JSON.stringify(_swMd.salesGroups));
+   window.salesGroupData = JSON.parse(JSON.stringify(_swMd.salesGroupData));
+  }
+ }
 
  // 평당매출 탭이 열려 있으면 새 지점으로 갱신 + 입구로 이동
  if (typeof renderSalesView === 'function' && document.getElementById('salesWrap') &&
@@ -19432,7 +19454,22 @@ function applyZoneSalesUpload() {
     console.log('[ZSU APPLY] 전역 동기화 완료 — salesGroupData=', JSON.stringify(window.salesGroupData).slice(0,200));
   }
 
-  if (typeof syncToFirebase === 'function') syncToFirebase();
+  /* 영향받은 주차/월만 부분 저장 (full set() 대신 partial update()) */
+  if (typeof window._firebaseSavePartial === 'function' && usedWids.length > 0) {
+    var _zsuPartial = {};
+    usedWids.forEach(function(wid) {
+      var _wd = (window.weeklySalesStore[store] || {})[wid];
+      if (_wd) _zsuPartial['weeklySales/' + wid] = _wd;
+    });
+    affectedMonths.forEach(function(moIdx) {
+      var _mk = 'm' + moIdx;
+      var _md = (window.monthlySalesStore[store] || {})[_mk];
+      if (_md) _zsuPartial['monthlySales/' + _mk] = _md;
+    });
+    window._firebaseSavePartial(store, _zsuPartial);
+  } else if (typeof syncToFirebase === 'function') {
+    syncToFirebase();
+  }
   if (typeof renderSalesView === 'function') renderSalesView();
   var modal = document.getElementById('zoneSalesUploadModal');
   if (modal) modal.remove();
