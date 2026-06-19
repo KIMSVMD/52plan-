@@ -11232,28 +11232,83 @@ function calcSalesMetrics() {
    return _wd && (Object.keys(_wd.salesData||{}).length > 0 || Object.keys(_wd.salesGroupData||{}).length > 0);
   });
   const _wAggSales = {}, _wAggCounts = {}, _wAggArea = {};
+  // ── 진단: 어느 주차가 집계 대상인지 + weeklySalesStore 현황
+  var _wsKeys = _ws ? Object.keys(_ws) : [];
+  console.log('[월평균] store=' + _wStore + ' mo=' + _moIdx
+    + ' _weeksForMonth→', _monthWeeks.map(function(w){return w.id;})
+    + ' weeklySalesStore보유주차→', _wsKeys
+    + ' 데이터있는주차→', _weeksWithData.map(function(w){return w.id;}));
   _weeksWithData.forEach(function(w) {
    const _wd = _ws[w.id];
    const _sd = _wd.salesData || {};
+   const _gd = _wd.salesGroupData || {};
+   const _sg = _wd.salesGroups || {};
    const _ad = _wd.areaData || {};
+   console.log('[월평균] 주차=' + w.id + ' salesData키수=' + Object.keys(_sd).length + ' salesGroupData키수=' + Object.keys(_gd).length);
+   // 구역별 zone→group 역방향 맵 (salesData 보완용)
+   var _zoneToGid = {};
+   Object.keys(_sg).forEach(function(gid) {
+    (_sg[gid].zoneIds || []).forEach(function(zid) { _zoneToGid[zid] = gid; });
+   });
    dataZones.forEach(function(z) {
-    const s = _sd[z.id] || 0;
-    const a = _ad[z.id] || 0;
-    if (a > 0 && s > 0) {
+    // ① salesData 직접 조회
+    var s = _sd[z.id] || 0;
+    // ② salesData 없으면 salesGroupData에서 역산 (구역수로 균등 배분)
+    if (s === 0) {
+     var _gid = _zoneToGid[z.id];
+     if (_gid && _gd[_gid] && (_gd[_gid].sales || 0) > 0) {
+      var _grp = _sg[_gid];
+      var _zCount = _grp ? (_grp.zoneIds||[]).length || 1 : 1;
+      s = Math.round(_gd[_gid].sales / _zCount / 10) * 10 || (_gd[_gid].sales / _zCount);
+      console.log('[월평균] 구역=' + (z.number||z.id) + ' 주차=' + w.id + ' salesData없음→groupData역산 s=' + s);
+     }
+    }
+    // ③ area: 주차저장값 → 전역 areaData (셀추정 폴백 없음 — 관리자 입력 평수 사용)
+    var _aWk = (_ad[z.id] > 0) ? _ad[z.id] : 0;
+    var _aGlobal = (window.areaData && window.areaData[z.id] > 0) ? window.areaData[z.id] : 0;
+    var a = _aWk || _aGlobal;
+    if (s > 0 && a > 0) {
      _wAggSales[z.id] = (_wAggSales[z.id] || 0) + s / a;
      _wAggCounts[z.id] = (_wAggCounts[z.id] || 0) + 1;
      _wAggArea[z.id] = a;
+     console.log('[월평균] ✅ 구역=' + (z.number||z.id) + ' 주차=' + w.id + ' s=' + s + ' a=' + a + '(wk=' + _aWk + ' 글로벌=' + _aGlobal + ')');
+    } else if (s > 0 && a === 0) {
+     console.log('[월평균] ⚠️ 구역=' + (z.number||z.id) + ' 주차=' + w.id + ' s=' + s + ' 그러나 area=0 → 제외 (평수 입력 필요)');
     }
    });
   });
   const _wAggPerSales = {};
   dataZones.forEach(function(z) {
    _wAggPerSales[z.id] = (_wAggCounts[z.id] > 0) ? _wAggSales[z.id] / _wAggCounts[z.id] : 0;
+   if (_wAggCounts[z.id] > 0) {
+    console.log('[월평균] 구역=' + (z.number||z.id) + ' 최종평당=' + _wAggPerSales[z.id].toFixed(1) + ' (평균주차수=' + _wAggCounts[z.id] + ')');
+   }
   });
   const _wAllPS = dataZones.map(function(z){ return _wAggPerSales[z.id]||0; }).filter(function(v){return v>0;});
   const _wAvgPS = _wAllPS.length ? _wAllPS.reduce(function(a,b){return a+b;},0)/_wAllPS.length : 1;
   const _wTotalArea = dataZones.reduce(function(s,z){ return s+(_wAggArea[z.id]||0); },0);
   const _wTotalSales = dataZones.reduce(function(s,z){ return s+(_wAggPerSales[z.id]||0)*(_wAggArea[z.id]||0); },0);
+
+  // 그룹별 월 평균 집계 → _monthlyGroupCalc에 저장 (SVG 오버레이 색칠용)
+  // _getSalesGroupTotals가 월 전체 보기에서 이 값을 읽어 올바른 색상을 표시함
+  var _grpsForCalc = (Object.keys(window.salesGroups || {}).length > 0)
+   ? window.salesGroups
+   : ((_weeksWithData.length > 0 && (_ws[_weeksWithData[0].id] || {}).salesGroups) || {});
+  window._monthlyGroupCalc = {};
+  Object.keys(_grpsForCalc).forEach(function(gid) {
+   var _gzids = (_grpsForCalc[gid].zoneIds || []);
+   var _gSales = 0, _gArea = 0;
+   _gzids.forEach(function(zid) {
+    var _ps = _wAggPerSales[zid] || 0;
+    var _ar = _wAggArea[zid] || 0;
+    if (_ps > 0 && _ar > 0) { _gSales += _ps * _ar; _gArea += _ar; }
+   });
+   if (_gSales > 0 && _gArea > 0) {
+    window._monthlyGroupCalc[gid] = { sales: _gSales, area: _gArea };
+    console.log('[월평균-그룹] gid=' + gid + ' sales=' + _gSales.toFixed(1) + ' area=' + _gArea.toFixed(1) + ' 평당=' + (_gSales/_gArea).toFixed(1));
+   }
+  });
+
   return dataZones.map(function(z) {
    const perSales = _wAggPerSales[z.id] || 0;
    const area = _wAggArea[z.id] || 0.1;
@@ -11389,6 +11444,10 @@ function _getCurrentSalesGroupDataMap() {
  if ((window.currentSalesWeek === null || window.currentSalesWeek === undefined) &&
      cur !== null && cur !== undefined &&
      typeof _monthHasWeeklyData === 'function' && _monthHasWeeklyData(store, cur)) {
+  // 월 평균 계산이 완료된 경우 그 결과를 우선 사용 (SVG 그룹 블록 색칠에 필요)
+  if (window._monthlyGroupCalc && Object.keys(window._monthlyGroupCalc).length > 0) {
+   return window._monthlyGroupCalc;
+  }
   return {};
  }
  var direct = window.salesGroupData || {};
@@ -11653,8 +11712,16 @@ function switchSalesWeek(weekId) {
   // 월 전체(누적) 뷰: salesData를 비워 calcSalesMetrics 주차 집계 분기로 진입
   window.salesData = {};
   window.areaData = {};
-  window.salesGroups = {};
   window.salesGroupData = {};
+  window._monthlyGroupCalc = {};
+  // 그룹 구조는 현재 월 데이터에서 복원 (hasGroups=true → SVG 그룹 블록 렌더링 유지)
+  var _swMo = window.currentSalesMonth;
+  if (_swMo !== null && _swMo !== undefined) {
+   var _swMd = getSalesMonthData(_swMo);
+   window.salesGroups = JSON.parse(JSON.stringify(_swMd.salesGroups || {}));
+  } else {
+   window.salesGroups = {};
+  }
  } else {
   var wd = getSalesWeekData(weekId);
   window.salesData = JSON.parse(JSON.stringify(wd.salesData));
