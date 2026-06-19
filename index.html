@@ -196,6 +196,7 @@ body.plan-view-active .nav { display: block; }
 body.sales-view-active .nav { display: none; }
 body.omap-view-active .nav { display: none; }
 /* 평당매출 탭: 월별 탭만 별도 표시 */
+@keyframes salesSavePulse { 0%,100%{opacity:1;} 50%{opacity:.6;} }
 #salesMonthNav { display: none; background:#fff; border-bottom:1px solid #e5e7eb; flex-shrink:0; z-index:200; }
 body.sales-view-active #salesMonthNav { display: block; }
 #salesNavWeeks { flex-shrink:0; }
@@ -2946,6 +2947,7 @@ window.onerror = function(msg, src, line, col, err) {
  <div style="display:flex;align-items:center;gap:0;padding:0 10px 0 14px;border-bottom:1px solid var(--border);min-height:36px;">
  <span style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.5px;margin-right:8px;white-space:nowrap;"> 월별 보기</span>
  <div id="salesNavMonths" style="display:flex;overflow-x:auto;flex:1;scrollbar-width:none;"></div>
+ <button id="salesSaveBtn" onclick="_salesSaveNow()" title="평당매출 데이터를 Firebase에 저장" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #059669;border-radius:4px;background:rgba(16,185,129,.12);color:#059669;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">저장됨 ✓</button>
  <button onclick="openCopyGroupsModal()" title="현재 월 그룹 구성을 다른 월로 복사" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #7c3aed;border-radius:4px;background:rgba(124,58,237,.08);color:#7c3aed;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;" onmouseover="this.style.background='rgba(124,58,237,.18)'" onmouseout="this.style.background='rgba(124,58,237,.08)'">
    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><rect x="5" y="1" width="9" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="1" y="4" width="9" height="11" rx="2" fill="rgba(124,58,237,.15)" stroke="currentColor" stroke-width="1.7"/></svg>
    그룹 복사
@@ -9934,6 +9936,10 @@ function updateSaveDropdown() {}
 
 function switchStore(store) {
  if (currentStore === store) return;
+ // 평당매출 미저장 데이터 경고
+ if (window._salesDirty) {
+  if (!confirm('평당매출에 저장하지 않은 변경사항이 있습니다.\n지점을 전환하면 현재 지점의 변경사항이 Firebase에 저장되지 않습니다.\n\n이동하시겠습니까?')) return;
+ }
  window._isSwitchingStore = true; // 지점 전환 중 플래그 — Firebase onValue 렌더 억제용
  // 현재 점포 수정 내용 전부 저장 (userOverrides + zones 편집본)
  storeUserOverrides[currentStore] = JSON.parse(JSON.stringify(userOverrides));
@@ -9965,6 +9971,9 @@ function switchStore(store) {
  window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
  window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
  currentStore = store;
+ // 지점 전환 시 평당매출 dirty 플래그 초기화 (새 지점은 클린 상태로 시작)
+ window._salesDirty = false;
+ _updateSalesSaveBtn();
  // monthZoneOverrides 지점별 전환
  if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
  Object.keys(monthZoneOverrides).forEach(k => delete monthZoneOverrides[k]);
@@ -10784,6 +10793,10 @@ function switchView(view) {
 
  const zc = document.getElementById('zoomCtrl');
 
+ // 평당매출 탭을 떠날 때 미저장 데이터 경고
+ if (view !== 'sales' && window._salesDirty) {
+  if (!confirm('평당매출에 저장하지 않은 변경사항이 있습니다.\n지금 이동하면 Firebase에 저장되지 않습니다.\n(메모리에는 남아 있어 탭 안에서는 유지됩니다)\n\n이동하시겠습니까?')) return;
+ }
  if (view === 'plan') {
  planView.style.display = 'flex';
  omapWrap.style.display = 'none';
@@ -11517,6 +11530,74 @@ if (!window.weeklySalesStore) window.weeklySalesStore = {};
 if (!window.salesTargets) window.salesTargets = {};
 if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
 
+/* ── 평당매출 수동 저장 인프라 ── */
+window._salesDirty = false;
+function _markSalesDirty() {
+ window._salesDirty = true;
+ _updateSalesSaveBtn();
+}
+function _markSalesClean() {
+ window._salesDirty = false;
+ _updateSalesSaveBtn();
+}
+function _updateSalesSaveBtn() {
+ var btn = document.getElementById('salesSaveBtn');
+ if (!btn) return;
+ if (window._salesDirty) {
+  btn.textContent = '⚠ 저장 필요';
+  btn.style.background = '#dc2626';
+  btn.style.color = '#fff';
+  btn.style.borderColor = '#b91c1c';
+  btn.style.animation = 'salesSavePulse 1.8s ease-in-out infinite';
+ } else {
+  btn.textContent = '저장됨 ✓';
+  btn.style.background = 'rgba(16,185,129,.12)';
+  btn.style.color = '#059669';
+  btn.style.borderColor = '#059669';
+  btn.style.animation = '';
+ }
+}
+function _salesSaveNow() {
+ if (typeof isViewer !== 'undefined' && isViewer) { showToast('열람 모드 — 저장 불가'); return; }
+ var btn = document.getElementById('salesSaveBtn');
+ if (btn) { btn.textContent = '저장 중...'; btn.disabled = true; btn.style.animation = ''; }
+ // 현재 주차·월 상태를 메모리에 확정
+ var wk = window.currentSalesWeek;
+ var mo = window.currentSalesMonth;
+ if (wk) {
+  saveSalesWeekData(wk);
+ } else if (mo !== null && mo !== undefined) {
+  saveSalesMonthData(mo);
+ }
+ _salesSaveAllToFirebase();
+}
+function _salesSaveAllToFirebase() {
+ var store = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+ // ① 주차 데이터 부분 저장 (syncToFirebase가 weeklySalesStore를 저장하지 않을 수 있음)
+ if (typeof window._firebaseSavePartial === 'function') {
+  var ws = (window.weeklySalesStore || {})[store] || {};
+  var _wkUpd = {};
+  Object.keys(ws).forEach(function(wid) { _wkUpd['weeklySales/' + wid] = ws[wid]; });
+  if (Object.keys(_wkUpd).length > 0) window._firebaseSavePartial(store, _wkUpd);
+ }
+ // ② 나머지 전체 저장 (월별·그룹·목표·도면 등)
+ if (typeof syncToFirebase === 'function') syncToFirebase();
+ setTimeout(function() {
+  _markSalesClean();
+  var btn = document.getElementById('salesSaveBtn');
+  if (btn) btn.disabled = false;
+  showToast('✅ 저장 완료');
+ }, 600);
+}
+// 페이지 닫기·새로고침 시 미저장 경고
+window.addEventListener('beforeunload', function(e) {
+ if (window._salesDirty) {
+  e.preventDefault();
+  e.returnValue = '평당매출에 저장하지 않은 변경사항이 있습니다.';
+  return e.returnValue;
+ }
+});
+
 /* ── 월 인덱스 → 스토어 키 변환 ── */
 function _salesMonthKey(idx) {
  return 'm' + idx; // 'm0' ~ 'm11'
@@ -11564,15 +11645,8 @@ function saveSalesMonthData(monthIdx) {
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
  _safeSaveGroups(currentStore, window.salesGroups);
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
- // 해당 월 경로만 부분 업데이트 → 다른 관리자가 수정 중인 월 데이터를 덮어쓰지 않음
- if (typeof window._firebaseSavePartial === 'function') {
-  var _mk = _salesMonthKey(monthIdx);
-  var _partialUpdates = {};
-  _partialUpdates['monthlySales/' + _mk] = window.monthlySalesStore[currentStore][_mk];
-  window._firebaseSavePartial(currentStore, _partialUpdates);
- } else if (typeof syncToFirebase === 'function') {
-  syncToFirebase();
- }
+ // 메모리 저장만 수행 — Firebase 저장은 사용자가 저장 버튼을 눌렀을 때만
+ _markSalesDirty();
 }
 
 /* ── 해당 월의 WEEKS 배열 반환 (wom 기준 중복 제거 — 다음 해 반복 항목 제외) ── */
@@ -11686,19 +11760,8 @@ function saveSalesWeekData(weekId) {
   salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
  };
  _updateMonthlyAggregateFromWeeks(currentStore, window.currentSalesMonth);
- // 해당 주차 경로 + 월간 집계만 부분 업데이트 → 다른 관리자가 수정 중인 데이터를 덮어쓰지 않음
- if (typeof window._firebaseSavePartial === 'function') {
-  var _wPartial = {};
-  _wPartial['weeklySales/' + weekId] = window.weeklySalesStore[currentStore][weekId];
-  if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined) {
-   var _wMk = _salesMonthKey(window.currentSalesMonth);
-   var _aggData = (window.monthlySalesStore[currentStore] || {})[_wMk];
-   if (_aggData) _wPartial['monthlySales/' + _wMk] = _aggData;
-  }
-  window._firebaseSavePartial(currentStore, _wPartial);
- } else if (typeof syncToFirebase === 'function') {
-  syncToFirebase();
- }
+ // 메모리 저장만 수행 — Firebase 저장은 사용자가 저장 버튼을 눌렀을 때만
+ _markSalesDirty();
 }
 
 /* ── 주차 전환: 이전 주차 저장 → 새 주차 데이터 로드 ── */
@@ -13997,7 +14060,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
        if (newNum === null) return;
        grp.number = newNum;
        _safeSaveGroups(currentStore, window.salesGroups);
-       if (typeof syncToFirebase === 'function') syncToFirebase();
+       _markSalesDirty();
        if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
      }; })(gid, g);
 
@@ -14012,7 +14075,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
        if (!newName) { showToast('이름을 비울 수 없습니다.'); return; }
        grp.label = newName;
        _safeSaveGroups(currentStore, window.salesGroups);
-       if (typeof syncToFirebase === 'function') syncToFirebase();
+       _markSalesDirty();
        if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
        var _gcS = document.getElementById('gc-sales');
        var _tbl = document.querySelector('#salesWrap [data-sales-panel]');
@@ -15243,7 +15306,7 @@ function addSalesGroup() {
  // storeSalesGroupsMap 백업 + Firebase 동기화
  if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
  _safeSaveGroups(currentStore, window.salesGroups);
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ _markSalesDirty();
 }
 
 function selectSalesGroup(gid) {
@@ -15262,7 +15325,7 @@ function deleteSalesGroup(gid) {
  if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
  showToast('그룹 삭제됨');
  _safeSaveGroups(currentStore, window.salesGroups);
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ _markSalesDirty();
 }
 
 // 그룹 데이터 완전 삭제 헬퍼 (모달 삭제 버튼과 공유)
@@ -15374,7 +15437,7 @@ function addSalesGroupClickListeners() {
    salesGroups: JSON.parse(JSON.stringify(window.salesGroups))
   });
  }
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ _markSalesDirty();
  };
  el.addEventListener('click', handler);
  _sgClickHandlers.push({ el, handler });
@@ -15921,7 +15984,7 @@ function _buildGroupCard(gid, g, catKey) {
     if (window.salesGroups && window.salesGroups[gid]) {
       window.salesGroups[gid].category = catSel.value;
       _safeSaveGroups(currentStore, window.salesGroups);
-      if (typeof syncToFirebase === 'function') syncToFirebase();
+      _markSalesDirty();
     }
   };
 
@@ -15940,7 +16003,7 @@ function _buildGroupCard(gid, g, catKey) {
     if (!confirm('"' + g.label + '" 그룹과 관련 매출 데이터를 모두 삭제할까요?')) return;
     _purgeGroupData(gid, g);
     _safeSaveGroups(currentStore, window.salesGroups);
-    if (typeof syncToFirebase === 'function') syncToFirebase();
+    _markSalesDirty();
     showToast('"' + g.label + '" 삭제 완료');
     var modal = document.getElementById('salesDataModal');
     if (modal) { modal.remove(); openSalesDataModal(); }
@@ -16069,7 +16132,7 @@ function updateSalesTarget(gid) {
  } else {
   delete window.salesTargets[currentStore][gid];
  }
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ _markSalesDirty();
  var gc = document.getElementById('gc-sales');
  var panel = document.querySelector('#salesWrap [data-sales-panel]');
  if (gc && panel) { refreshSalesContent(gc, panel); } else { renderSalesView(); }
@@ -16529,7 +16592,7 @@ function applyExcelData() {
  });
 
  document.getElementById('excelUploadModal').style.display = 'none';
- showToast(' ' + applied + '개 구역에 데이터가 적용되었습니다 — Firebase 동기화 중...');
+ showToast(' ' + applied + '개 구역에 데이터가 적용되었습니다 — 저장 버튼으로 저장하세요');
 
  // storeSalesDataMap / storeAreaDataMap 백업
  if (!window.storeSalesDataMap) window.storeSalesDataMap = {};
@@ -16537,11 +16600,11 @@ function applyExcelData() {
  window.storeSalesDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesData || {}));
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
 
- // 월별 데이터 저장 (월이 선택된 경우)
+ // 메모리에만 저장 — Firebase 저장은 저장 버튼으로
  if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined) {
  saveSalesMonthData(window.currentSalesMonth);
  } else {
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ _markSalesDirty();
  }
  renderSalesView();
 }
@@ -16688,8 +16751,7 @@ function applySalesData() {
  closeSalesDataModal();
  showToast('\u2705 데이터 저장 완료 — Firebase 동기화 중...');
  renderSalesView();
-
- if (typeof syncToFirebase === 'function') syncToFirebase();
+ _markSalesDirty();
 }
 
 /* ── 구버전 함수 호환용 stub ── */
@@ -18127,7 +18189,7 @@ function applyProductSalesData() {
     }
   }
 
-  if (typeof syncToFirebase === 'function') syncToFirebase();
+  _markSalesDirty();
 
   var matched = rows.filter(function(r){ return (window.productMaster||[]).includes(r.productName); }).length;
   showToast('✅ ' + matched + '개 상품 매출 도면 반영 완료!');
@@ -18522,7 +18584,7 @@ function applyCopyGroups() {
       _cgmApplyAreaToWeeks(idx, srcAreaData, srcGroups, srcSgd);
       copiedTo.push(MONTH_LABELS[idx]);
     });
-    if (typeof syncToFirebase === 'function') syncToFirebase();
+    _markSalesDirty();
     if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
     closeCopyGroupsModal();
     showToast('✅ ' + copiedTo.join(', ') + '에 그룹 구성+면적+목표 복사 완료!');
@@ -18560,7 +18622,7 @@ function applyCopyGroups() {
     var _tbl = document.querySelector('#salesWrap [data-sales-panel]');
     if (_gcS && _tbl) { refreshSalesContent(_gcS, _tbl); } else { renderSalesView(); }
     if (typeof window._refreshGroupSidePanel === 'function') window._refreshGroupSidePanel();
-    if (typeof syncToFirebase === 'function') syncToFirebase();
+    _markSalesDirty();
     if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
     closeCopyGroupsModal();
     showToast('✅ ' + MONTH_LABELS[srcIdx] + ' 그룹 구성+면적+목표를 현재 월에 가져왔습니다!');
@@ -18589,7 +18651,7 @@ function applyCopyGroups() {
       var wObj = (typeof WEEKS !== 'undefined' ? WEEKS : []).find(function(w) { return w.id === wid; });
       copiedWeeks.push(wObj ? wObj.label : wid);
     });
-    if (typeof syncToFirebase === 'function') syncToFirebase();
+    _markSalesDirty();
     closeCopyGroupsModal();
     showToast('✅ ' + copiedWeeks.join(', ') + '에 그룹 구성+면적 복사 완료!');
   }
@@ -19521,22 +19583,8 @@ function applyZoneSalesUpload() {
     console.log('[ZSU APPLY] 전역 동기화 완료 — salesGroupData=', JSON.stringify(window.salesGroupData).slice(0,200));
   }
 
-  /* 영향받은 주차/월만 부분 저장 (full set() 대신 partial update()) */
-  if (typeof window._firebaseSavePartial === 'function' && usedWids.length > 0) {
-    var _zsuPartial = {};
-    usedWids.forEach(function(wid) {
-      var _wd = (window.weeklySalesStore[store] || {})[wid];
-      if (_wd) _zsuPartial['weeklySales/' + wid] = _wd;
-    });
-    affectedMonths.forEach(function(moIdx) {
-      var _mk = 'm' + moIdx;
-      var _md = (window.monthlySalesStore[store] || {})[_mk];
-      if (_md) _zsuPartial['monthlySales/' + _mk] = _md;
-    });
-    window._firebaseSavePartial(store, _zsuPartial);
-  } else if (typeof syncToFirebase === 'function') {
-    syncToFirebase();
-  }
+  /* 영향받은 주차/월을 메모리에만 저장 — Firebase는 저장 버튼으로 */
+  _markSalesDirty();
   if (typeof renderSalesView === 'function') renderSalesView();
   var modal = document.getElementById('zoneSalesUploadModal');
   if (modal) modal.remove();
