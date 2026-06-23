@@ -3027,7 +3027,7 @@ window.onerror = function(msg, src, line, col, err) {
  <div style="display:flex;align-items:center;gap:0;padding:0 10px 0 14px;border-bottom:1px solid var(--border);min-height:36px;">
  <span style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.5px;margin-right:8px;white-space:nowrap;"> 월별 보기</span>
  <div id="salesNavMonths" style="display:flex;overflow-x:auto;flex:1;scrollbar-width:none;"></div>
- <button id="salesSaveBtn" onclick="_salesSaveNow()" title="평당매출 데이터를 Firebase에 저장" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #059669;border-radius:4px;background:rgba(16,185,129,.12);color:#059669;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">저장됨 ✓</button>
+ <button id="salesSaveBtn" onclick="_salesSaveNow()" title="평당매출 데이터를 Firebase 서버에 저장합니다" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #059669;border-radius:4px;background:rgba(16,185,129,.12);color:#059669;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">✓ 서버 저장됨</button>
  <button id="salesLockBtn" onclick="_salesEditStart()" title="클릭해서 편집 잠금 — 다른 관리자의 동시 수정을 차단합니다" style="flex-shrink:0;margin-left:4px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #3b82f6;border-radius:4px;background:rgba(59,130,246,.10);color:#3b82f6;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">✏ 수정하기</button>
  <button onclick="openCopyGroupsModal()" title="현재 월 그룹 구성을 다른 월로 복사" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #7c3aed;border-radius:4px;background:rgba(124,58,237,.08);color:#7c3aed;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;" onmouseover="this.style.background='rgba(124,58,237,.18)'" onmouseout="this.style.background='rgba(124,58,237,.08)'">
    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><rect x="5" y="1" width="9" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="1" y="4" width="9" height="11" rx="2" fill="rgba(124,58,237,.15)" stroke="currentColor" stroke-width="1.7"/></svg>
@@ -11651,13 +11651,13 @@ function _updateSalesSaveBtn() {
  var btn = document.getElementById('salesSaveBtn');
  if (!btn) return;
  if (window._salesDirty) {
-  btn.textContent = '⚠ 저장 필요';
+  btn.textContent = '▲ 서버에 저장';
   btn.style.background = '#dc2626';
   btn.style.color = '#fff';
   btn.style.borderColor = '#b91c1c';
   btn.style.animation = 'salesSavePulse 1.8s ease-in-out infinite';
  } else {
-  btn.textContent = '저장됨 ✓';
+  btn.textContent = '✓ 서버 저장됨';
   btn.style.background = 'rgba(16,185,129,.12)';
   btn.style.color = '#059669';
   btn.style.borderColor = '#059669';
