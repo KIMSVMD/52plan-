@@ -2223,9 +2223,21 @@ body.viewer-mode #salesMonthNav > div > button{
   console.error('[FIREBASE] 여전히 오염된 키:', _badKeys);
  }
  _myLastSavedAt[store] = payload.savedAt;
- console.log('[FIREBASE SET]', store, '| canvasRotation:', payload.canvasRotation);
- await set(ref(db, 'plan2026/' + store), payload);
- console.log('[FIREBASE SET 완료]', store);
+ // set() → update() 전환: monthlySales·weeklySales는 월·주차 단위 경로로 분리
+ // set()은 노드 전체를 교체하므로 다른 관리자가 저장한 월·주차 데이터까지 삭제됨 → update()로 병합 저장
+ var _planUpd = {};
+ Object.keys(payload).forEach(function(k) {
+  if (k !== 'monthlySales' && k !== 'weeklySales') _planUpd[k] = payload[k];
+ });
+ Object.keys(payload.monthlySales || {}).forEach(function(mk) {
+  _planUpd['monthlySales/' + mk] = payload.monthlySales[mk];
+ });
+ Object.keys(payload.weeklySales || {}).forEach(function(wk) {
+  _planUpd['weeklySales/' + wk] = payload.weeklySales[wk];
+ });
+ console.log('[FIREBASE UPDATE]', store, '| canvasRotation:', payload.canvasRotation);
+ await update(ref(db, 'plan2026/' + store), _planUpd);
+ console.log('[FIREBASE UPDATE 완료]', store);
  syncUI('saved', '저장됨 ');
  } catch(e) {
  syncUI('error', '저장 실패');
@@ -11573,15 +11585,27 @@ function _salesSaveNow() {
 }
 function _salesSaveAllToFirebase() {
  var store = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
- // ① 주차 데이터 부분 저장 (syncToFirebase가 weeklySalesStore를 저장하지 않을 수 있음)
+ // 평당매출 전용 필드만 update()로 병합 저장
+ // syncToFirebase()를 호출하지 않으므로 도면·설정 등 비매출 필드는 건드리지 않음
  if (typeof window._firebaseSavePartial === 'function') {
+  var _salesUpd = {};
+  // 주차 데이터: 주차별 개별 경로 (다른 관리자의 주차 보존)
   var ws = (window.weeklySalesStore || {})[store] || {};
-  var _wkUpd = {};
-  Object.keys(ws).forEach(function(wid) { _wkUpd['weeklySales/' + wid] = ws[wid]; });
-  if (Object.keys(_wkUpd).length > 0) window._firebaseSavePartial(store, _wkUpd);
+  Object.keys(ws).forEach(function(wid) { _salesUpd['weeklySales/' + wid] = ws[wid]; });
+  // 월별 데이터: 월별 개별 경로 (다른 관리자의 월 데이터 보존)
+  var ms = (window.monthlySalesStore || {})[store] || {};
+  Object.keys(ms).forEach(function(mk) { _salesUpd['monthlySales/' + mk] = ms[mk]; });
+  // 매출 스칼라·그룹·목표·라벨
+  _salesUpd.salesData        = JSON.parse(JSON.stringify(window.salesData || {}));
+  _salesUpd.areaData         = JSON.parse(JSON.stringify(window.areaData || {}));
+  _salesUpd.salesGroups      = JSON.parse(JSON.stringify(typeof _getActiveGroups === 'function' ? _getActiveGroups(store) : (window.salesGroups || {})));
+  _salesUpd.salesGroupData   = JSON.parse(JSON.stringify(window.salesGroupData || {}));
+  _salesUpd.labelOffsets     = JSON.parse(JSON.stringify(window.salesLabelOffsets || {}));
+  _salesUpd.manualTotalSales = window.manualTotalSales || 0;
+  _salesUpd.manualTotalArea  = window.manualTotalArea  || 0;
+  _salesUpd.salesTargets     = JSON.parse(JSON.stringify((window.salesTargets && window.salesTargets[store]) || {}));
+  window._firebaseSavePartial(store, _salesUpd);
  }
- // ② 나머지 전체 저장 (월별·그룹·목표·도면 등)
- if (typeof syncToFirebase === 'function') syncToFirebase();
  setTimeout(function() {
   _markSalesClean();
   var btn = document.getElementById('salesSaveBtn');
