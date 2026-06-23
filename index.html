@@ -11661,6 +11661,7 @@ if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
 window._salesDirty = false;
 function _markSalesDirty() {
  window._salesDirty = true;
+ console.trace('[DIRTY] _markSalesDirty 호출됨');
  _updateSalesSaveBtn();
  if (typeof _salesResetInactivity === 'function') _salesResetInactivity();
 }
@@ -11671,18 +11672,26 @@ function _markSalesClean() {
 function _updateSalesSaveBtn() {
  var btn = document.getElementById('salesSaveBtn');
  if (!btn) return;
- if (window._salesDirty) {
+ var isEditor = !!window._salesIAmEditor;
+ if (isEditor && window._salesDirty) {
   btn.textContent = '▲ 서버에 저장';
   btn.style.background = '#dc2626';
   btn.style.color = '#fff';
   btn.style.borderColor = '#b91c1c';
   btn.style.animation = 'salesSavePulse 1.8s ease-in-out infinite';
+  btn.disabled = false;
+  btn.style.opacity = '';
+  btn.style.cursor = 'pointer';
  } else {
   btn.textContent = '✓ 서버 저장됨';
   btn.style.background = 'rgba(16,185,129,.12)';
   btn.style.color = '#059669';
   btn.style.borderColor = '#059669';
   btn.style.animation = '';
+  // 잠금 미보유 시 비활성화
+  btn.disabled = !isEditor;
+  btn.style.opacity = isEditor ? '' : '0.45';
+  btn.style.cursor = isEditor ? 'pointer' : 'default';
  }
 }
 function _salesSaveNow() {
@@ -11813,13 +11822,13 @@ window._updateSalesLockUI = function(lockData, scopeKey) {
   if (isOthers) {
    salesWrap.style.pointerEvents = 'none';
    salesWrap.style.opacity = '0.55';
-   if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.4'; }
   } else {
    salesWrap.style.pointerEvents = '';
    salesWrap.style.opacity = '';
-   if (saveBtn && !saveBtn.disabled) saveBtn.style.opacity = '';
   }
  }
+ // 잠금 상태 변경에 따라 저장 버튼 활성/비활성 동기화
+ _updateSalesSaveBtn();
 };
 
 function _salesEditStart() {
@@ -11906,8 +11915,7 @@ function saveSalesMonthData(monthIdx) {
  window.storeAreaDataMap[currentStore] = JSON.parse(JSON.stringify(window.areaData || {}));
  _safeSaveGroups(currentStore, window.salesGroups);
  window.storeSalesGroupDataMap[currentStore] = JSON.parse(JSON.stringify(window.salesGroupData || {}));
- // 메모리 저장만 수행 — Firebase 저장은 사용자가 저장 버튼을 눌렀을 때만
- _markSalesDirty();
+ // 메모리 스냅샷만 — dirty 여부는 호출자가 판단
 }
 
 /* ── 해당 월의 WEEKS 배열 반환 (wom 기준 중복 제거 — 다음 해 반복 항목 제외) ── */
@@ -12021,8 +12029,7 @@ function saveSalesWeekData(weekId) {
   salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
  };
  _updateMonthlyAggregateFromWeeks(currentStore, window.currentSalesMonth);
- // 메모리 저장만 수행 — Firebase 저장은 사용자가 저장 버튼을 눌렀을 때만
- _markSalesDirty();
+ // 메모리 스냅샷만 — dirty 여부는 호출자가 판단
 }
 
 /* ── 주차 전환: 이전 주차 저장 → 새 주차 데이터 로드 ── */
@@ -16896,9 +16903,8 @@ function applyExcelData() {
  // 메모리에만 저장 — Firebase 저장은 저장 버튼으로
  if (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined) {
  saveSalesMonthData(window.currentSalesMonth);
- } else {
- _markSalesDirty();
  }
+ _markSalesDirty(); // 엑셀 업로드 = 사용자 직접 편집
  renderSalesView();
 }
 
