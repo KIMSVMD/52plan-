@@ -1726,7 +1726,7 @@ body.viewer-mode #salesMonthNav > div > button{
 <!-- Firebase SDK -->
 <script type="module">
  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
- import { getDatabase, ref, onValue, set, get, update, serverTimestamp, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+ import { getDatabase, ref, onValue, set, get, update, runTransaction, serverTimestamp, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
  // ══════════════════════════════════════════════════
  // ▼▼▼ 여기에 Firebase 설정을 붙여넣으세요 ▼▼▼
@@ -2656,6 +2656,74 @@ body.viewer-mode #salesMonthNav > div > button{
  if (_slot) _slot.style.display = 'flex';
  };
 
+ // ── 편집 잠금 (plan2026/_locks/{store}/sales) ─────────────────
+ let _myLockRef = null;
+ let _lockListenerUnsubMap = {};
+
+ // 잠금 획득 (runTransaction으로 원자적 — 두 명이 동시에 눌러도 한 명만 성공)
+ window._salesLockAcquire = async function(store, displayName) {
+  const lockRef = ref(db, 'plan2026/_locks/' + store + '/sales');
+  let acquired = false;
+  try {
+   const result = await runTransaction(lockRef, function(current) {
+    if (current !== null && current !== undefined) return; // 이미 잠김 → 중단
+    return { sessionId: _sessionId, lockedBy: displayName || '관리자',
+             acquiredAt: Date.now(), heartbeatAt: Date.now() };
+   });
+   acquired = result.committed;
+   if (acquired) {
+    _myLockRef = lockRef;
+    onDisconnect(lockRef).remove(); // 브라우저 닫히면 자동 해제
+   }
+  } catch(e) { console.error('[LOCK] acquire 실패:', e); }
+  return acquired;
+ };
+
+ // 잠금 해제 (내 세션만 해제)
+ window._salesLockRelease = async function(store) {
+  try {
+   const lockRef = ref(db, 'plan2026/_locks/' + store + '/sales');
+   const snap = await get(lockRef);
+   if (snap.exists() && snap.val().sessionId === _sessionId) {
+    await set(lockRef, null);
+   }
+   _myLockRef = null;
+  } catch(e) { console.error('[LOCK] release 실패:', e); }
+ };
+
+ // 강제 해제 (관리자 버튼용)
+ window._salesLockForceRelease = async function(store) {
+  try {
+   await set(ref(db, 'plan2026/_locks/' + store + '/sales'), null);
+   _myLockRef = null;
+  } catch(e) { console.error('[LOCK] force release 실패:', e); }
+ };
+
+ // 하트비트 갱신 (무활동 감지용)
+ window._salesLockHeartbeat = async function(store) {
+  if (!_myLockRef) return;
+  try { await update(_myLockRef, { heartbeatAt: Date.now() }); } catch(e) {}
+ };
+
+ // 잠금 상태 실시간 감시 → UI 갱신
+ window._salesLockListen = function(store) {
+  if (_lockListenerUnsubMap[store]) {
+   try { _lockListenerUnsubMap[store](); } catch(e) {}
+  }
+  const lockRef = ref(db, 'plan2026/_locks/' + store + '/sales');
+  const unsub = onValue(lockRef, function(snap) {
+   if (typeof window._updateSalesLockUI === 'function') window._updateSalesLockUI(snap.val());
+  });
+  _lockListenerUnsubMap[store] = unsub;
+ };
+
+ window._salesLockUnlisten = function(store) {
+  if (store && _lockListenerUnsubMap[store]) {
+   try { _lockListenerUnsubMap[store](); } catch(e) {}
+   delete _lockListenerUnsubMap[store];
+  }
+ };
+
  // 공개설정 실시간 수신
  const publicMonthsRef = ref(db, 'plan2026/_settings/publicMonths');
  onValue(publicMonthsRef, snap => {
@@ -2960,10 +3028,16 @@ window.onerror = function(msg, src, line, col, err) {
  <span style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.5px;margin-right:8px;white-space:nowrap;"> 월별 보기</span>
  <div id="salesNavMonths" style="display:flex;overflow-x:auto;flex:1;scrollbar-width:none;"></div>
  <button id="salesSaveBtn" onclick="_salesSaveNow()" title="평당매출 데이터를 Firebase에 저장" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #059669;border-radius:4px;background:rgba(16,185,129,.12);color:#059669;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">저장됨 ✓</button>
+ <button id="salesLockBtn" onclick="_salesEditStart()" title="클릭해서 편집 잠금 — 다른 관리자의 동시 수정을 차단합니다" style="flex-shrink:0;margin-left:4px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #3b82f6;border-radius:4px;background:rgba(59,130,246,.10);color:#3b82f6;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">✏ 수정하기</button>
  <button onclick="openCopyGroupsModal()" title="현재 월 그룹 구성을 다른 월로 복사" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #7c3aed;border-radius:4px;background:rgba(124,58,237,.08);color:#7c3aed;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;" onmouseover="this.style.background='rgba(124,58,237,.18)'" onmouseout="this.style.background='rgba(124,58,237,.08)'">
    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><rect x="5" y="1" width="9" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="1" y="4" width="9" height="11" rx="2" fill="rgba(124,58,237,.15)" stroke="currentColor" stroke-width="1.7"/></svg>
    그룹 복사
  </button>
+ </div>
+ <!-- 편집 잠금 상태 배너 (잠금 중일 때만 표시) -->
+ <div id="salesLockBanner" style="display:none;align-items:center;justify-content:space-between;padding:5px 14px;border-bottom:1px solid #fbbf24;font-family:'Pretendard',sans-serif;font-size:11px;font-weight:700;gap:8px;">
+  <span id="salesLockBannerMsg"></span>
+  <button onclick="_salesLockForceReleaseUI()" style="flex-shrink:0;font-size:10px;padding:2px 8px;border:1px solid currentColor;border-radius:4px;background:#fff;cursor:pointer;font-family:inherit;font-weight:700;">강제 해제</button>
  </div>
  <!-- 주차 서브탭 행 (도면 탭 nav-weeks와 동일 스타일) -->
  <div id="salesNavWeeks" style="display:none;align-items:center;gap:6px;padding:7px 14px;border-bottom:1px solid var(--border);min-height:48px;background:#f3f4f6;">
@@ -9982,10 +10056,20 @@ function switchStore(store) {
  if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
  window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
  window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
+ // 지점 전환 시 이전 지점 편집 잠금 해제
+ if (window._salesIAmEditor) {
+  window._salesIAmEditor = false;
+  clearTimeout(window._salesLockInactivityTimer);
+  if (typeof window._salesLockRelease === 'function') window._salesLockRelease(currentStore);
+ }
  currentStore = store;
  // 지점 전환 시 평당매출 dirty 플래그 초기화 (새 지점은 클린 상태로 시작)
  window._salesDirty = false;
  _updateSalesSaveBtn();
+ // 평당매출 탭이 열려있으면 새 지점 잠금 감시 시작
+ if (window._currentPresenceTab === 'sales' && typeof window._salesLockListen === 'function') {
+  window._salesLockListen(store);
+ }
  // monthZoneOverrides 지점별 전환
  if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
  Object.keys(monthZoneOverrides).forEach(k => delete monthZoneOverrides[k]);
@@ -10809,6 +10893,13 @@ function switchView(view) {
  if (view !== 'sales' && window._salesDirty) {
   if (!confirm('평당매출에 저장하지 않은 변경사항이 있습니다.\n지금 이동하면 Firebase에 저장되지 않습니다.\n(메모리에는 남아 있어 탭 안에서는 유지됩니다)\n\n이동하시겠습니까?')) return;
  }
+ // 평당매출 탭을 떠날 때 편집 잠금 자동 해제
+ if (view !== 'sales' && window._salesIAmEditor) {
+  window._salesIAmEditor = false;
+  clearTimeout(window._salesLockInactivityTimer);
+  var _svSt = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+  if (typeof window._salesLockRelease === 'function') window._salesLockRelease(_svSt);
+ }
  if (view === 'plan') {
  planView.style.display = 'flex';
  omapWrap.style.display = 'none';
@@ -10892,6 +10983,9 @@ function switchView(view) {
  document.body.classList.add('sales-view-active');
  document.body.classList.remove('omap-view-active');
  if (window._presenceUpdateTab) window._presenceUpdateTab('sales');
+ // 평당매출 탭 진입 시 잠금 감시 시작
+ var _svLkSt = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+ if (typeof window._salesLockListen === 'function') window._salesLockListen(_svLkSt);
  renderSalesMonthNav();
  // 평당매출 탭 진입 시: 도면에서 보던 월을 이어받되, 주차 선택 중이면 주차 데이터 우선
  {
@@ -11547,6 +11641,7 @@ window._salesDirty = false;
 function _markSalesDirty() {
  window._salesDirty = true;
  _updateSalesSaveBtn();
+ if (typeof _salesResetInactivity === 'function') _salesResetInactivity();
 }
 function _markSalesClean() {
  window._salesDirty = false;
@@ -11611,8 +11706,118 @@ function _salesSaveAllToFirebase() {
   var btn = document.getElementById('salesSaveBtn');
   if (btn) btn.disabled = false;
   showToast('✅ 저장 완료');
+  // 내가 잠금을 들고 있었으면 저장 후 자동 해제
+  if (window._salesIAmEditor) {
+   window._salesIAmEditor = false;
+   clearTimeout(window._salesLockInactivityTimer);
+   var _lkSt = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+   if (typeof window._salesLockRelease === 'function') window._salesLockRelease(_lkSt);
+  }
  }, 600);
 }
+
+// ── 편집 잠금 UI + 로직 ──────────────────────────────────────────
+window._salesIAmEditor = false;
+window._salesLockInactivityTimer = null;
+
+function _salesResetInactivity() {
+ if (!window._salesIAmEditor) return;
+ clearTimeout(window._salesLockInactivityTimer);
+ window._salesLockInactivityTimer = setTimeout(function() {
+  if (!window._salesIAmEditor) return;
+  window._salesIAmEditor = false;
+  var _st = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+  if (typeof window._salesLockRelease === 'function') window._salesLockRelease(_st);
+  showToast('⏱ 10분 무활동 — 편집 잠금이 자동 해제됐습니다');
+  window._updateSalesLockUI(null);
+ }, 10 * 60 * 1000);
+}
+
+window._updateSalesLockUI = function(lockData) {
+ var lockBtn   = document.getElementById('salesLockBtn');
+ var banner    = document.getElementById('salesLockBanner');
+ var bannerMsg = document.getElementById('salesLockBannerMsg');
+ var saveBtn   = document.getElementById('salesSaveBtn');
+ var salesWrap = document.getElementById('salesWrap');
+
+ var isMine   = lockData && lockData.sessionId === window._presenceSessionId;
+ var isOthers = lockData && !isMine;
+
+ // 수정하기 버튼 상태
+ if (lockBtn) {
+  if (isMine) {
+   lockBtn.textContent = '🔒 편집 중';
+   lockBtn.style.cssText += ';background:#16a34a;color:#fff;border-color:#15803d;cursor:default;';
+   lockBtn.onclick = null;
+  } else if (isOthers) {
+   lockBtn.textContent = '🔒 편집 불가';
+   lockBtn.style.cssText += ';background:#dc2626;color:#fff;border-color:#b91c1c;cursor:not-allowed;';
+   lockBtn.onclick = null;
+  } else {
+   lockBtn.textContent = '✏ 수정하기';
+   lockBtn.style.cssText += ';background:rgba(59,130,246,.10);color:#3b82f6;border-color:#3b82f6;cursor:pointer;';
+   lockBtn.onclick = _salesEditStart;
+  }
+ }
+
+ // 잠금 배너
+ if (banner && bannerMsg) {
+  if (isMine) {
+   banner.style.display = 'flex';
+   banner.style.background = '#dcfce7';
+   banner.style.borderBottomColor = '#86efac';
+   bannerMsg.style.color = '#166534';
+   bannerMsg.textContent = '🔒 내가 편집 잠금 보유 중 — 저장 버튼을 누르면 잠금이 해제됩니다';
+  } else if (isOthers) {
+   banner.style.display = 'flex';
+   banner.style.background = '#fef3c7';
+   banner.style.borderBottomColor = '#fbbf24';
+   bannerMsg.style.color = '#92400e';
+   bannerMsg.textContent = '🔒 ' + lockData.lockedBy + '님이 편집 중 — 저장이 완료되면 수정 가능합니다';
+  } else {
+   banner.style.display = 'none';
+  }
+ }
+
+ // 다른 사람이 잠금 중이면 편집 차단 (읽기는 가능)
+ window._salesIAmEditor = !!isMine;
+ if (salesWrap) {
+  if (isOthers) {
+   salesWrap.style.pointerEvents = 'none';
+   salesWrap.style.opacity = '0.55';
+   if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.4'; }
+  } else {
+   salesWrap.style.pointerEvents = '';
+   salesWrap.style.opacity = '';
+   if (saveBtn && !saveBtn.disabled) saveBtn.style.opacity = '';
+  }
+ }
+};
+
+function _salesEditStart() {
+ if (typeof isViewer !== 'undefined' && isViewer) { showToast('열람 모드 — 수정 불가'); return; }
+ if (window._salesIAmEditor) return;
+ var store   = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+ var myName  = window.adminDisplayName || window._presenceMyName || '관리자';
+ if (typeof window._salesLockAcquire !== 'function') { showToast('잠금 기능 준비 중입니다'); return; }
+ window._salesLockAcquire(store, myName).then(function(acquired) {
+  if (acquired) {
+   _salesResetInactivity();
+   showToast('🔒 편집 잠금 획득 — 저장 시 자동 해제됩니다');
+  } else {
+   showToast('다른 관리자가 편집 중입니다 — 잠금 해제 후 수정하세요');
+  }
+ });
+}
+
+function _salesLockForceReleaseUI() {
+ if (!confirm('다른 관리자의 편집 잠금을 강제 해제하시겠습니까?\n저장되지 않은 데이터가 있을 수 있습니다.')) return;
+ var store = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+ if (typeof window._salesLockForceRelease === 'function') {
+  window._salesLockForceRelease(store).then(function() { showToast('잠금이 강제 해제됐습니다'); });
+ }
+}
+
 // 페이지 닫기·새로고침 시 미저장 경고
 window.addEventListener('beforeunload', function(e) {
  if (window._salesDirty) {
