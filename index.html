@@ -2291,6 +2291,7 @@ body.viewer-mode #salesMonthNav > div > button{
    }
   } catch(e) { console.warn('[MC매핑] zoningMcMap 로드 실패', store, e); window.zoningMcMapByStore[store] = []; }
   window.zoningMcMap = window.zoningMcMapByStore[store];
+  console.log('[MC매핑] 불러옴 경로=plan2026/' + store + '/zoningMcMap 개수=' + (window.zoningMcMapByStore[store]||[]).length);
   try {
    var ovSnap = await get(ref(db, 'plan2026/' + store + '/zoningMcOverrides'));
    if (ovSnap.exists()) {
@@ -19373,8 +19374,12 @@ if (!window.zoningMcOverridesByStore) window.zoningMcOverridesByStore = {};
 /* ── Firebase 저장 ── */
 function syncZoningMcMap() {
   var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  var _data = JSON.parse(JSON.stringify(window.zoningMcMap || []));
+  console.log('[MC매핑] 저장됨 경로=plan2026/' + _store + '/zoningMcMap 개수=' + _data.length);
   if (typeof window._firebaseSaveStoreField === 'function') {
-    window._firebaseSaveStoreField(_store, 'zoningMcMap', JSON.parse(JSON.stringify(window.zoningMcMap || [])));
+    window._firebaseSaveStoreField(_store, 'zoningMcMap', _data);
+  } else {
+    console.warn('[MC매핑] _firebaseSaveStoreField 미정의 — 저장 불가');
   }
 }
 function syncZoningMcOverrides() {
@@ -19784,7 +19789,12 @@ function applyZoneSalesUpload() {
   }
   var allZones = typeof zones !== 'undefined' ? zones : [];
   var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
-  if (!window.zoningMcOverrides || Array.isArray(window.zoningMcOverrides)) window.zoningMcOverrides = {};
+  if (!window.zoningMcOverrides || Array.isArray(window.zoningMcOverrides)) {
+    var _zsuStore = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+    if (!window.zoningMcOverridesByStore) window.zoningMcOverridesByStore = {};
+    if (!window.zoningMcOverridesByStore[_zsuStore]) window.zoningMcOverridesByStore[_zsuStore] = {};
+    window.zoningMcOverrides = window.zoningMcOverridesByStore[_zsuStore];
+  }
   var overrides = window.zoningMcOverrides;
 
   var allWids = parsed.weekIds || [];
@@ -20149,16 +20159,17 @@ function _renderZmcTable() {
 }
 
 function _zmcUpdateEntry(idx, field, val) {
-  var arr = window.zoningMcMap || [];
-  if (arr[idx]) arr[idx][field] = val.trim();
+  if (!window.zoningMcMap || !window.zoningMcMap[idx]) return;
+  window.zoningMcMap[idx][field] = val.trim();
+  syncZoningMcMap();
 }
 
 function _zmcDeleteEntry(idx) {
-  var arr = window.zoningMcMap || [];
-  if (idx < 0 || idx >= arr.length) return;
-  if (!confirm('삭제: ' + arr[idx].mc + ' → ' + arr[idx].z + '?')) return;
-  arr.splice(idx, 1);
+  if (!window.zoningMcMap || idx < 0 || idx >= window.zoningMcMap.length) return;
+  if (!confirm('삭제: ' + window.zoningMcMap[idx].mc + ' → ' + window.zoningMcMap[idx].z + '?')) return;
+  window.zoningMcMap.splice(idx, 1);
   _renderZmcTable();
+  syncZoningMcMap();
 }
 
 function _zmcAddEntry() {
@@ -20177,6 +20188,7 @@ function _zmcAddEntry() {
   if (mcEl) mcEl.value = '';
   if (zEl) zEl.value = '';
   _renderZmcTable();
+  syncZoningMcMap();
   showToast('✅ 추가: ' + mc + ' → ' + z);
 }
 
@@ -20187,6 +20199,7 @@ function _zmcResetToDefault() {
   window.zoningMcMapByStore[_store] = JSON.parse(JSON.stringify(window._zoningMcMapDefault));
   window.zoningMcMap = window.zoningMcMapByStore[_store];
   _renderZmcTable();
+  syncZoningMcMap();
   showToast('기본값으로 초기화됨');
 }
 
