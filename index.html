@@ -19785,6 +19785,10 @@ function _zsuRenderPreview(parsed) {
 
 /* ── 도면에 적용 ── */
 function applyZoneSalesUpload() {
+  if (!window._salesIAmEditor) {
+    showToast('수정하기를 눌러 편집 권한을 먼저 받으세요');
+    return;
+  }
   var parsed = window._zsuParsed;
   if (!parsed || !parsed.rawRows) return;
   var store = window.currentStore || 'gs';
