@@ -1781,7 +1781,6 @@ body.viewer-mode #salesMonthNav > div > button{
 
  function _restoreRotation(store, data) {
  if (!data) return;
- console.log('[RECEIVE]', store, '| canvasRotation:', data.canvasRotation, '| raw data keys:', Object.keys(data));
  window._rotData[store] = {
  canvasRotation: data.canvasRotation !== undefined ? Number(data.canvasRotation) : 0,
  textRotation: data.textRotation !== undefined ? Number(data.textRotation) : 0,
@@ -2235,9 +2234,7 @@ body.viewer-mode #salesMonthNav > div > button{
  Object.keys(payload.weeklySales || {}).forEach(function(wk) {
   _planUpd['weeklySales/' + wk] = payload.weeklySales[wk];
  });
- console.log('[FIREBASE UPDATE]', store, '| canvasRotation:', payload.canvasRotation);
  await update(ref(db, 'plan2026/' + store), _planUpd);
- console.log('[FIREBASE UPDATE 완료]', store);
  syncUI('saved', '저장됨 ');
  } catch(e) {
  syncUI('error', '저장 실패');
@@ -2265,7 +2262,7 @@ body.viewer-mode #salesMonthNav > div > button{
  window._firebaseSaveGlobal = async function(key, data) {
   try {
    await set(ref(db, 'plan2026/_global/' + key), data);
-   console.log('[FIREBASE GLOBAL SET]', key);
+
   } catch(e) { console.error('[FIREBASE GLOBAL] 저장 실패', e); }
  };
  (async function() {
@@ -2273,7 +2270,6 @@ body.viewer-mode #salesMonthNav > div > button{
    const _gSnap = await get(ref(db, 'plan2026/_global/zoningMcMap'));
    if (_gSnap.exists()) {
     window.zoningMcMap = _gSnap.val();
-    console.log('[FIREBASE GLOBAL] zoningMcMap 로드:', (window.zoningMcMap||[]).length, '개');
    }
   } catch(e) { console.warn('[FIREBASE GLOBAL] zoningMcMap 로드 실패', e); }
   try {
@@ -2281,7 +2277,6 @@ body.viewer-mode #salesMonthNav > div > button{
    if (_oSnap.exists()) {
     var _ov = _oSnap.val();
     window.zoningMcOverrides = (Array.isArray(_ov) || typeof _ov !== 'object' || !_ov) ? {} : _ov;
-    console.log('[FIREBASE GLOBAL] zoningMcOverrides 로드:', Object.keys(window.zoningMcOverrides||{}).length, '개');
    }
   } catch(e) { console.warn('[FIREBASE GLOBAL] zoningMcOverrides 로드 실패', e); }
  })();
@@ -7425,7 +7420,6 @@ document.addEventListener('DOMContentLoaded', function() {
  renderMultiPanel();
  }
  showToast(selectedCount + '개 구역 선택됨 — 선택된 구역 드래그하여 함께 이동');
- console.log('드래그 선택 완료, multiSelIds:', [...multiSelIds]);
  }
  return;
  }
@@ -7859,13 +7853,12 @@ window._getSavePayload = function(store) {
  issueSelections: JSON.parse(JSON.stringify((window._issueSelectionsStore && window._issueSelectionsStore[store]) || {})),
  savedAt: Date.now()
  };
- console.log('[PAYLOAD]', store, '| canvasRotation:', payload.canvasRotation, '| textRotation:', payload.textRotation, '| catTagPos:', payload.catTagPos);
  return payload;
 };
 
 // ── Firebase 실시간 동기화 저장 ──
 function syncToFirebase(){
- if (typeof isViewer !== 'undefined' && isViewer) { console.log('[syncToFirebase] 열람모드 - 저장 차단'); return; }
+ if (typeof isViewer !== 'undefined' && isViewer) { return; }
  // 드래그·리사이즈 중이면 조작 끝난 뒤로 저장 지연 (레이스 컨디션 방지)
  if (pixelDrag || resizing) {
    if (syncToFirebase._pending) clearTimeout(syncToFirebase._pending);
@@ -8606,7 +8599,6 @@ function saveStore(store) {
  // 전역 데이터 포함
  data.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
  data.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
- console.log('[saveStore]', storeName, '- zones:', data.stores[store].zones.length, '개');
  downloadJSON(data, '킴스클럽_2026도면_' + storeName + '_' + ts + '.json');
  showToast(' ' + storeName + ' JSON 저장 완료!');
 }
@@ -10255,7 +10247,6 @@ function canvasRotate(delta, mode){
  const next = mode==='reset' ? 0 : ((cur+delta+360)%360);
  storeRotations[currentStore] = next;
  if(window.storeRotations) window.storeRotations[currentStore] = next;
- console.log('[ROTATE] 회전 설정:', currentStore, next + '°');
  // 회전 시 현재 줌 레벨 유지 (userZoomed 리셋 안 함)
  render();
  applyScale();
@@ -10404,11 +10395,9 @@ window._renderOnReady = function() {
  // ── rotation 복원: Firebase에서 받은 값을 실제 변수에 적용 ──
  // 이 시점엔 storeRotations 등 모든 변수가 준비되어 있음
  const _rd = window._rotData || {};
- console.log('[RENDER_READY] currentStore:', currentStore, '| _rotData:', JSON.stringify(_rd));
  Object.keys(_rd).forEach(function(store) {
  const d = _rd[store];
  if (!d) return;
- console.log('[APPLY ROT]', store, '| canvasRotation:', d.canvasRotation);
  storeRotations[store] = d.canvasRotation;
  storeTextRot[store] = d.textRotation;
  storeCatTagPos[store] = d.catTagPos;
@@ -11386,17 +11375,12 @@ function calcSalesMetrics() {
   const _wAggSales = {}, _wAggCounts = {}, _wAggArea = {};
   // ── 진단: 어느 주차가 집계 대상인지 + weeklySalesStore 현황
   var _wsKeys = _ws ? Object.keys(_ws) : [];
-  console.log('[월평균] store=' + _wStore + ' mo=' + _moIdx
-    + ' _weeksForMonth→', _monthWeeks.map(function(w){return w.id;})
-    + ' weeklySalesStore보유주차→', _wsKeys
-    + ' 데이터있는주차→', _weeksWithData.map(function(w){return w.id;}));
   _weeksWithData.forEach(function(w) {
    const _wd = _ws[w.id];
    const _sd = _wd.salesData || {};
    const _gd = _wd.salesGroupData || {};
    const _sg = _wd.salesGroups || {};
    const _ad = _wd.areaData || {};
-   console.log('[월평균] 주차=' + w.id + ' salesData키수=' + Object.keys(_sd).length + ' salesGroupData키수=' + Object.keys(_gd).length);
    // 구역별 zone→group 역방향 맵 (salesData 보완용)
    var _zoneToGid = {};
    Object.keys(_sg).forEach(function(gid) {
@@ -11412,7 +11396,6 @@ function calcSalesMetrics() {
       var _grp = _sg[_gid];
       var _zCount = _grp ? (_grp.zoneIds||[]).length || 1 : 1;
       s = Math.round(_gd[_gid].sales / _zCount / 10) * 10 || (_gd[_gid].sales / _zCount);
-      console.log('[월평균] 구역=' + (z.number||z.id) + ' 주차=' + w.id + ' salesData없음→groupData역산 s=' + s);
      }
     }
     // ③ area: 주차저장값 → 전역 areaData (셀추정 폴백 없음 — 관리자 입력 평수 사용)
@@ -11423,9 +11406,7 @@ function calcSalesMetrics() {
      _wAggSales[z.id] = (_wAggSales[z.id] || 0) + s / a;
      _wAggCounts[z.id] = (_wAggCounts[z.id] || 0) + 1;
      _wAggArea[z.id] = a;
-     console.log('[월평균] ✅ 구역=' + (z.number||z.id) + ' 주차=' + w.id + ' s=' + s + ' a=' + a + '(wk=' + _aWk + ' 글로벌=' + _aGlobal + ')');
     } else if (s > 0 && a === 0) {
-     console.log('[월평균] ⚠️ 구역=' + (z.number||z.id) + ' 주차=' + w.id + ' s=' + s + ' 그러나 area=0 → 제외 (평수 입력 필요)');
     }
    });
   });
@@ -11433,7 +11414,6 @@ function calcSalesMetrics() {
   dataZones.forEach(function(z) {
    _wAggPerSales[z.id] = (_wAggCounts[z.id] > 0) ? _wAggSales[z.id] / _wAggCounts[z.id] : 0;
    if (_wAggCounts[z.id] > 0) {
-    console.log('[월평균] 구역=' + (z.number||z.id) + ' 최종평당=' + _wAggPerSales[z.id].toFixed(1) + ' (평균주차수=' + _wAggCounts[z.id] + ')');
    }
   });
   const _wAllPS = dataZones.map(function(z){ return _wAggPerSales[z.id]||0; }).filter(function(v){return v>0;});
@@ -11457,7 +11437,6 @@ function calcSalesMetrics() {
    });
    if (_gSales > 0 && _gArea > 0) {
     window._monthlyGroupCalc[gid] = { sales: _gSales, area: _gArea };
-    console.log('[월평균-그룹] gid=' + gid + ' sales=' + _gSales.toFixed(1) + ' area=' + _gArea.toFixed(1) + ' 평당=' + (_gSales/_gArea).toFixed(1));
    }
   });
 
@@ -11673,7 +11652,6 @@ if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
 window._salesDirty = false;
 function _markSalesDirty() {
  window._salesDirty = true;
- console.trace('[DIRTY] _markSalesDirty 호출됨');
  _updateSalesSaveBtn();
  if (typeof _salesResetInactivity === 'function') _salesResetInactivity();
 }
@@ -12013,7 +11991,6 @@ function _ensureWeekGlobals() {
       window.salesData      = {};
       window.areaData       = {};
       window.salesGroupData = {};
-      console.log('[MONTH-WEEKLY-GUARD] 월 전체 + 주차 데이터 있음 — salesData/salesGroupData 비움');
     }
     return;
   }
@@ -12023,7 +12000,6 @@ function _ensureWeekGlobals() {
   window.salesGroupData = JSON.parse(JSON.stringify(_wd.salesGroupData));
   if (_wd.salesGroups && Object.keys(_wd.salesGroups).length > 0)
     window.salesGroups = JSON.parse(JSON.stringify(_wd.salesGroups));
-  console.log('[WEEK-GUARD] ' + window.currentSalesWeek + ' 전역 복원 — salesGroupData keys:', Object.keys(window.salesGroupData||{}).length, '| salesData keys:', Object.keys(window.salesData||{}).length);
 }
 
 /* ── 주차별 데이터를 합산해 monthlySalesStore 갱신 (종합 탭 정확도 유지) ── */
@@ -15726,11 +15702,9 @@ let _sgClickHandlers = [];
 function addSalesGroupClickListeners() {
  removeSalesGroupClickListeners();
  const zbEls = document.querySelectorAll('#gc-sales .zb');
- console.log('[SGClick] zb수:', zbEls.length, '| activeId:', salesGroupActiveId, '| editMode:', salesGroupEditMode);
  zbEls.forEach(el => {
  const zid = el.id.replace('sz-', '');
  const handler = function(e) {
- console.log('[SGClick] 집기 클릭됨 zid:', zid, '| activeId:', salesGroupActiveId, '| editMode:', salesGroupEditMode);
  e.stopPropagation();
  if (!salesGroupEditMode || !salesGroupActiveId) {
  showToast('먼저 패널에서 그룹을 선택하세요'); return;
@@ -16107,16 +16081,11 @@ function openSalesDataModal() {
   if (window.currentSalesWeek) {
     // 주차 탭 선택 중: weeklySalesStore가 단일 출처
     var _wkd = getSalesWeekData(window.currentSalesWeek);
-    console.log('[SDM OPEN] currentSalesWeek=', window.currentSalesWeek,
-      '| weeklySalesStore salesGroupData=', JSON.stringify(_wkd.salesGroupData).slice(0,200),
-      '| window.salesGroupData=', JSON.stringify(window.salesGroupData||{}).slice(0,200));
-    window.salesGroupData = JSON.parse(JSON.stringify(_wkd.salesGroupData));
     window.salesData      = JSON.parse(JSON.stringify(_wkd.salesData));
     window.areaData       = JSON.parse(JSON.stringify(_wkd.areaData));
     if (_wkd.salesGroups && Object.keys(_wkd.salesGroups).length > 0) {
       window.salesGroups = JSON.parse(JSON.stringify(_wkd.salesGroups));
     }
-    console.log('[SDM OPEN] 동기화 후 salesGroupData=', JSON.stringify(window.salesGroupData).slice(0,200));
   } else if (_omo !== null && _omo !== undefined &&
       window.monthlySalesStore && window.monthlySalesStore[currentStore]) {
     // 월 전체 뷰: monthlySalesStore에서 읽기 (레거시 또는 집계)
@@ -19454,14 +19423,10 @@ function _xlsZoningVal(val) {
 function handleZoneSalesFile(file) {
   try {
     /* ── 진단용 로그 ── */
-    console.log('━━━ [ZSU] 1) 핸들러 진입 ━━━', file ? file.name : '(file 없음)');
     if (!file) { console.warn('[ZSU] file이 null/undefined — 조기 종료'); return; }
 
-    console.log('[ZSU] 2) XLSX 라이브러리:', typeof XLSX, typeof XLSX !== 'undefined' ? '✅ 로드됨' : '❌ 없음!');
-    console.log('[ZSU] 3) 파일 정보 — name:', file.name, '/ size:', file.size, '/ type:', file.type);
 
     var ext = file.name.split('.').pop().toLowerCase();
-    console.log('[ZSU] 4) 확장자:', ext, '→', ext === 'csv' ? 'readAsText' : 'readAsArrayBuffer');
 
     var reader = new FileReader();
 
@@ -19474,26 +19439,17 @@ function handleZoneSalesFile(file) {
     reader.onload = function(ev) {
       try {
         var result = ev.target.result;
-        console.log('[ZSU] 5) FileReader onload — result 타입:', typeof result,
-          '/ byteLength(or len):', result ? (result.byteLength !== undefined ? result.byteLength : result.length) : 0);
-
         var rows = [];
         if (ext === 'csv') {
-          console.log('[ZSU] 6-csv) CSV 파싱 시작');
           rows = result.split('\n').map(function(l) {
             return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
           });
-          console.log('[ZSU] 7-csv) CSV 파싱 완료 — 행 수:', rows.length);
         } else {
           if (typeof XLSX === 'undefined') throw new Error('XLSX 라이브러리 미로드 (typeof XLSX === undefined)');
-          console.log('[ZSU] 6-xlsx) XLSX.read 시작 — type: array');
           var data = new Uint8Array(result);
           var wb = XLSX.read(data, { type: 'array', cellDates: true });
-          console.log('[ZSU] 7-xlsx) XLSX.read 완료 — SheetNames:', wb.SheetNames);
           var ws2 = wb.Sheets[wb.SheetNames[0]];
-          console.log('[ZSU] 8-xlsx) sheet_to_json 시작');
           rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
-          console.log('[ZSU] 9-xlsx) sheet_to_json 완료 — 행 수:', rows.length, '/ 1행 샘플:', rows[0]);
         }
 
         if (rows.length < 2) {
@@ -19502,7 +19458,6 @@ function handleZoneSalesFile(file) {
           return;
         }
 
-        console.log('[ZSU] 10) 헤더 매칭 시작 — headerRow:', rows[0]);
         var headerRow = rows[0];
         var weekIds = [], unmatchedHeaders = [];
         for (var c = 1; c < headerRow.length; c++) {
@@ -19512,9 +19467,7 @@ function handleZoneSalesFile(file) {
           weekIds.push(wid);
           if (!wid) unmatchedHeaders.push(h);
         }
-        console.log('[ZSU] 11) 헤더 매칭 완료 — weekIds:', weekIds, '/ 미매칭:', unmatchedHeaders);
 
-        console.log('[ZSU] 12) 행 매칭 시작 — 데이터행 수:', rows.length - 1);
         var rawRows = [];
         var groupAccum = {};
         for (var r = 1; r < rows.length; r++) {
@@ -19538,13 +19491,10 @@ function handleZoneSalesFile(file) {
             });
           }
         }
-        console.log('[ZSU] 13) 행 매칭 완료 — 매칭 구역:', Object.keys(groupAccum).length, '/ 전체 행:', rawRows.length);
 
         window._zsuParsed = { weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
 
-        console.log('[ZSU] 14) _zsuRenderPreview 호출 직전');
         _zsuRenderPreview(window._zsuParsed);
-        console.log('[ZSU] 15) _zsuRenderPreview 완료 ✅');
 
       } catch(innerErr) {
         console.error('[ZSU] ❌ onload 내부 에러:', innerErr.message, '\nstack:', innerErr.stack);
@@ -19553,10 +19503,8 @@ function handleZoneSalesFile(file) {
       }
     };
 
-    console.log('[ZSU] 16) FileReader.read 호출 직전');
     if (ext === 'csv') reader.readAsText(file, 'utf-8');
     else reader.readAsArrayBuffer(file);   /* readAsBinaryString은 deprecated — ArrayBuffer 사용 */
-    console.log('[ZSU] 17) FileReader.read 완료 (비동기 — onload 대기 중)');
 
   } catch(outerErr) {
     console.error('[ZSU] ❌ 함수 최상위 에러:', outerErr.message, '\nstack:', outerErr.stack);
@@ -19798,7 +19746,6 @@ function applyZoneSalesUpload() {
   var groupAccum = {};
   var overridesChanged = false;
   var snapshotRows = [];
-  console.log('[ZSU APPLY] ▶ 적용 시작 — rawRows:', parsed.rawRows.length, '/ usedWids:', usedWids.join(','));
 
   parsed.rawRows.forEach(function(rr, idx) {
     var chk = document.getElementById('zsu_chk_' + idx);
@@ -19817,7 +19764,6 @@ function applyZoneSalesUpload() {
       weekGidMap[wid] = wkDomGid || bulkGid || effGid;
     });
 
-    console.log('[ZSU APPLY] 행' + idx + ' "' + rr.raw + '" bulk=' + bulkGid + ' wkMap=' + JSON.stringify(weekGidMap));
 
     /* 스냅샷용 행 데이터 수집 */
     snapshotRows.push({
@@ -19878,14 +19824,12 @@ function applyZoneSalesUpload() {
   });
 
   /* 합산 결과 로그 */
-  console.log('[ZSU APPLY] ── 구역별 합산 결과 ──');
   Object.keys(groupAccum).forEach(function(gid) {
     var g = groups[gid];
     var label = g ? ((g.number||'') + ' ' + (g.label||gid)) : gid;
     Object.keys(groupAccum[gid].weekSales).forEach(function(wid) {
       var tot = groupAccum[gid].weekSales[wid];
       var avg = Math.round(tot / 7 * 10) / 10;
-      console.log('[ZSU APPLY] ✅ 구역[' + label.trim() + '] 주차[' + wid + '] 7일합=' + tot + '만 일평균=' + avg + '만 품목(' + groupAccum[gid].mcNames.length + '):[' + groupAccum[gid].mcNames.join(',') + ']');
     });
   });
 
@@ -19948,7 +19892,6 @@ function applyZoneSalesUpload() {
     if (_activeWd.salesGroups && Object.keys(_activeWd.salesGroups).length > 0) {
       window.salesGroups = JSON.parse(JSON.stringify(_activeWd.salesGroups));
     }
-    console.log('[ZSU APPLY] 전역 동기화 완료 — salesGroupData=', JSON.stringify(window.salesGroupData).slice(0,200));
   }
 
   /* 영향받은 주차/월을 메모리에만 저장 — Firebase는 저장 버튼으로 */
@@ -20024,8 +19967,6 @@ function openZoneSalesUploadModal() {
   var curStore = window.currentStore || 'gs';
   var _curMo   = window.currentSalesMonth; // 현재 선택된 월 인덱스 (0-11 or null)
   var snapSection = document.getElementById('zsuSnapSection');
-  console.log('[ZSU MODAL] store=', curStore, '| currentSalesMonth=', _curMo,
-    '| 전체 스냅샷 키:', window._zsuSnapshot ? Object.keys(window._zsuSnapshot) : []);
   if (snapSection && window._zsuSnapshot) {
     var moNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
     var wsArr2 = typeof WEEKS !== 'undefined' ? WEEKS : [];
@@ -20036,7 +19977,6 @@ function openZoneSalesUploadModal() {
       if (_curMo !== null && _curMo !== undefined) {
         var moIdxArr = k.replace(curStore + '_', '').split('_').map(Number).filter(function(n){return !isNaN(n);});
         var matches = moIdxArr.indexOf(_curMo) >= 0;
-        console.log('[ZSU MODAL] 키=', k, '| moIdxArr=', moIdxArr, '| 현재월=', _curMo, '| 매칭=', matches);
         return matches;
       }
       return true; // 종합 탭이면 전체 표시
@@ -20311,3 +20251,4 @@ function _zmoUpdateParentCount() {
   </div>
 </div>
 </body>
+</html>
