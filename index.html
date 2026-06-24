@@ -2013,6 +2013,9 @@ body.viewer-mode #salesMonthNav > div > button{
    setTimeout(renderSalesView, 100);
   }
  }
+ // 주차 선택 중이면 weeklySalesStore로 전역 복원 (실시간 경로와 동일한 처리)
+ // → 초기 로드가 top-level data.salesData로 window.salesData를 덮어쓴 뒤 미보정되는 문제 방지
+ if (typeof _ensureWeekGlobals === 'function') _ensureWeekGlobals();
 
  // 서버 스냅샷 저장 (diff 계산용)
  if (data && typeof window._updateServerSnapshot === 'function') {
@@ -11790,7 +11793,12 @@ function _salesSaveAllToFirebase() {
   var ms = (window.monthlySalesStore || {})[store] || {};
   Object.keys(ms).forEach(function(mk) { _salesUpd['monthlySales/' + mk] = ms[mk]; });
   // 매출 스칼라·그룹·목표·라벨
-  _salesUpd.salesData        = JSON.parse(JSON.stringify(window.salesData || {}));
+  // 주차 모드일 때 top-level salesData에 주차 데이터를 쓰지 않음
+  // → 다음 초기 로드 시 종합 뷰에 마지막 주차 데이터가 stale 복원되는 문제 방지
+  // (실제 주차 데이터는 weeklySales/{wid} 경로로 위에서 이미 저장됨)
+  _salesUpd.salesData        = window.currentSalesWeek
+    ? {}
+    : JSON.parse(JSON.stringify(window.salesData || {}));
   _salesUpd.areaData         = JSON.parse(JSON.stringify(window.areaData || {}));
   _salesUpd.salesGroups      = JSON.parse(JSON.stringify(typeof _getActiveGroups === 'function' ? _getActiveGroups(store) : (window.salesGroups || {})));
   _salesUpd.salesGroupData   = JSON.parse(JSON.stringify(window.salesGroupData || {}));
