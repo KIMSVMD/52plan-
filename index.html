@@ -19474,8 +19474,7 @@ function _xlsZoningVal(val) {
 /* ── 파일 파싱 + 그룹별 매출 누산 ── */
 function handleZoneSalesFile(file) {
   try {
-    /* ── 진단용 로그 ── */
-    if (!file) { console.warn('[ZSU] file이 null/undefined — 조기 종료'); return; }
+    if (!file) return;
 
 
     var ext = file.name.split('.').pop().toLowerCase();
@@ -19505,7 +19504,6 @@ function handleZoneSalesFile(file) {
         }
 
         if (rows.length < 2) {
-          console.warn('[ZSU] ❌ 행 부족 — rows.length:', rows.length);
           showToast('데이터가 없습니다 (최소 2행 필요)');
           return;
         }
