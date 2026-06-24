@@ -2265,21 +2265,53 @@ body.viewer-mode #salesMonthNav > div > button{
 
   } catch(e) { console.error('[FIREBASE GLOBAL] 저장 실패', e); }
  };
- (async function() {
+ window.zoningMcMapByStore = {};
+ window.zoningMcOverridesByStore = {};
+ window._firebaseSaveStoreField = async function(store, field, data) {
   try {
-   const _gSnap = await get(ref(db, 'plan2026/_global/zoningMcMap'));
-   if (_gSnap.exists()) {
-    window.zoningMcMap = _gSnap.val();
-   }
-  } catch(e) { console.warn('[FIREBASE GLOBAL] zoningMcMap 로드 실패', e); }
+   await set(ref(db, 'plan2026/' + store + '/' + field), data);
+  } catch(e) { console.error('[FIREBASE STORE FIELD] 저장 실패', field, e); }
+ };
+ window._loadZoningMcForStore = async function(store) {
   try {
-   const _oSnap = await get(ref(db, 'plan2026/_global/zoningMcOverrides'));
-   if (_oSnap.exists()) {
-    var _ov = _oSnap.val();
-    window.zoningMcOverrides = (Array.isArray(_ov) || typeof _ov !== 'object' || !_ov) ? {} : _ov;
+   var mcSnap = await get(ref(db, 'plan2026/' + store + '/zoningMcMap'));
+   if (mcSnap.exists()) {
+    window.zoningMcMapByStore[store] = mcSnap.val();
+   } else if (store === 'gs') {
+    var _gSnap = await get(ref(db, 'plan2026/_global/zoningMcMap'));
+    if (_gSnap.exists()) {
+     window.zoningMcMapByStore[store] = _gSnap.val();
+     await set(ref(db, 'plan2026/' + store + '/zoningMcMap'), window.zoningMcMapByStore[store]);
+     console.log('[MC매핑] 강서점 매핑 이전 완료 (' + (window.zoningMcMapByStore[store]||[]).length + '개)');
+    } else {
+     window.zoningMcMapByStore[store] = [];
+    }
+   } else {
+    window.zoningMcMapByStore[store] = [];
    }
-  } catch(e) { console.warn('[FIREBASE GLOBAL] zoningMcOverrides 로드 실패', e); }
- })();
+  } catch(e) { console.warn('[MC매핑] zoningMcMap 로드 실패', store, e); window.zoningMcMapByStore[store] = []; }
+  window.zoningMcMap = window.zoningMcMapByStore[store];
+  try {
+   var ovSnap = await get(ref(db, 'plan2026/' + store + '/zoningMcOverrides'));
+   if (ovSnap.exists()) {
+    var _ov = ovSnap.val();
+    window.zoningMcOverridesByStore[store] = (Array.isArray(_ov) || typeof _ov !== 'object' || !_ov) ? {} : _ov;
+   } else if (store === 'gs') {
+    var _oSnap = await get(ref(db, 'plan2026/_global/zoningMcOverrides'));
+    if (_oSnap.exists()) {
+     var _ov2 = _oSnap.val();
+     window.zoningMcOverridesByStore[store] = (Array.isArray(_ov2) || typeof _ov2 !== 'object' || !_ov2) ? {} : _ov2;
+     await set(ref(db, 'plan2026/' + store + '/zoningMcOverrides'), window.zoningMcOverridesByStore[store]);
+    } else {
+     window.zoningMcOverridesByStore[store] = {};
+    }
+   } else {
+    window.zoningMcOverridesByStore[store] = {};
+   }
+  } catch(e) { console.warn('[MC매핑] zoningMcOverrides 로드 실패', store, e); window.zoningMcOverridesByStore[store] = {}; }
+  window.zoningMcOverrides = window.zoningMcOverridesByStore[store];
+ };
+ window._loadZoningMcForStore('gs');
 
  // ── 변경 로그 Firebase 저장 + 2주 지난 로그 자동 삭제 ──
  window._firebaseSaveLog = async function(logEntry) {
@@ -8560,7 +8592,7 @@ function saveAll(){
  var allMap = window.storeMap || storeMap;
  var allData = { savedAt: new Date().toISOString(), stores: {} };
  Object.keys(allMap).forEach(function(store){ allData.stores[store] = buildStoreData(store); });
- // 전역 데이터 (지점별 아님 — plan2026/_global/ 경로)
+ // 현재 지점 MC 매핑 (지점별 분리 — 현재 열린 지점 기준)
  allData.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
  allData.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
 
@@ -8596,7 +8628,7 @@ function saveStore(store) {
  var storeName = allNames[store] || store;
  var data = { savedAt: new Date().toISOString(), stores: {} };
  data.stores[store] = buildStoreData(store);
- // 전역 데이터 포함
+ // 현재 지점 MC 매핑 포함 (지점별 분리)
  data.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
  data.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
  downloadJSON(data, '킴스클럽_2026도면_' + storeName + '_' + ts + '.json');
@@ -8908,13 +8940,18 @@ function applyPendingJson() {
  // 전역 데이터(조닝 매핑) 복원 헬퍼
  function _restoreGlobal(d) {
   if (!d) return;
+  var _rStore = typeof currentStore !== 'undefined' ? currentStore : 'gs';
   if (d.zoningMcMap && Array.isArray(d.zoningMcMap)) {
-   window.zoningMcMap = JSON.parse(JSON.stringify(d.zoningMcMap));
-   if (typeof window._firebaseSaveGlobal === 'function') window._firebaseSaveGlobal('zoningMcMap', window.zoningMcMap);
+   if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {};
+   window.zoningMcMapByStore[_rStore] = JSON.parse(JSON.stringify(d.zoningMcMap));
+   window.zoningMcMap = window.zoningMcMapByStore[_rStore];
+   if (typeof window._firebaseSaveStoreField === 'function') window._firebaseSaveStoreField(_rStore, 'zoningMcMap', window.zoningMcMap);
   }
   if (d.zoningMcOverrides && typeof d.zoningMcOverrides === 'object') {
-   window.zoningMcOverrides = JSON.parse(JSON.stringify(d.zoningMcOverrides));
-   if (typeof window._firebaseSaveGlobal === 'function') window._firebaseSaveGlobal('zoningMcOverrides', window.zoningMcOverrides);
+   if (!window.zoningMcOverridesByStore) window.zoningMcOverridesByStore = {};
+   window.zoningMcOverridesByStore[_rStore] = JSON.parse(JSON.stringify(d.zoningMcOverrides));
+   window.zoningMcOverrides = window.zoningMcOverridesByStore[_rStore];
+   if (typeof window._firebaseSaveStoreField === 'function') window._firebaseSaveStoreField(_rStore, 'zoningMcOverrides', window.zoningMcOverrides);
   }
  }
 
@@ -10096,6 +10133,8 @@ function switchStore(store) {
  if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
  Object.keys(monthZoneOverrides).forEach(k => delete monthZoneOverrides[k]);
  Object.assign(monthZoneOverrides, JSON.parse(JSON.stringify(window.storeMonthZoneOverrides[store] || {})));
+ // MC 매핑 지점별 전환
+ if (typeof window._loadZoningMcForStore === 'function') window._loadZoningMcForStore(store);
  // Presence: 관리자면 지점 presence 갱신
  if (typeof isAdmin !== 'undefined' && isAdmin && typeof window._presenceEnter === 'function') {
  window._presenceEnter(store);
@@ -19317,18 +19356,31 @@ function showResetConfirm(zoneName, monthLabel) {
    MC명 ↔ 조닝번호 기본 매핑 (677개)
 ═══════════════════════════════════════════════ */
 window._zoningMcMapDefault = [{mc:"바나나",z:"0"},{mc:"오렌지",z:"3"},{mc:"딸기",z:"3-2"},{mc:"수박",z:"1-1"},{mc:"토마토",z:"2"},{mc:"토마토(가공)",z:"2"},{mc:"키위",z:"3-1"},{mc:"체리",z:"3-2"},{mc:"아보카도",z:"3-2"},{mc:"수입포도",z:"3-2"},{mc:"수입기타",z:"3-2"},{mc:"수입망고",z:"3-2"},{mc:"자몽",z:"3-2"},{mc:"레몬",z:"3-2"},{mc:"수수료-청과",z:"3-3"},{mc:"사과",z:"4"},{mc:"배",z:"4"},{mc:"포도",z:"4"},{mc:"밤",z:"4"},{mc:"계절과일(냉장)",z:"4"},{mc:"참외",z:"1-2"},{mc:"감(냉동)",z:"5-1"},{mc:"냉동과일",z:"5-1"},{mc:"계절과일",z:"5-2"},{mc:"포장과일",z:"5-2"},{mc:"간편과일",z:"5-2"},{mc:"과실선물세트",z:"5-2"},{mc:"샐러드류",z:"6"},{mc:"엽채류기타(건조)",z:"6"},{mc:"엽채류기타(냉장)",z:"6"},{mc:"샐러드류(냉장)",z:"6"},{mc:"근채류기타",z:"6"},{mc:"수입채소",z:"6"},{mc:"두부",z:"7-1"},{mc:"두부(기타)",z:"7-1"},{mc:"두부수수료",z:"7-1"},{mc:"콩나물",z:"7-2"},{mc:"숙주",z:"7-2"},{mc:"콩나물수수료",z:"7-2"},{mc:"숙주수수료",z:"7-2"},{mc:"판란",z:"8"},{mc:"캡슐란",z:"8"},{mc:"채소-수수료",z:"9"},{mc:"수수료 기타",z:"9"},{mc:"친환경채소 수수료",z:"9"},{mc:"채소-수수료(PD)",z:"9"},{mc:"채소-수수료(실온)",z:"9"},{mc:"옥수수",z:"9"},{mc:"간편식",z:"10-1"},{mc:"양곡류",z:"10-2"},{mc:"잡곡류",z:"10-2"},{mc:"가공기타",z:"10-2"},{mc:"고추",z:"11-1"},{mc:"오이",z:"11-1"},{mc:"호박",z:"11-1"},{mc:"과채기타",z:"11-1"},{mc:"파프리카",z:"11-1"},{mc:"단호박",z:"11-1"},{mc:"건강/약용류",z:"11-1"},{mc:"감자",z:"11-2"},{mc:"무우",z:"11-2"},{mc:"고구마",z:"11-2"},{mc:"양파",z:"11-2"},{mc:"마늘",z:"11-2"},{mc:"마늘(냉장)",z:"11-2"},{mc:"배추",z:"11-3"},{mc:"파",z:"11-3"},{mc:"시금치",z:"11-3"},{mc:"엽채류기타",z:"11-3"},{mc:"양채류",z:"11-3"},{mc:"고추가루",z:"11-3"},{mc:"표고버섯",z:"12"},{mc:"버섯기타",z:"12"},{mc:"새송이 버섯",z:"12"},{mc:"표고버섯(건조)",z:"12"},{mc:"버섯기타(건조)",z:"12"},{mc:"일산 로컬 푸드-수수료",z:"13"},{mc:"로컬-수수료(냉장)",z:"13"},{mc:"일산로컬푸드_수수료(2D)",z:"13"},{mc:"로컬-수수료",z:"13"},{mc:"오아시스 식품",z:"13"},{mc:"건과류",z:"14-1"},{mc:"견과류",z:"14-1"},{mc:"건멸치",z:"14-2"},{mc:"건오징어",z:"14-2"},{mc:"생김",z:"14-2"},{mc:"황태류",z:"14-2"},{mc:"멸치_수수료",z:"14-2"},{mc:"진미채",z:"15"},{mc:"진미채(냉장)",z:"15"},{mc:"쥐포류",z:"15"},{mc:"천연조미료",z:"15"},{mc:"갈치(냉동)",z:"16"},{mc:"노르웨이고등어(냉동)",z:"16"},{mc:"연어(냉동)",z:"16"},{mc:"국산고등어(냉동)",z:"16"},{mc:"수입선어(냉동)",z:"16"},{mc:"살류(냉동)",z:"16"},{mc:"명태",z:"16"},{mc:"새우",z:"16"},{mc:"낙지",z:"16"},{mc:"굴(냉동)",z:"16"},{mc:"꽃게(냉동)",z:"16"},{mc:"패류(냉장)",z:"16"},{mc:"굴비",z:"16"},{mc:"새우살",z:"16"},{mc:"전복(냉동)",z:"16"},{mc:"명태코다리",z:"16"},{mc:"수산HMR(냉동)",z:"16"},{mc:"꽃게",z:"17"},{mc:"굴",z:"17"},{mc:"패류",z:"17"},{mc:"전복",z:"17"},{mc:"살류",z:"18"},{mc:"삼치",z:"18"},{mc:"조기",z:"18"},{mc:"연어",z:"18"},{mc:"구색어",z:"18"},{mc:"갈치",z:"18"},{mc:"국산고등어",z:"18"},{mc:"수입선어",z:"18"},{mc:"자반고등어",z:"18"},{mc:"오징어",z:"18"},{mc:"전감류",z:"19"},{mc:"젓갈류",z:"19"},{mc:"수산HMR",z:"19"},{mc:"젓갈류-수수료",z:"19"},{mc:"회초밥-수수료",z:"19"},{mc:"탕볶음-수수료",z:"19"},{mc:"한우등심",z:"21"},{mc:"한우채끝",z:"21"},{mc:"한우안심",z:"21"},{mc:"한우정육",z:"21"},{mc:"한우갈비",z:"21"},{mc:"한우부산물",z:"21"},{mc:"한우양지",z:"21"},{mc:"수입갈비",z:"22"},{mc:"수입등심",z:"22"},{mc:"수입부채살",z:"22"},{mc:"수입가공",z:"22"},{mc:"수입정육",z:"22"},{mc:"수입양지",z:"22"},{mc:"수입돈육",z:"22"},{mc:"수입 와규",z:"22"},{mc:"돈삼겹살",z:"23"},{mc:"돈목심",z:"23"},{mc:"돈갈비",z:"23"},{mc:"돈앞다리",z:"23"},{mc:"돼지기타",z:"23"},{mc:"돈삼겹살(냉동)",z:"23"},{mc:"돈목심(냉동)",z:"23"},{mc:"계육가공",z:"24"},{mc:"계육가공(실온)",z:"24"},{mc:"생닭육",z:"24"},{mc:"닭절단육",z:"24"},{mc:"닭부분육",z:"24"},{mc:"토종닭",z:"24"},{mc:"생오리",z:"24"},{mc:"오리가공",z:"24"},{mc:"계육가공(냉동)",z:"24"},{mc:"양념불고기",z:"25"},{mc:"양념구이용",z:"25"},{mc:"양념스테이크",z:"25"},{mc:"양념육선물세트",z:"25"},{mc:"델리간편조리(지정)",z:"25"},{mc:"델리간편조리",z:"25"},{mc:"델리갈비가공",z:"25"},{mc:"웰빙돼지 뒷다리",z:"26"},{mc:"웰빙돼지 삼겹",z:"26"},{mc:"웰빙돼지 목심",z:"26"},{mc:"웰빙돼지 앞다리",z:"26"},{mc:"웰빙돼지 갈비",z:"26"},{mc:"웰빙돼지 등심",z:"26"},{mc:"웰빙돼지 안심",z:"26"},{mc:"웰빙돼지 기타",z:"26"},{mc:"양념델리 수수료",z:"27"},{mc:"델리간편조리(실온)",z:"27"},{mc:"제주관",z:"27"},{mc:"제주관_수수료",z:"27"},{mc:"제주관(냉동)",z:"27"},{mc:"포기김치(면세)",z:"28"},{mc:"맛김치(면세)",z:"28"},{mc:"총각김치(면세)",z:"28"},{mc:"열무김치(면세)",z:"28"},{mc:"소포장김치(실온)",z:"28"},{mc:"기타김치",z:"28"},{mc:"소포장김치",z:"28"},{mc:"떡갈비",z:"29"},{mc:"동그랑땡",z:"29"},{mc:"돈까스/생선까스",z:"29"},{mc:"냉동스테이크",z:"29"},{mc:"튀김류",z:"29"},{mc:"냉동밥/죽",z:"29"},{mc:"냉동떡/면",z:"29"},{mc:"냉동피자",z:"29"},{mc:"안주류",z:"29"},{mc:"기타냉동식품",z:"29"},{mc:"손만두",z:"30"},{mc:"군만두",z:"30"},{mc:"물만두",z:"30"},{mc:"교자만두",z:"30"},{mc:"딤섬&만두피",z:"30"},{mc:"치킨너겟",z:"30"},{mc:"치킨텐더",z:"30"},{mc:"윙.봉",z:"30"},{mc:"핫도그",z:"30"},{mc:"냉동빵/케이크",z:"30"},{mc:"디저트",z:"30"},{mc:"컵아이스크림",z:"30"},{mc:"막대아이스크림",z:"30"},{mc:"콘아이스크림",z:"30"},{mc:"샌드아이스크림",z:"30"},{mc:"수입아이스크림",z:"30"},{mc:"사각햄",z:"31"},{mc:"프랑크햄",z:"31"},{mc:"비엔나햄",z:"31"},{mc:"김밥햄",z:"31"},{mc:"슬라이스햄",z:"31"},{mc:"베이컨",z:"31"},{mc:"닭고기햄",z:"31"},{mc:"기타소시지",z:"31"},{mc:"기타소시지",z:"31"},{mc:"기타소시지(실온)",z:"31"},{mc:"사각어묵",z:"31"},{mc:"국탕용어묵",z:"31"},{mc:"핫바/고급어묵",z:"31"},{mc:"맛살(일반)",z:"31"},{mc:"맛살(프리미엄)",z:"31"},{mc:"유부초밥재료",z:"31"},{mc:"곤약",z:"31"},{mc:"단무지",z:"31"},{mc:"절임류",z:"31"},{mc:"냉장국/탕/찌개",z:"31"},{mc:"냉장분식",z:"31"},{mc:"낫또",z:"31"},{mc:"냉장드레싱",z:"31"},{mc:"냉장반찬",z:"31"},{mc:"냉장 양념/장",z:"31"},{mc:"단무지(실온)",z:"31"},{mc:"절임류(실온)",z:"31"},{mc:"냉장분식(애슐리)",z:"31"},{mc:"냉장반찬(실온)",z:"32"},{mc:"냉장냉면류",z:"32"},{mc:"냉장우동류",z:"32"},{mc:"냉장스파게티류",z:"32"},{mc:"냉장중화면류",z:"32"},{mc:"냉장떡류",z:"32"},{mc:"냉장면사리",z:"32"},{mc:"냉장육수",z:"32"},{mc:"냉장쌀국수",z:"32"},{mc:"냉장쫄면",z:"32"},{mc:"냉장메밀면",z:"32"},{mc:"냉장떡류(실온)",z:"32"},{mc:"냉장면사리(실온)",z:"32"},{mc:"냉장육수(실온)",z:"32"},{mc:"기타냉장면",z:"32"},{mc:"일반생수",z:"33"},{mc:"기능성첨가생수",z:"33"},{mc:"성인두유",z:"33"},{mc:"오렌지음료",z:"34"},{mc:"포도음료",z:"34"},{mc:"기타과즙음료(팩)",z:"34"},{mc:"토마토음료",z:"34"},{mc:"알로에음료",z:"34"},{mc:"기타야채음료",z:"34"},{mc:"과즙병세트음료",z:"34"},{mc:"곡식음료",z:"34"},{mc:"오렌지음료(실온)",z:"34"},{mc:"포도음료(실온)",z:"34"},{mc:"기타과즙음료(실온)",z:"34"},{mc:"콜라",z:"35"},{mc:"사이다",z:"35"},{mc:"과즙탄산",z:"35"},{mc:"탄산수",z:"35"},{mc:"이온음료",z:"35"},{mc:"숙취제거음료",z:"35"},{mc:"건강세트음료",z:"35"},{mc:"어린이음료",z:"35"},{mc:"커피음료",z:"35"},{mc:"혼합차음료",z:"35"},{mc:"섬유음료",z:"35"},{mc:"홍차음료",z:"35"},{mc:"수입생수",z:"35"},{mc:"액상발효유",z:"36"},{mc:"액상농후발효유",z:"36"},{mc:"호상농후발효유",z:"36"},{mc:"액상발효유(실온)",z:"36"},{mc:"액상농후발효유(실온)",z:"36"},{mc:"호상농후발효유(실온)",z:"36"},{mc:"멸균유",z:"37"},{mc:"흰우유",z:"37"},{mc:"저지방우유",z:"37"},{mc:"강화우유",z:"37"},{mc:"가공우유",z:"37"},{mc:"냉장젤리류",z:"38"},{mc:"냉장컵커피/음료",z:"38"},{mc:"가공우유(실온)",z:"38"},{mc:"기타유제품류",z:"38"},{mc:"기타치즈(실온)",z:"39"},{mc:"기타유제품류(실온)",z:"39"},{mc:"냉장커피(실온)",z:"39"},{mc:"연성치즈",z:"39"},{mc:"경성치즈",z:"39"},{mc:"가공치즈",z:"39"},{mc:"기타치즈",z:"39"},{mc:"버터",z:"39"},{mc:"마아가린",z:"39"},{mc:"가공치즈(실온)",z:"39"},{mc:"버터(실온)",z:"39"},{mc:"스위티 와인",z:"40"},{mc:"드라이 와인",z:"40"},{mc:"직수입와인",z:"40"},{mc:"수입위스키",z:"40"},{mc:"리큐르",z:"40"},{mc:"럼/진",z:"40"},{mc:"와인세트",z:"40"},{mc:"민속주",z:"40"},{mc:"보드카",z:"40"},{mc:"위스키세트",z:"40"},{mc:"\"민속주,약주세트\"",z:"40"},{mc:"맥주캔",z:"41"},{mc:"맥주지",z:"41"},{mc:"맥주PET",z:"41"},{mc:"수입맥주캔",z:"41"},{mc:"소주지",z:"41"},{mc:"소주PET",z:"41"},{mc:"약주",z:"41"},{mc:"탁주",z:"41"},{mc:"청주",z:"41"},{mc:"중국술",z:"41"},{mc:"과실주",z:"41"},{mc:"무알콜 맥주",z:"41"},{mc:"탁주(실온)",z:"41"},{mc:"청주(ED)",z:"41"},{mc:"공병",z:"41"},{mc:"과일기타",z:"42"},{mc:"식빵",z:"42"},{mc:"일반빵",z:"42"},{mc:"수입빵",z:"42"},{mc:"기타빵",z:"42"},{mc:"봉지면(일반)",z:"43-1"},{mc:"봉지면(짜장)",z:"43-1"},{mc:"봉지면(냉면)",z:"43-1"},{mc:"봉지면(쫄면)",z:"43-1"},{mc:"봉지면(비빔)",z:"43-1"},{mc:"용기면",z:"43-2"},{mc:"당면",z:"43-2"},{mc:"국수",z:"43-2"},{mc:"기타면류",z:"43-2"},{mc:"맨밥",z:"44"},{mc:"잡곡밥",z:"44"},{mc:"컵밥",z:"44"},{mc:"떡볶이",z:"44"},{mc:"후리가께",z:"44"},{mc:"기타즉석류",z:"44"},{mc:"조미도시락김",z:"45"},{mc:"생김",z:"45"},{mc:"조미도시락김",z:"45"},{mc:"조미전장김",z:"45"},{mc:"김자반",z:"45"},{mc:"미역",z:"45"},{mc:"탕류",z:"46"},{mc:"레토르트",z:"46"},{mc:"스프",z:"47"},{mc:"죽",z:"47"},{mc:"카레짜장",z:"47"},{mc:"복숭아",z:"48"},{mc:"파인애플",z:"48"},{mc:"후르츠칵테일",z:"48"},{mc:"두류",z:"48"},{mc:"옥수수홀",z:"48"},{mc:"피클",z:"48"},{mc:"채소기타",z:"48"},{mc:"참치",z:"48"},{mc:"꽁치",z:"48"},{mc:"고등어",z:"48"},{mc:"골뱅이",z:"48"},{mc:"수산기타",z:"48"},{mc:"돈육통조림",z:"48"},{mc:"계육통조림",z:"48"},{mc:"어포류",z:"48"},{mc:"우동류",z:"48"},{mc:"채소기타(냉장)",z:"48"},{mc:"통조림기타",z:"48"},{mc:"대두유",z:"49"},{mc:"옥수수유",z:"49"},{mc:"참기름",z:"49"},{mc:"들기름",z:"49"},{mc:"올리브유",z:"49"},{mc:"포도씨유",z:"49"},{mc:"카놀라유",z:"49"},{mc:"아보카도오일",z:"49"},{mc:"기타유지류",z:"49"},{mc:"육포",z:"49"},{mc:"견과류",z:"49"},{mc:"어육소세지",z:"49"},{mc:"고추장",z:"50"},{mc:"된장",z:"50"},{mc:"쌈장",z:"50"},{mc:"혼합장",z:"50"},{mc:"진간장",z:"50"},{mc:"양조간장",z:"50"},{mc:"국간장",z:"50"},{mc:"조림간장",z:"50"},{mc:"향신간장",z:"50"},{mc:"기타 장류",z:"50"},{mc:"케찹",z:"51"},{mc:"마요네즈",z:"51"},{mc:"드레싱",z:"51"},{mc:"스파게티소스",z:"51"},{mc:"머스타드소스",z:"51"},{mc:"양념장",z:"51"},{mc:"돈까스/스테이크",z:"51"},{mc:"굴소스",z:"51"},{mc:"동남아소스",z:"51"},{mc:"중화소스",z:"51"},{mc:"기타소스류",z:"51"},{mc:"스파게티",z:"51"},{mc:"웰빙과자 유기농/무농",z:"52"},{mc:"전통과자/화과자류",z:"52"},{mc:"씨리얼",z:"52"},{mc:"수입기타",z:"52"},{mc:"기타스넥",z:"52"},{mc:"부침가루",z:"53"},{mc:"튀김가루",z:"53"},{mc:"빵가루",z:"53"},{mc:"밀가루",z:"53"},{mc:"가공전분",z:"53"},{mc:"홈베이킹재료",z:"53"},{mc:"기타분말",z:"53"},{mc:"볶음깨",z:"54-1"},{mc:"물엿",z:"54-1"},{mc:"식초",z:"54-1"},{mc:"식초(희석식)",z:"54-1"},{mc:"액젓",z:"54-1"},{mc:"설탕",z:"54-1"},{mc:"맛술(조미료)",z:"54-1"},{mc:"설탕(PD)",z:"54-1"},{mc:"화학조미료(PD)",z:"54-1"},{mc:"기타조미료",z:"54-1"},{mc:"면세소금",z:"54-2"},{mc:"과세소금",z:"54-2"},{mc:"화학조미료",z:"54-2"},{mc:"천연조미료",z:"54-2"},{mc:"액상조미료",z:"54-2"},{mc:"겨자/와사비",z:"54-2"},{mc:"향신료",z:"54-2"},{mc:"후추",z:"54-2"},{mc:"면세소금(PD)",z:"54-2"},{mc:"과세소금(PD)",z:"54-2"},{mc:"파이",z:"55-1"},{mc:"비스켓",z:"55-1"},{mc:"쿠키",z:"55-1"},{mc:"웨하스",z:"55-1"},{mc:"샌드",z:"55-1"},{mc:"크래커",z:"55-1"},{mc:"감자스낵",z:"55-1"},{mc:"고구마스낵",z:"55-1"},{mc:"쌀스낵",z:"55-1"},{mc:"옥수수스낵",z:"55-1"},{mc:"밀가루스넥",z:"55-1"},{mc:"기타이유식",z:"55-1"},{mc:"유아음료",z:"55-1"},{mc:"기타영유아식",z:"55-1"},{mc:"바초콜렛",z:"55-2"},{mc:"쉘초콜렛",z:"55-2"},{mc:"판초콜렛",z:"55-2"},{mc:"가공초콜렛",z:"55-2"},{mc:"기타초콜렛",z:"55-2"},{mc:"하드캔디",z:"55-2"},{mc:"소프트캔디",z:"55-2"},{mc:"카라멜",z:"55-2"},{mc:"\"젤리,푸딩\"",z:"55-2"},{mc:"껌",z:"55-2"},{mc:"원두커피",z:"56"},{mc:"원두커피일회용",z:"56"},{mc:"코코아가공",z:"56"},{mc:"시럽",z:"56"},{mc:"커피용품",z:"56"},{mc:"인스턴트커피믹스",z:"56"},{mc:"라떼",z:"56"},{mc:"캡슐원두커피",z:"56"},{mc:"녹차(단일)",z:"56"},{mc:"기타침출차",z:"56"},{mc:"기타곡류차",z:"56"},{mc:"기타차류",z:"56"},{mc:"분말차",z:"56"},{mc:"액상차",z:"56"},{mc:"보리차",z:"56"},{mc:"커피선물세트",z:"56"},{mc:"땡",z:"57"},{mc:"종합비타민",z:"57"},{mc:"단백질보충용(음료)",z:"57"},{mc:"단백질보충용(파우더)",z:"57"},{mc:"홍삼",z:"57"},{mc:"수면케어",z:"57"},{mc:"꿀.면역",z:"57"},{mc:"다이어트",z:"57"},{mc:"이너뷰티",z:"57"},{mc:"건기식기타",z:"57"},{mc:"장건강",z:"57"},{mc:"간건강",z:"57"},{mc:"눈건강",z:"57"},{mc:"혈행건강",z:"57"},{mc:"뼈관절건강",z:"57"},{mc:"인지개선",z:"57"},{mc:"건강분말",z:"57"},{mc:"건강음료",z:"57"},{mc:"수세미",z:"58"},{mc:"랩",z:"58"},{mc:"백",z:"58"},{mc:"호일",z:"58"},{mc:"고무장갑",z:"58"},{mc:"위생장갑",z:"58"},{mc:"애견간식",z:"58"},{mc:"애견(판매분)",z:"58"},{mc:"치약",z:"59"},{mc:"치솔",z:"59"},{mc:"가글",z:"59"},{mc:"어린이칫약",z:"59"},{mc:"어린이칫솔",z:"59"},{mc:"구강보조용품",z:"59"},{mc:"위생대날개형",z:"59"},{mc:"위생대오버나이트",z:"59"},{mc:"위생대팬티라이너",z:"59"},{mc:"위생대삽입형",z:"59"},{mc:"성인용기저귀",z:"59"},{mc:"성인용기저귀(용품)",z:"59"},{mc:"팬티형대형",z:"59"},{mc:"팬티형특대형",z:"59"},{mc:"팬티형점포",z:"59"},{mc:"밴드",z:"59"},{mc:"마스크/핫팩",z:"59"},{mc:"위생용품 기타",z:"59"},{mc:"면도기",z:"59"},{mc:"쉐이빙폼",z:"59"},{mc:"일반물티슈",z:"60"},{mc:"유아용물티슈",z:"60"},{mc:"휴대용물티슈",z:"60"},{mc:"물티슈기획",z:"60"},{mc:"물티슈 기타",z:"60"},{mc:"롤키친타올",z:"60"},{mc:"뽑아쓰는키친타올",z:"60"},{mc:"키친타올기획",z:"60"},{mc:"키친타올기타",z:"60"},{mc:"섬유탈취제",z:"60"},{mc:"방향제",z:"60"},{mc:"제습제",z:"60"},{mc:"탈취제(냉장고)",z:"60"},{mc:"주거청소용품",z:"60"},{mc:"행주",z:"60"},{mc:"애견용품",z:"60"},{mc:"종이컵류",z:"60"},{mc:"PS컵류",z:"60"},{mc:"접시류",z:"60"},{mc:"도시락류",z:"60"},{mc:"공기류",z:"60"},{mc:"활저류",z:"60"},{mc:"부탄가스",z:"60"},{mc:"바퀴 살충제",z:"60"},{mc:"\"파리,모기 살충제\"",z:"60"},{mc:"방충제",z:"60"},{mc:"면도날",z:"60"},{mc:"일회용품 기타",z:"60"},{mc:"캠핑가스",z:"60"},{mc:"방향/탈취제",z:"60"},{mc:"식기세척기주방세제",z:"61"},{mc:"세탁조세정제",z:"61"},{mc:"세정제기타",z:"61"},{mc:"변기 세정제",z:"61"},{mc:"배수구/싱크 세정제",z:"61"},{mc:"욕실세정제",z:"61"},{mc:"주방세정제",z:"61"},{mc:"곰팡이세정제",z:"61"},{mc:"다목적 세정제(락스)",z:"61"},{mc:"주방세척용품",z:"61"},{mc:"미용비누",z:"62"},{mc:"훼이셜폼",z:"62"},{mc:"핸드워시",z:"62"},{mc:"훼이셜케어기타",z:"62"},{mc:"샴푸",z:"62"},{mc:"린스",z:"62"},{mc:"트리트먼트",z:"62"},{mc:"헤어스타일링",z:"62"},{mc:"염모제",z:"62"},{mc:"여행용세트",z:"62"},{mc:"바디워시",z:"62"},{mc:"바디로션",z:"62"},{mc:"립케어",z:"62"},{mc:"핸드/풋케어",z:"62"},{mc:"유아바스",z:"62"},{mc:"일반섬유유연제",z:"63-1"},{mc:"고농축 섬유유연제",z:"63-1"},{mc:"시트/향기 지속제",z:"63-1"},{mc:"일반주방세제",z:"63-2"},{mc:"고농축주방세제",z:"63-2"},{mc:"분말 세탁세제",z:"63-3"},{mc:"다목적 세탁세제",z:"63-3"},{mc:"액상세탁세제",z:"63-3"},{mc:"울전용 세탁세제",z:"63-3"},{mc:"표백제",z:"63-3"},{mc:"보조 세탁세제",z:"63-3"},{mc:"시트/캡슐 세탁세제",z:"63-3"},{mc:"3겹화장지",z:"64"},{mc:"프리미엄화장지",z:"64"},{mc:"미용티슈",z:"64"},{mc:"미용티슈기획",z:"64"},{mc:"보습미용티슈",z:"64"},{mc:"휴대용미용티슈",z:"64"},{mc:"냅킨",z:"64"},{mc:"조리기구",z:"65"},{mc:"솥/냄비/찜솥",z:"65"},{mc:"주방(판매분)",z:"65"},{mc:"후라이팬/구이팬",z:"65"},{mc:"도자기/글라스",z:"65"},{mc:"보온보냉/물병",z:"65"},{mc:"저장/밀폐용기",z:"65"},{mc:"주방정리용품",z:"65"},{mc:"주방잡화(판매분)",z:"65"},{mc:"주방잡화(판매분/ED)",z:"65"},{mc:"침장(판매분)",z:"65"},{mc:"욕실세탁수납용품",z:"65"},{mc:"청소/욕실(판매분)",z:"65"},{mc:"욕실화류",z:"65"},{mc:"청소용품",z:"65"},{mc:"청소용품(ED)",z:"65"},{mc:"장바구니/카트",z:"65"},{mc:"차량용품",z:"65"},{mc:"멀티탭",z:"65"},{mc:"일반공구",z:"65"},{mc:"전구",z:"65"},{mc:"알카라인건전지",z:"65"},{mc:"조명",z:"65"},{mc:"선풍기",z:"65"},{mc:"우산",z:"65"},{mc:"이지웨어",z:"65"},{mc:"건전지",z:"65"},{mc:"안전/보수/공구",z:"65"},{mc:"양말",z:"65"},{mc:"화장품/소품",z:"65"},{mc:"화장품(판매분)",z:"65"},{mc:"언더웨어",z:"65"},{mc:"잡화(판매분)",z:"65"},{mc:"델리바이애슐리",z:"66-1"},{mc:"TOGO즉석 반찬",z:"66-2"},{mc:"TOGO즉석 조리 행사",z:"66-2"},{mc:"간편식",z:"20"},{mc:"990원",z:"55-3"},{mc:"직수입",z:"67"},{mc:"이불류",z:"65"},{mc:"타올류",z:"65"},{mc:"수도/샤워용품(수전)",z:"65"},{mc:"전기요/매트",z:"65"},{mc:"한우양지(냉동)",z:"21"},{mc:"돈등심",z:"23"},{mc:"오리가공(실온)",z:"24"},{mc:"양념불고기(냉동)",z:"25"},{mc:"일산 로컬 푸드-수수료(건나물)",z:"13"},{mc:"나물기타",z:"11-3"},{mc:"계란가공(냉장)",z:"8"},{mc:"친환경 채소",z:"9"},{mc:"메론",z:"1-1"},{mc:"고구마(가공)",z:"6"},{mc:"자두",z:"4"},{mc:"복숭아",z:"4"},{mc:"선물세트",z:"15"},{mc:"빙수재료",z:"48"},{mc:"샴페인",z:"40"},{mc:"위생대일반형",z:"60"},{mc:"화장품(샵)",z:"59"},{mc:"생활용품 기타",z:"59"},{mc:"유아로션",z:"59"},{mc:"콘돔",z:"59"},{mc:"렌즈세정액",z:"59"},{mc:"요지류",z:"57"},{mc:"수저/양식기",z:"65"},{mc:"베개류",z:"65"}];
-if (!window.zoningMcMap) window.zoningMcMap = JSON.parse(JSON.stringify(window._zoningMcMapDefault));
-if (!window.zoningMcOverrides || Array.isArray(window.zoningMcOverrides)) window.zoningMcOverrides = {};
+if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {};
+if (!window.zoningMcOverridesByStore) window.zoningMcOverridesByStore = {};
+(function() {
+  var _fStore = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (!window.zoningMcMap) {
+    if (!window.zoningMcMapByStore[_fStore]) window.zoningMcMapByStore[_fStore] = JSON.parse(JSON.stringify(window._zoningMcMapDefault));
+    window.zoningMcMap = window.zoningMcMapByStore[_fStore];
+  }
+  if (!window.zoningMcOverrides || Array.isArray(window.zoningMcOverrides)) {
+    if (!window.zoningMcOverridesByStore[_fStore]) window.zoningMcOverridesByStore[_fStore] = {};
+    window.zoningMcOverrides = window.zoningMcOverridesByStore[_fStore];
+  }
+})();
 
 /* ── Firebase 저장 ── */
 function syncZoningMcMap() {
-  if (typeof window._firebaseSaveGlobal === 'function') {
-    window._firebaseSaveGlobal('zoningMcMap', JSON.parse(JSON.stringify(window.zoningMcMap || [])));
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (typeof window._firebaseSaveStoreField === 'function') {
+    window._firebaseSaveStoreField(_store, 'zoningMcMap', JSON.parse(JSON.stringify(window.zoningMcMap || [])));
   }
 }
 function syncZoningMcOverrides() {
-  if (typeof window._firebaseSaveGlobal === 'function') {
-    window._firebaseSaveGlobal('zoningMcOverrides', JSON.parse(JSON.stringify(window.zoningMcOverrides || {})));
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (typeof window._firebaseSaveStoreField === 'function') {
+    window._firebaseSaveStoreField(_store, 'zoningMcOverrides', JSON.parse(JSON.stringify(window.zoningMcOverrides || {})));
   }
 }
 
@@ -20043,7 +20095,7 @@ function openZoningMcMapModal() {
   modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:720px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
     + '<div style="background:linear-gradient(135deg,#4c1d95,#7c3aed);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
     + '<div><div style="font-size:15px;font-weight:900;color:#fff;">🗺️ MC명 ↔ 조닝번호 매핑표</div>'
-    + '<div id="zmcHeaderCount" style="font-size:10px;color:#ddd6fe;margin-top:2px;">' + (window.zoningMcMap||[]).length + '개 등록 · Firebase 저장 · 전 매장 공통</div></div>'
+    + '<div id="zmcHeaderCount" style="font-size:10px;color:#ddd6fe;margin-top:2px;">' + (window.zoningMcMap||[]).length + '개 등록 · Firebase 저장 · ' + ((window.storeNames||{})[typeof currentStore!=='undefined'?currentStore:'gs'] || '현재 지점') + ' 전용</div></div>'
     + '<button onclick="document.getElementById(\'zoningMcMapModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
     + '</div>'
     + '<div style="padding:10px 16px;background:#faf5ff;border-bottom:1px solid #e9d5ff;flex-shrink:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
@@ -20075,7 +20127,7 @@ function _renderZmcTable() {
   var cntEl = document.getElementById('zmcCount');
   if (cntEl) cntEl.textContent = arr.length;
   var hdrEl = document.getElementById('zmcHeaderCount');
-  if (hdrEl) hdrEl.textContent = arr.length + '개 등록 · Firebase 저장 · 전 매장 공통';
+  if (hdrEl) hdrEl.textContent = arr.length + '개 등록 · Firebase 저장 · ' + ((window.storeNames||{})[typeof currentStore!=='undefined'?currentStore:'gs'] || '현재 지점') + ' 전용';
 
   if (!filtered.length) { wrap.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px;">검색 결과 없음</div>'; return; }
 
@@ -20117,7 +20169,12 @@ function _zmcAddEntry() {
   var mc = mcEl ? mcEl.value.trim() : '';
   var z = zEl ? zEl.value.trim() : '';
   if (!mc || !z) { showToast('MC명과 조닝번호를 모두 입력하세요'); return; }
-  if (!window.zoningMcMap) window.zoningMcMap = [];
+  if (!window.zoningMcMap) {
+    var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+    if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {};
+    window.zoningMcMapByStore[_store] = [];
+    window.zoningMcMap = window.zoningMcMapByStore[_store];
+  }
   window.zoningMcMap.push({ mc: mc, z: z });
   if (mcEl) mcEl.value = '';
   if (zEl) zEl.value = '';
@@ -20127,7 +20184,10 @@ function _zmcAddEntry() {
 
 function _zmcResetToDefault() {
   if (!confirm('매핑표를 기본값(677개)으로 초기화합니까? 현재 수정사항이 사라집니다.')) return;
-  window.zoningMcMap = JSON.parse(JSON.stringify(window._zoningMcMapDefault));
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {};
+  window.zoningMcMapByStore[_store] = JSON.parse(JSON.stringify(window._zoningMcMapDefault));
+  window.zoningMcMap = window.zoningMcMapByStore[_store];
   _renderZmcTable();
   showToast('기본값으로 초기화됨');
 }
