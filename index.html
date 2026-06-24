@@ -3059,7 +3059,7 @@ window.onerror = function(msg, src, line, col, err) {
  <div id="salesNavMonths" style="display:flex;overflow-x:auto;flex:1;scrollbar-width:none;"></div>
  <button id="salesSaveBtn" onclick="_salesSaveNow()" title="평당매출 데이터를 Firebase 서버에 저장합니다" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #059669;border-radius:4px;background:rgba(16,185,129,.12);color:#059669;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">✓ 서버 저장됨</button>
  <button id="salesLockBtn" onclick="_salesEditStart()" title="클릭해서 편집 잠금 — 다른 관리자의 동시 수정을 차단합니다" style="flex-shrink:0;margin-left:4px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #3b82f6;border-radius:4px;background:rgba(59,130,246,.10);color:#3b82f6;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;">✏ 수정하기</button>
- <button onclick="openCopyGroupsModal()" title="현재 월 그룹 구성을 다른 월로 복사" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #7c3aed;border-radius:4px;background:rgba(124,58,237,.08);color:#7c3aed;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;" onmouseover="this.style.background='rgba(124,58,237,.18)'" onmouseout="this.style.background='rgba(124,58,237,.08)'">
+ <button id="salBtnGroupCopy" onclick="openCopyGroupsModal()" title="현재 월 그룹 구성을 다른 월로 복사" style="flex-shrink:0;margin-left:8px;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border:1px solid #7c3aed;border-radius:4px;background:rgba(124,58,237,.08);color:#7c3aed;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all .12s;" onmouseover="if(!this.disabled)this.style.background='rgba(124,58,237,.18)'" onmouseout="if(!this.disabled)this.style.background='rgba(124,58,237,.08)'">
    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><rect x="5" y="1" width="9" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><rect x="1" y="4" width="9" height="11" rx="2" fill="rgba(124,58,237,.15)" stroke="currentColor" stroke-width="1.7"/></svg>
    그룹 복사
  </button>
@@ -6213,7 +6213,7 @@ function clearMonthZoneOverrides() {
  if (!monthZoneOverrides[curMonthIdx] || Object.keys(monthZoneOverrides[curMonthIdx]).length === 0) {
   showToast(mo+' 도면은 기본 도면과 동일합니다'); return;
  }
- if (!confirm(mo+' 도면 변경사항을 모두 초기화하고 기본 도면으로 되돌릴까요?')) return;
+ if (!confirm(mo+' 도면 변경사항을 초기화하시겠습니까?\n전체 구역 위치가 기본 도면으로 되돌아갑니다. 되돌릴 수 없습니다.')) return;
  delete monthZoneOverrides[curMonthIdx];
  render(); renderPanel(); syncToFirebase();
  showToast('✅ '+mo+' 도면 초기화 완료');
@@ -6273,7 +6273,7 @@ function jumpToMonthAndClose(mi) {
 
 function confirmClearMonth(mi) {
  const mo = MONTHS[mi]?.label || (mi+1)+'월';
- if (!confirm(mo+' 도면 변경사항을 초기화할까요?')) return;
+ if (!confirm(mo+' 도면 변경사항을 초기화하시겠습니까?\n이 달의 구역 위치가 기본 도면으로 되돌아갑니다. 되돌릴 수 없습니다.')) return;
  delete monthZoneOverrides[mi];
  render(); syncToFirebase();
  renderMonthLayoutModal();
@@ -11705,6 +11705,37 @@ function _updateSalesSaveBtn() {
   btn.style.opacity = isEditor ? '' : '0.45';
   btn.style.cursor = isEditor ? 'pointer' : 'default';
  }
+ // 편집 잠금 보호 버튼도 함께 갱신
+ if (typeof _updateSalesEditorGuardBtns === 'function') _updateSalesEditorGuardBtns();
+}
+// 편집 잠금 보호 버튼 상태 일괄 갱신 — _updateSalesSaveBtn() 호출 시 함께 실행
+function _updateSalesEditorGuardBtns() {
+ var isEditor = !!window._salesIAmEditor;
+ var HINT = '수정하기를 눌러 편집 권한을 먼저 받으세요';
+ // [높은 위험] 이 달 데이터 삭제
+ var delBtn = document.getElementById('salBtnDeleteMonth');
+ if (delBtn) {
+  delBtn.disabled  = !isEditor;
+  delBtn.style.opacity = isEditor ? '' : '0.4';
+  delBtn.style.cursor  = isEditor ? 'pointer' : 'not-allowed';
+  delBtn.title = isEditor ? '현재 월 데이터 삭제' : HINT;
+ }
+ // [중간 위험] 레이블 초기화
+ var lblBtn = document.getElementById('salBtnResetLabel');
+ if (lblBtn) {
+  lblBtn.disabled  = !isEditor;
+  lblBtn.style.opacity = isEditor ? '' : '0.4';
+  lblBtn.style.cursor  = isEditor ? 'pointer' : 'not-allowed';
+  lblBtn.title = isEditor ? '레이블 위치 초기화' : HINT;
+ }
+ // [중간 위험] 그룹 복사
+ var cpBtn = document.getElementById('salBtnGroupCopy');
+ if (cpBtn) {
+  cpBtn.disabled  = !isEditor;
+  cpBtn.style.opacity = isEditor ? '' : '0.4';
+  cpBtn.style.cursor  = isEditor ? 'pointer' : 'not-allowed';
+  cpBtn.title = isEditor ? '현재 월 그룹 구성을 다른 월로 복사' : HINT;
+ }
 }
 function _salesSaveNow() {
  if (typeof isViewer !== 'undefined' && isViewer) { showToast('열람 모드 — 저장 불가'); return; }
@@ -15790,6 +15821,7 @@ function applySalesGroupOutlines() {
 
 function resetSalesLabelOffsets() {
  if (!isAdmin || isViewer) { showToast('️ 관리자만 초기화할 수 있습니다'); return; }
+ if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
  window.salesLabelOffsets = {};
  showToast('↺ 레이블 위치 초기화됨');
  if (typeof switchSalesMonth === 'function') {
@@ -15799,6 +15831,7 @@ function resetSalesLabelOffsets() {
 
 function deleteSalesMonthData() {
  if (!isAdmin || isViewer) { showToast('관리자만 삭제할 수 있습니다'); return; }
+ if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
  const mo = window.currentSalesMonth;
  if (mo === null || mo === undefined) {
    showToast('월을 먼저 선택해주세요');
@@ -15806,7 +15839,8 @@ function deleteSalesMonthData() {
  }
  const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
  const mName = monthNames[mo] || (mo + '월');
- if (!confirm(mName + ' 평당매출 데이터를 삭제할까요?\n(매출금액 + 구역 그룹 모두 삭제됩니다)')) return;
+ const _storeName = (window.storeNames || {})[currentStore] || currentStore;
+ if (!confirm(_storeName + ' ' + mName + ' 평당매출 데이터를 삭제하시겠습니까?\n매출금액·구역 그룹 모두 삭제되며 되돌릴 수 없습니다.')) return;
 
  const store = currentStore;
  const key = 'm' + mo;
@@ -18847,6 +18881,7 @@ function _cgmRenderMonthBtns() {
 }
 
 function openCopyGroupsModal() {
+  if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
   var curMon = window.currentSalesMonth;
   if (curMon === null || curMon === undefined) {
     showToast('종합 탭에서는 복사할 수 없습니다. 특정 월 탭에서 사용하세요.');
