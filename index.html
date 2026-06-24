@@ -2119,7 +2119,14 @@ body.viewer-mode #salesMonthNav > div > button{
  }
  if (!window.weeklySalesStore) window.weeklySalesStore = {};
  if (data.weeklySales) {
-   window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
+   var _fbWeekly = JSON.parse(JSON.stringify(data.weeklySales));
+   // 내가 편집 잠금을 보유 중이고 활성 주차가 있으면, 그 슬롯은 Firebase 값으로 덮어쓰지 않음
+   // → 다른 관리자 저장이 트리거한 onValue 콜백이 내 미저장 편집을 지우는 것을 방지
+   var _rtActiveWk = window._salesIAmEditor && window.currentSalesWeek;
+   if (_rtActiveWk && window.weeklySalesStore[store] && window.weeklySalesStore[store][_rtActiveWk]) {
+     _fbWeekly[_rtActiveWk] = window.weeklySalesStore[store][_rtActiveWk];
+   }
+   window.weeklySalesStore[store] = _fbWeekly;
  }
  if (!window.salesTargets) window.salesTargets = {};
  if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
@@ -2130,6 +2137,7 @@ body.viewer-mode #salesMonthNav > div > button{
  // ── window.salesData/areaData/salesGroups/salesGroupData는 stale top-level(data.salesData)로
  //    덮어쓰지 않는다. monthlySalesStore/weeklySalesStore(위에서 Firebase 최신값으로 갱신됨)
  //    를 통해서만 복원 → 다른 관리자 변경은 monthlySalesStore/weeklySalesStore 경유로 반영됨.
+ //    단, 편집 잠금 보유 중인 활성 주차는 위 weeklySalesStore 갱신 시 보존됨 (실시간 덮어쓰기 방지).
  window.manualTotalSales = data.manualTotalSales || 0;
  window.manualTotalArea = data.manualTotalArea || 0;
  window.salesLabelOffsets= JSON.parse(JSON.stringify(data.labelOffsets || {}));
