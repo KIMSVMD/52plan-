@@ -2293,7 +2293,6 @@ body.viewer-mode #salesMonthNav > div > button{
     if (_gSnap.exists()) {
      window.zoningMcMapByStore[store] = _gSnap.val();
      await set(ref(db, 'plan2026/' + store + '/zoningMcMap'), window.zoningMcMapByStore[store]);
-     console.log('[MC매핑] 강서점 매핑 이전 완료 (' + (window.zoningMcMapByStore[store]||[]).length + '개)');
     } else {
      window.zoningMcMapByStore[store] = [];
     }
@@ -2302,7 +2301,6 @@ body.viewer-mode #salesMonthNav > div > button{
    }
   } catch(e) { console.warn('[MC매핑] zoningMcMap 로드 실패', store, e); window.zoningMcMapByStore[store] = []; }
   window.zoningMcMap = window.zoningMcMapByStore[store];
-  console.log('[MC매핑] 불러옴 경로=plan2026/' + store + '/zoningMcMap 개수=' + (window.zoningMcMapByStore[store]||[]).length);
   try {
    var ovSnap = await get(ref(db, 'plan2026/' + store + '/zoningMcOverrides'));
    if (ovSnap.exists()) {
@@ -2357,7 +2355,6 @@ body.viewer-mode #salesMonthNav > div > button{
  });
  if (deletePromises.length) {
  await Promise.all(deletePromises);
- console.log('[LOG] 오래된 로그 ' + deletePromises.length + '건 자동 삭제');
  }
  }
  } catch(e) {
@@ -10517,7 +10514,6 @@ setTimeout(function() {
   _fixTries++;
   var psd = window.productSalesData || {};
   if (_hasBadKey(psd)) {
-   console.log('[AUTO-FIX] productSalesData 오염 키 발견 - 정리 후 재저장');
    window.productSalesData = _sk(psd);
    if (typeof syncToFirebase === 'function') syncToFirebase();
    clearInterval(_fixTimer);
@@ -19391,7 +19387,6 @@ if (!window.zoningMcOverridesByStore) window.zoningMcOverridesByStore = {};
 function syncZoningMcMap() {
   var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
   var _data = JSON.parse(JSON.stringify(window.zoningMcMap || []));
-  console.log('[MC매핑] 저장됨 경로=plan2026/' + _store + '/zoningMcMap 개수=' + _data.length);
   if (typeof window._firebaseSaveStoreField === 'function') {
     window._firebaseSaveStoreField(_store, 'zoningMcMap', _data);
   } else {
