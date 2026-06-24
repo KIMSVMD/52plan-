@@ -2304,9 +2304,9 @@ body.viewer-mode #salesMonthNav > div > button{
  const safeEntry = _skLog(logEntry);
  await set(ref(db, 'plan2026/_logs/' + logKey), safeEntry);
 
- // 2주(14일) 이상 지난 로그 자동 삭제
- const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
- const cutoff = Date.now() - TWO_WEEKS;
+ // 90일 이상 지난 로그 자동 삭제
+ const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
+ const cutoff = Date.now() - NINETY_DAYS;
  const logsSnap = await get(ref(db, 'plan2026/_logs'));
  const allLogs = logsSnap.val();
  if (allLogs) {
@@ -2399,6 +2399,19 @@ body.viewer-mode #salesMonthNav > div > button{
  window._firebaseDeleteStore = async function(code) {
  try {
  syncUI('syncing', '삭제 중...');
+ // 삭제 전 감사 로그 기록 (누가·언제·어느 지점)
+ if (typeof window._firebaseSaveLog === 'function') {
+   var _dsBranch = (document.getElementById('scmBranchInp') || {}).value || '';
+   var _dsWho    = (document.getElementById('scmNameInp')   || {}).value || '';
+   await window._firebaseSaveLog({
+     savedAt:   Date.now(),
+     type:      'delete_store',
+     store:     code,
+     storeName: (window.storeNames || {})[code] || code,
+     branch:    _dsBranch.trim(),
+     who:       _dsWho.trim()
+   });
+ }
  // 지점 데이터 삭제
  await set(ref(db, 'plan2026/' + code), null);
  // 지점 목록에서도 삭제
@@ -8314,10 +8327,9 @@ function doSyncSave() {
  });
  }
  window._firebaseSave(currentStore);
- // 로그 저장 (비활성화 - productSalesData 오염 키 문제로 인해 임시 중단)
- // if (typeof window._firebaseSaveLog === 'function') {
- // window._firebaseSaveLog(logEntry);
- // }
+ if (typeof window._firebaseSaveLog === 'function') {
+   window._firebaseSaveLog(logEntry);
+ }
  showToast(' [' + branch + ' ' + name + '] 서버 동기화 완료');
  } else {
  showToast(' Firebase 연결 안됨');
@@ -15800,6 +15812,28 @@ function deleteSalesMonthData() {
  const key = 'm' + mo;
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
  if (!window.monthlySalesStore[store]) window.monthlySalesStore[store] = {};
+
+ // 삭제 전 감사 로그 기록 (누가·언제·어느 월·삭제 전 데이터)
+ if (typeof window._firebaseSaveLog === 'function') {
+   var _delBranch = (document.getElementById('scmBranchInp') || {}).value || '';
+   var _delWho    = (document.getElementById('scmNameInp')   || {}).value || '';
+   window._firebaseSaveLog({
+     savedAt:   Date.now(),
+     type:      'delete_month',
+     store:     store,
+     storeName: (window.storeNames || {})[store] || store,
+     branch:    _delBranch.trim(),
+     who:       _delWho.trim(),
+     month:     mo,
+     monthName: mName,
+     beforeData: {
+       salesData:      JSON.parse(JSON.stringify(window.salesData      || {})),
+       areaData:       JSON.parse(JSON.stringify(window.areaData       || {})),
+       salesGroups:    JSON.parse(JSON.stringify(window.salesGroups    || {})),
+       salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
+     }
+   });
+ }
 
  // 해당 월만 완전히 비움 (다른 월 데이터 건드리지 않음)
  window.monthlySalesStore[store][key] = { salesData:{}, areaData:{}, salesGroups:{}, salesGroupData:{} };
