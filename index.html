@@ -1772,6 +1772,72 @@ body.viewer-mode #salesMonthNav > div > button{
  // Firebase 연결 상태 전역 노출
  const _initialLoadDone = {};
  const _listenedStores = {}; // 중복 listenStore 방지
+    const _unsubscribeFns = {}; // 지점별 onValue 해제 함수
+
+    // 비현재 지점: onValue 대신 get() 1회 읽기 (트래픽 절감)
+    async function getStoreOnce(store) {
+      if (_initialLoadDone[store]) return;
+      _initialLoadDone[store] = true;
+      try {
+        const snap = await get(ref(db, 'plan2026/' + store));
+        const data = snap.val();
+        if (!data) return;
+        if (data.userOverrides && typeof storeUserOverrides !== 'undefined') storeUserOverrides[store] = data.userOverrides;
+        if (data.zones && Array.isArray(data.zones) && typeof storeZonesSnapshot !== 'undefined') storeZonesSnapshot[store] = data.zones.map(z => Object.assign({}, z));
+        if (data.seasonOverrides && window.storeSeasonOverrides) window.storeSeasonOverrides[store] = JSON.parse(JSON.stringify(data.seasonOverrides));
+        if (data.catRegions && Array.isArray(data.catRegions) && typeof catRegions !== 'undefined') catRegions[store] = JSON.parse(JSON.stringify(data.catRegions));
+        if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
+        if (data.monthZoneOverrides) window.storeMonthZoneOverrides[store] = JSON.parse(JSON.stringify(data.monthZoneOverrides));
+        _restoreRotation(store, data);
+        const _rd = window._rotData && window._rotData[store];
+        if (_rd) {
+          if (typeof storeRotations !== 'undefined') storeRotations[store] = _rd.canvasRotation;
+          if (typeof storeTextRot !== 'undefined') storeTextRot[store] = _rd.textRotation;
+          if (typeof storeCatTagPos !== 'undefined') storeCatTagPos[store] = _rd.catTagPos;
+          if (!window.storeCanvasOffset) window.storeCanvasOffset = {};
+          if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
+          window.storeCanvasOffset[store] = { r: _rd.canvasOffsetR || 0, c: _rd.canvasOffsetC || 0 };
+          window.storeCanvasExtra[store] = { r: _rd.canvasExtraR || 0, c: _rd.canvasExtraC || 0 };
+        }
+        if (!window.storeSalesDataMap) window.storeSalesDataMap = {};
+        if (!window.storeAreaDataMap) window.storeAreaDataMap = {};
+        if (!window.storeManualSalesMap) window.storeManualSalesMap = {};
+        if (!window.storeManualAreaMap) window.storeManualAreaMap = {};
+        if (!window.storeSalesGroupsMap) window.storeSalesGroupsMap = {};
+        if (!window.storeSalesGroupDataMap) window.storeSalesGroupDataMap = {};
+        if (!window.monthlySalesStore) window.monthlySalesStore = {};
+        if (!window.weeklySalesStore) window.weeklySalesStore = {};
+        if (!window.salesTargets) window.salesTargets = {};
+        if (!window.storeSalesTargetsMap) window.storeSalesTargetsMap = {};
+        if (!window.storeLabelOffsetsMap) window.storeLabelOffsetsMap = {};
+        if (data.salesData) window.storeSalesDataMap[store] = JSON.parse(JSON.stringify(data.salesData));
+        if (data.areaData) window.storeAreaDataMap[store] = JSON.parse(JSON.stringify(data.areaData));
+        if (data.manualTotalSales !== undefined) window.storeManualSalesMap[store] = data.manualTotalSales;
+        if (data.manualTotalArea !== undefined) window.storeManualAreaMap[store] = data.manualTotalArea;
+        if (data.salesGroups) window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
+        if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
+        if (data.labelOffsets) window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets));
+        if (data.monthlySales) window.monthlySalesStore[store] = JSON.parse(JSON.stringify(data.monthlySales));
+        if (data.weeklySales) window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
+        if (data.salesTargets) { window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets)); window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets)); }
+        if (data.zoningMcMap) { if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {}; window.zoningMcMapByStore[store] = JSON.parse(JSON.stringify(data.zoningMcMap)); }
+        if (typeof window._updateServerSnapshot === 'function') window._updateServerSnapshot(store, data);
+      } catch(e) { console.warn('[getStoreOnce] 읽기 실패:', store, e); }
+    }
+    window._getStoreOnce = getStoreOnce;
+
+    // 지점 실시간 감시 해제
+    function unlistenStore(store) {
+      if (store === 'gs') return; // gs는 항상 실시간 유지
+      if (_unsubscribeFns[store]) {
+        _unsubscribeFns[store]();
+        delete _unsubscribeFns[store];
+        delete _listenedStores[store];
+        _initialLoadDone[store] = true;
+      }
+    }
+    window._unlistenStore = unlistenStore;
+
 
 
  // ── rotation 복원 헬퍼 ──
@@ -1795,7 +1861,7 @@ body.viewer-mode #salesMonthNav > div > button{
  if (_listenedStores[store]) return; // 이미 등록된 지점이면 중복 등록 방지
  _listenedStores[store] = true;
  const r = ref(db, 'plan2026/' + store);
- onValue(r, snap => {
+ const _unsub = onValue(r, snap => {
  const data = snap.val();
  // 내가 방금 저장한 데이터가 수신된 경우 무시 (2초 이내면 내 것으로 간주)
  if (data && _myLastSavedAt[store] && Math.abs((data.savedAt||0) - _myLastSavedAt[store]) < 2000) {
@@ -2192,10 +2258,16 @@ body.viewer-mode #salesMonthNav > div > button{
  }, err => {
  syncUI('error', ' 연결 오류');
  });
+    _unsubscribeFns[store] = _unsub;
  }
 
  // 모든 점포 감시 (기존 점포 + 추가된 점포)
- ['gs','bd','gn','sp','pc','rdw'].forEach(listenStore);
+    // gs는 항상 실시간, currentStore도 실시간, 나머지는 1회 읽기 (트래픽 절감)
+    const _allStores = ['gs','bd','gn','sp','pc','rdw'];
+    const _initStore = (typeof currentStore !== 'undefined' ? currentStore : null) || 'gs';
+    listenStore('gs');
+    if (_initStore !== 'gs') listenStore(_initStore);
+    _allStores.filter(s => s !== 'gs' && s !== _initStore).forEach(getStoreOnce);
 
  // ── 로컬 → Firebase 저장 ──
  window._firebaseSave = async function(store) {
@@ -2522,8 +2594,12 @@ body.viewer-mode #salesMonthNav > div > button{
  if (window.storeUserOverrides) window.storeUserOverrides[code] = {};
  if (window.storeZonesSnapshot) window.storeZonesSnapshot[code] = [];
 
- // 동적 지점 Firebase 실시간 감시 시작 (기본 6개 지점은 listenStore로 이미 등록)
- listenStore(code);
+    // 동적 지점: 현재 지점이면 실시간, 아니면 1회 읽기 (트래픽 절감)
+    if (code === (window.currentStore || 'gs')) {
+      listenStore(code);
+    } else {
+      getStoreOnce(code);
+    }
 
  // 드롭다운 옵션 추가 (지연 실행으로 DOM + 일반 스크립트 준비 보장)
  const addDropdown = () => {
@@ -10130,6 +10206,18 @@ function switchStore(store) {
   if (typeof window._salesLockRelease === 'function') window._salesLockRelease(currentStore);
  }
  currentStore = store;
+ // ── 실시간 감시 지점 전환 (트래픽 절감) ──
+ if (typeof listenStore === "function") {
+  // 이전 지점(gs 제외) 실시간 감시 해제
+  ['gs','bd','gn','sp','pc','rdw'].forEach(function(s) {
+   if (s !== "gs" && s !== store && typeof window._unlistenStore === "function") window._unlistenStore(s);
+  });
+  // 새 지점이 gs가 아니면 최신 데이터 재로드 후 실시간 감시
+  if (store !== "gs") {
+   if (typeof _initialLoadDone !== "undefined") { delete _initialLoadDone[store]; }
+   listenStore(store);
+  }
+ }
  // 지점 전환 시 평당매출 dirty 플래그 초기화 (새 지점은 클린 상태로 시작)
  window._salesDirty = false;
  _updateSalesSaveBtn();
