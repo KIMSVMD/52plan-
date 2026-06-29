@@ -7890,7 +7890,7 @@ window._getSavePayload = function(store) {
      }
      return _sanitizeKeys(JSON.parse(JSON.stringify(window.productSalesData || {})));
     })(),
- monthZoneOverrides: JSON.parse(JSON.stringify(monthZoneOverrides)),
+ monthZoneOverrides: JSON.parse(JSON.stringify(isCurrent ? monthZoneOverrides : ((window.storeMonthZoneOverrides && window.storeMonthZoneOverrides[store]) || {}))),
  issueSelections: JSON.parse(JSON.stringify((window._issueSelectionsStore && window._issueSelectionsStore[store]) || {})),
  savedAt: Date.now()
  };
