@@ -271,7 +271,7 @@ body.sales-view-active #salesMonthNav { display: block; }
 .wk-btn.active.confirmed .wk-btn-sub{color:#fff;}
 
 /* TOOLBAR */
-.toolbar{background:#e8eaed;border:1px solid #d1d5db;padding:5px 14px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;flex-shrink:0;position:fixed;top:82px;left:50%;transform:translateX(-50%);z-index:9000;border-radius:0 0 10px 10px;box-shadow:0 6px 24px rgba(0,0,0,.18);max-width:calc(100vw - 20px);}
+.toolbar{background:#e8eaed;border-bottom:1px solid #d1d5db;padding:5px 14px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;flex-shrink:0;}
 .tbl{font-size:9px;font-weight:700;color:#9ca3af;letter-spacing:.5px;text-transform:uppercase;margin-right:1px;}
 .tbb{font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;font-size:10px;font-weight:600;padding:3px 9px;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;background:#fff;color:#374151;transition:all .1s;}
 .tbb:hover{border-color:#005233;color:#003d26;background:#e6f2ed;}
@@ -3398,7 +3398,7 @@ window.onerror = function(msg, src, line, col, err) {
  <button class="draw-btn draw-cancel" onclick="cancelDrawMode()"> 그리기 취소</button>
 </div>
 
-<!-- TOOLBAR (floating overlay — shown via toggleEditToolbarFloat) -->
+<!-- TOOLBAR (inline, shown via toggleEditToolbarFloat) -->
 <div class="toolbar" id="toolbar" style="display:none;">
  <span class="tbl">크기</span>
  <button class="tbb" onclick="resizeSel(-0.5,0)">◀좁게</button>
@@ -8941,14 +8941,7 @@ function closeSalInputDrop() {
 function toggleEditToolbarFloat() {
  var tb = document.getElementById('toolbar');
  if (!tb) return;
- if (tb.style.display === 'none' || tb.style.display === '') {
-  var hdr = document.getElementById('hdr');
-  var vtb = document.getElementById('viewTabBar');
-  tb.style.top = ((hdr ? hdr.offsetHeight : 50) + (vtb ? vtb.offsetHeight : 32)) + 'px';
-  tb.style.display = 'flex';
- } else {
-  tb.style.display = 'none';
- }
+ tb.style.display = (tb.style.display === 'none' || tb.style.display === '') ? 'flex' : 'none';
 }
 document.addEventListener('click', function(e){
  var w = document.getElementById('saveDropWrap');
