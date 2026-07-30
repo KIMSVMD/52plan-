@@ -4470,6 +4470,21 @@ function getWkZoneOverrideAt(zoneId, wkIdx) {
  return null;
 }
 
+// 특정 주차 ID(예: 'W27') 기준으로 오버라이드 적용된 구역 반환 (숫자탭 주차 선택용)
+function getEffectiveZoneForSalesWk(z, weekId) {
+ const wkIdx = WEEKS.findIndex(function(w){ return w.id === weekId; });
+ if (wkIdx < 0) return getEffectiveZone(z);
+ const ovr = getWkZoneOverrideAt(z.id, wkIdx);
+ if (!ovr) return z;
+ if (ovr._hidden === true) return null;
+ if (ovr._hidden === false) {
+  const rest = Object.assign({}, ovr);
+  delete rest._hidden;
+  return Object.keys(rest).length > 0 ? Object.assign({}, z, rest) : z;
+ }
+ return Object.assign({}, z, ovr);
+}
+
 // ═══════════ UTILS ═══════════
 function getSeasonBadge(zoneId, prod){
  if(!prod) return null;
@@ -11603,14 +11618,16 @@ function getImproveSuggestion(m) {
 function calcSalesMetrics() {
  ensureSampleSalesData();
  const nonSales = new Set(['입구','기둥']);
- // 평당매출탭의 현재 월(currentSalesMonth) 기준으로 오버라이드 적용
- // currentSalesMonth가 null이면 현재 주차(curWkIdx) 기준 getEffectiveZone 사용
+ // 구역 오버라이드 적용 우선순위: currentSalesWeek > currentSalesMonth > curWkIdx(현재 도면탭)
+ const _salesWkId = window.currentSalesWeek || null;
  const _salesMoIdx = (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined)
   ? window.currentSalesMonth : null;
  const dataZones = zones
- .map(z => _salesMoIdx !== null
-  ? (typeof getEffectiveZoneAt === 'function' ? getEffectiveZoneAt(z, _salesMoIdx) : z)
-  : (typeof getEffectiveZone === 'function' ? getEffectiveZone(z) : z))
+ .map(z => _salesWkId
+  ? getEffectiveZoneForSalesWk(z, _salesWkId)
+  : (_salesMoIdx !== null
+   ? (typeof getEffectiveZoneAt === 'function' ? getEffectiveZoneAt(z, _salesMoIdx) : z)
+   : (typeof getEffectiveZone === 'function' ? getEffectiveZone(z) : z)))
  .filter(z => z && // _hidden 제외
   !nonSales.has(z.name) &&
   !nonSales.has(z.type) &&
@@ -13425,8 +13442,9 @@ function renderSalesMap(container, metrics, maxPerSales) {
  innerWrap.style.height = _bboxH + 'px';
  innerWrap.style.overflow = 'visible';
 
- // gc 복제 — zones 데이터로 currentSalesMonth 기준 직접 생성
+ // gc 복제 — zones 데이터로 주차/월 기준 직접 생성
  // (cloneNode는 도면탭 현재 달 DOM에 의존해서 다른 달이면 틀림)
+ const _salWkId = window.currentSalesWeek || null;
  const _salMoIdx = (window.currentSalesMonth !== null && window.currentSalesMonth !== undefined)
   ? window.currentSalesMonth : null;
  const _CELL = (typeof CELL !== 'undefined') ? CELL : 72;
@@ -13454,9 +13472,11 @@ function renderSalesMap(container, metrics, maxPerSales) {
  const COLORS = (typeof window.COLORS !== 'undefined') ? window.COLORS : [];
  if (typeof zones !== 'undefined') {
   zones.forEach(function(zOrig) {
-   const z = _salMoIdx !== null
-    ? (typeof getEffectiveZoneAt === 'function' ? getEffectiveZoneAt(zOrig, _salMoIdx) : zOrig)
-    : (typeof getEffectiveZone === 'function' ? getEffectiveZone(zOrig) : zOrig);
+   const z = _salWkId
+    ? getEffectiveZoneForSalesWk(zOrig, _salWkId)
+    : (_salMoIdx !== null
+      ? (typeof getEffectiveZoneAt === 'function' ? getEffectiveZoneAt(zOrig, _salMoIdx) : zOrig)
+      : (typeof getEffectiveZone === 'function' ? getEffectiveZone(zOrig) : zOrig));
    if (!z) return; // _hidden
    const el = document.createElement('div');
    el.id = 'sz-' + z.id;
