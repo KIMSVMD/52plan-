@@ -277,8 +277,8 @@ body.sales-view-active #salesMonthNav { display: block; }
 .tbb:hover{border-color:#005233;color:#003d26;background:#e6f2ed;}
 .tsep{width:1px;height:18px;background:#e5e7eb;margin:0 3px;}
 .thint{font-size:9px;color:#9ca3af;margin-left:auto;letter-spacing:.1px;}
-.draw-edit-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;font-family:inherit;font-size:11px;font-weight:600;color:#374151;background:none;border:none;cursor:pointer;text-align:left;white-space:nowrap;transition:background .1s;}
-.draw-edit-item:hover{background:#f3f4f6;}
+.draw-edit-item{display:flex;align-items:center;gap:8px;width:100%;padding:8px 14px;font-family:inherit;font-size:11px;font-weight:600;color:#111827;background:#fff;border:none;cursor:pointer;text-align:left;white-space:nowrap;transition:background .1s;}
+.draw-edit-item:hover{background:#f3f4f6;color:#111827;}
 .draw-edit-sep{height:1px;background:#f1f5f9;margin:4px 0;}
 
 /* MAIN */
@@ -13033,7 +13033,7 @@ function salesZoomFit() {
 
  // 분석표 컬럼
  const tblCol = document.createElement('div');
- tblCol.style.cssText = 'width:420px;flex-shrink:0;overflow:hidden;background:#fff;border-left:2px solid #e5e7eb;display:flex;flex-direction:column;';
+ tblCol.style.cssText = 'width:420px;flex-shrink:0;overflow:hidden;background:#fff;border-left:2px solid #e5e7eb;display:flex;flex-direction:column;transition:width .2s ease;';
  tblCol.setAttribute('data-sales-panel', '1');
  body.appendChild(tblCol);
 
@@ -14611,6 +14611,22 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  outerFlex.appendChild(groupCol);
  container.appendChild(outerFlex);
 
+ // 접힘 상태 핸들 (28px 세로 띠 — collapsed 시 노출)
+ const collapseHandle = document.createElement('div');
+ collapseHandle.style.cssText = 'display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;user-select:none;';
+ collapseHandle.innerHTML =
+  '<span style="font-size:15px;color:#9ca3af;">◀</span>' +
+  '<span style="writing-mode:vertical-rl;text-orientation:mixed;font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:2px;">공간효율분석</span>';
+ collapseHandle.onmouseenter = function(){ collapseHandle.style.background='#f3f4f6'; };
+ collapseHandle.onmouseleave = function(){ collapseHandle.style.background=''; };
+ collapseHandle.onclick = function() {
+  window._salesPanelCollapsed = false;
+  container.style.width = '420px';
+  outerFlex.style.display = '';
+  collapseHandle.style.display = 'none';
+ };
+ container.appendChild(collapseHandle);
+
  // ── 그룹 관리 패널 내용 렌더 함수 ──
  function renderGroupSidePanel() {
  groupCol.innerHTML = '';
@@ -14784,31 +14800,23 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  '<div style="font-size:12px;font-weight:900;color:#111827;letter-spacing:-.3px;">공간 효율 분석</div>'+
  '<div style="font-size:9px;color:#9ca3af;margin-top:1px;">'+storeName+' · '+metrics.length+'개 구역</div>'+
  '</div>';
- // ── 접기/펼치기 토글 버튼 ──
+ // ── 접기 버튼 (패널 열림 상태일 때만 노출) ──
  const togglePanelBtn = document.createElement('button');
  togglePanelBtn.type = 'button';
- togglePanelBtn.title = '패널 접기/펼치기';
+ togglePanelBtn.title = '패널 접기';
  togglePanelBtn.style.cssText =
   'margin-left:auto;flex-shrink:0;width:24px;height:24px;border:none;background:rgba(0,0,0,.06);' +
   'border-radius:6px;color:#6b7280;font-size:11px;line-height:1;cursor:pointer;display:flex;' +
   'align-items:center;justify-content:center;transition:background .12s;';
- togglePanelBtn.textContent = window._salesPanelCollapsed ? '▴' : '▾';
+ togglePanelBtn.textContent = '▶';
  togglePanelBtn.onmouseenter = function() { togglePanelBtn.style.background='rgba(0,0,0,.13)'; };
  togglePanelBtn.onmouseleave = function() { togglePanelBtn.style.background='rgba(0,0,0,.06)'; };
  togglePanelBtn.onclick = function(e) {
   e.stopPropagation();
-  window._salesPanelCollapsed = !window._salesPanelCollapsed;
-  var collapsed = window._salesPanelCollapsed;
-  Array.from(sumWrap.children).forEach(function(el) {
-   if (el !== sumHd) el.style.display = collapsed ? 'none' : '';
-  });
-  Array.from(analysisCol.children).forEach(function(el) {
-   if (el !== sumWrap) el.style.display = collapsed ? 'none' : '';
-  });
-  outerFlex.style.flex = collapsed ? '0 0 auto' : '1';
-  container.style.alignSelf = collapsed ? 'flex-start' : '';
-  container.style.overflowY = collapsed ? 'visible' : 'hidden';
-  togglePanelBtn.textContent = collapsed ? '▴' : '▾';
+  window._salesPanelCollapsed = true;
+  container.style.width = '28px';
+  outerFlex.style.display = 'none';
+  collapseHandle.style.display = 'flex';
  };
  sumHd.appendChild(togglePanelBtn);
  sumWrap.appendChild(sumHd);
@@ -15054,11 +15062,9 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  analysisCol.appendChild(tabContents);
  // 접기 상태 초기 적용 (재렌더 시에도 유지)
  if (window._salesPanelCollapsed) {
-  Array.from(sumWrap.children).forEach(function(el) { if (el !== sumHd) el.style.display = 'none'; });
-  Array.from(analysisCol.children).forEach(function(el) { if (el !== sumWrap) el.style.display = 'none'; });
-  outerFlex.style.flex = '0 0 auto';
-  container.style.alignSelf = 'flex-start';
-  container.style.overflowY = 'visible';
+  container.style.width = '28px';
+  outerFlex.style.display = 'none';
+  collapseHandle.style.display = 'flex';
  }
  switchTab(window._currentSalesPanelTab || 'tab-rank');
 }
