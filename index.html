@@ -3097,10 +3097,6 @@ window.onerror = function(msg, src, line, col, err) {
  </button>
  <div id="drawEditDropMenu" style="display:none;position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.13);min-width:190px;z-index:9999;overflow:hidden;">
  <div style="padding:5px 0;">
-  <button class="draw-edit-item" onclick="toggleMode();closeDrawEditDrop();" id="toggleModeBtn">
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M1 7c1.5-4 9.5-4 12 0C11.5 11 2.5 11 1 7z" stroke="currentColor" stroke-width="1.4"/></svg>
-  보기/편집 전환
-  </button>
   <button class="draw-edit-item" onclick="toggleDrawToolbar();closeDrawEditDrop();" id="drawModeBtn">
   <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M9.5 1.5l3 3L4 13H1v-3L9.5 1.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
   그리기 ON/OFF
@@ -12801,34 +12797,7 @@ function renderSalesView() {
  // ① 툴바
  const toolbar = document.createElement('div');
  toolbar.className = 'sales-mobile-toolbar';
- toolbar.style.cssText = 'background:#f3f4f6;padding:8px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;';
- toolbar.innerHTML = `
- <span style="font-size:11px;font-weight:800;color:#374151;letter-spacing:.3px;"> 평당매출 분석</span>
- <span style="font-size:10px;color:#6b7280;background:#f3f4f6;border-radius:5px;padding:3px 10px;border:1px solid #e5e7eb;"> 평당매출 = 하루 실매출 ÷ 평수</span>
-
- <button id="salBtnDataInput" onclick="openSalesDataModal()"
- style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #005233;background:#e6f2ed;color:#003d26;cursor:pointer;">️ 데이터 입력</button>
- <button id="salBtnExcel" onclick="openExcelUploadModal()"
- style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;cursor:pointer;"> 엑셀 업로드</button>
- <button id="salGroupEditBtn" onclick="toggleSalesGroupEdit()"
- style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #ddd6fe;background:#f5f3ff;color:#6d28d9;cursor:pointer;"> 구역 그룹</button>
- <button id="salBtnResetLabel" onclick="resetSalesLabelOffsets()" title="레이블 위치 초기화"
- style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #e5e7eb;background:#f9fafb;color:#6b7280;cursor:pointer;">↺ 레이블 초기화</button>
- <button id="salBtnDeleteMonth" onclick="deleteSalesMonthData()" title="현재 월 데이터 삭제"
- style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;cursor:pointer;">이 달 데이터 삭제</button>
-      <div style="width:1px;height:18px;background:#e5e7eb;margin:0 2px;flex-shrink:0;"></div>
-      <button id="salBtnProductDB" onclick="openProductMasterModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #f59e0b;background:#fffbeb;color:#b45309;cursor:pointer;">📦 상품 DB</button>
-      <button id="salBtnZoneProducts" onclick="openZoneProductsModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #34d399;background:#ecfdf5;color:#065f46;cursor:pointer;">🗂 구역별 상품 배치</button>
-      <button id="salBtnProductUpload" onclick="openProductSalesUploadModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #818cf8;background:#eef2ff;color:#3730a3;cursor:pointer;">📊 매출 업로드</button>
-      <button id="salBtnZoneSalesUpload" onclick="openZoneSalesUploadModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #059669;background:#ecfdf5;color:#065f46;cursor:pointer;">📥 구역 매출 업로드</button>
-      <button id="salBtnZoningMcMap" onclick="openZoningMcMapModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid #7c3aed;background:#f5f3ff;color:#5b21b6;cursor:pointer;">🗺️ MC 매핑표</button>
- `;
- // 권한에 따라 버튼 표시 제어 (isAdmin 조건을 innerHTML 조건문 대신 런타임 display로 처리)
- const _adminOnlyBtns = ['salBtnDataInput','salBtnExcel','salGroupEditBtn','salBtnResetLabel','salBtnDeleteMonth','salBtnProductDB','salBtnZoneProducts','salBtnProductUpload','salBtnZoneSalesUpload','salBtnZoningMcMap'];
- _adminOnlyBtns.forEach(function(id) {
- const el = toolbar.querySelector('#' + id);
- if (el) el.style.display = isAdmin ? '' : 'none';
- });
+ toolbar.style.cssText = 'display:flex;align-items:center;flex-shrink:0;';
  if (!toolbar.querySelector('#smPanelToggleInline')) {
   const panelInlineBtn = document.createElement('button');
   panelInlineBtn.id = 'smPanelToggleInline';
@@ -14822,25 +14791,30 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  '<div style="font-size:12px;font-weight:900;color:#111827;letter-spacing:-.3px;">공간 효율 분석</div>'+
  '<div style="font-size:9px;color:#9ca3af;margin-top:1px;">'+storeName+' · '+metrics.length+'개 구역</div>'+
  '</div>';
- // ── 닫기(X) 버튼 ──
- const closePanelBtn = document.createElement('button');
- closePanelBtn.type = 'button';
- closePanelBtn.title = '패널 닫기';
- closePanelBtn.style.cssText =
+ // ── 접기/펼치기 토글 버튼 ──
+ const togglePanelBtn = document.createElement('button');
+ togglePanelBtn.type = 'button';
+ togglePanelBtn.title = '패널 접기/펼치기';
+ togglePanelBtn.style.cssText =
   'margin-left:auto;flex-shrink:0;width:24px;height:24px;border:none;background:rgba(0,0,0,.06);' +
-  'border-radius:6px;color:#6b7280;font-size:14px;line-height:1;cursor:pointer;display:flex;' +
+  'border-radius:6px;color:#6b7280;font-size:11px;line-height:1;cursor:pointer;display:flex;' +
   'align-items:center;justify-content:center;transition:background .12s;';
- closePanelBtn.textContent = '✕';
- closePanelBtn.onmouseenter = function() { closePanelBtn.style.background='rgba(0,0,0,.13)'; };
- closePanelBtn.onmouseleave = function() { closePanelBtn.style.background='rgba(0,0,0,.06)'; };
- closePanelBtn.onclick = function(e) {
+ togglePanelBtn.textContent = window._salesPanelCollapsed ? '▴' : '▾';
+ togglePanelBtn.onmouseenter = function() { togglePanelBtn.style.background='rgba(0,0,0,.13)'; };
+ togglePanelBtn.onmouseleave = function() { togglePanelBtn.style.background='rgba(0,0,0,.06)'; };
+ togglePanelBtn.onclick = function(e) {
   e.stopPropagation();
-  window._salesMobilePanelOpen = false;
-  var _wrap = document.getElementById('salesWrap');
-  if (_wrap) _wrap.classList.remove('sales-mobile-panel-open');
-  if (typeof syncSalesMobilePanelUI === 'function') syncSalesMobilePanelUI();
+  window._salesPanelCollapsed = !window._salesPanelCollapsed;
+  var collapsed = window._salesPanelCollapsed;
+  Array.from(sumWrap.children).forEach(function(el) {
+   if (el !== sumHd) el.style.display = collapsed ? 'none' : '';
+  });
+  Array.from(analysisCol.children).forEach(function(el) {
+   if (el !== sumWrap) el.style.display = collapsed ? 'none' : '';
+  });
+  togglePanelBtn.textContent = collapsed ? '▴' : '▾';
  };
- sumHd.appendChild(closePanelBtn);
+ sumHd.appendChild(togglePanelBtn);
  sumWrap.appendChild(sumHd);
 
  const kpiGrid = document.createElement('div');
@@ -15082,6 +15056,11 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
 
  analysisCol.appendChild(tabBar);
  analysisCol.appendChild(tabContents);
+ // 접기 상태 초기 적용 (재렌더 시에도 유지)
+ if (window._salesPanelCollapsed) {
+  Array.from(sumWrap.children).forEach(function(el) { if (el !== sumHd) el.style.display = 'none'; });
+  Array.from(analysisCol.children).forEach(function(el) { if (el !== sumWrap) el.style.display = 'none'; });
+ }
  switchTab(window._currentSalesPanelTab || 'tab-rank');
 }
 
