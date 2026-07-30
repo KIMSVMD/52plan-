@@ -14812,6 +14812,9 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
   Array.from(analysisCol.children).forEach(function(el) {
    if (el !== sumWrap) el.style.display = collapsed ? 'none' : '';
   });
+  outerFlex.style.flex = collapsed ? '0 0 auto' : '1';
+  container.style.alignSelf = collapsed ? 'flex-start' : '';
+  container.style.overflowY = collapsed ? 'visible' : 'hidden';
   togglePanelBtn.textContent = collapsed ? '▴' : '▾';
  };
  sumHd.appendChild(togglePanelBtn);
@@ -15060,6 +15063,9 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  if (window._salesPanelCollapsed) {
   Array.from(sumWrap.children).forEach(function(el) { if (el !== sumHd) el.style.display = 'none'; });
   Array.from(analysisCol.children).forEach(function(el) { if (el !== sumWrap) el.style.display = 'none'; });
+  outerFlex.style.flex = '0 0 auto';
+  container.style.alignSelf = 'flex-start';
+  container.style.overflowY = 'visible';
  }
  switchTab(window._currentSalesPanelTab || 'tab-rank');
 }
