@@ -14228,6 +14228,13 @@ function showSalesZoneCard(m, zEl) {
  const spC = impr.spaceEff>=1.2?'#005233':impr.spaceEff>=0.8?'#eab308':'#dc2626';
  const seC = sep>=80?'#005233':sep>=50?'#eab308':'#dc2626';
 
+ // ── 이익율 서브탭 변수 ──
+ var _isMgn = (window._salesSubTab === 'margin');
+ // 그룹 fake metric이면 m.z.id가 이미 gid, 아니면 zone → 그룹 역탐색
+ var _mGid  = _isMgn ? (window.marginGroupData && window.marginGroupData[m.z.id] !== undefined ? m.z.id : _getGroupForZone(m.z.id)) : null;
+ var _mVal  = (_isMgn && _mGid != null && window.marginGroupData && window.marginGroupData[_mGid] !== undefined) ? window.marginGroupData[_mGid] : null;
+ var _mTgt  = _isMgn ? _getMarginTarget(_mGid || m.z.id) : null;
+
  card.style.cssText =
  'position:fixed;z-index:9999;pointer-events:none;' +
  'background:#fff;border-radius:14px;' +
@@ -14237,8 +14244,10 @@ function showSalesZoneCard(m, zEl) {
  'opacity:0;transform:scale(0.92) translateY(6px);' +
  'transition:opacity .18s ease, transform .18s cubic-bezier(.34,1.2,.64,1);';
 
- // ── 상단 헤더 (평당매출 색상 배경) ──
- const _hdColor = m.isDead ? '#6b7280' : salesBorderColor(m.perSales, m.z.id);
+ // ── 상단 헤더 (지표 기준 색상 배경) ──
+ const _hdColor = m.isDead ? '#6b7280'
+  : _isMgn ? (_mVal != null ? marginBorderColor(_mVal, _mGid || m.z.id) : '#6b7280')
+  : salesBorderColor(m.perSales, m.z.id);
  const hd = document.createElement('div');
  hd.style.cssText =
  'padding:11px 14px 9px;' +
@@ -14253,40 +14262,72 @@ function showSalesZoneCard(m, zEl) {
  '<span style="font-size:11px;font-weight:900;padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.25);color:#fff;flex-shrink:0;border:1.5px solid rgba(255,255,255,.4);">' + m.grade + '</span>';
  card.appendChild(hd);
 
- // ── 평당매출 빅 숫자 ──
+ // ── 메인 지표 빅 숫자 ──
  const bigNum = document.createElement('div');
  bigNum.style.cssText =
  'padding:10px 14px 8px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;';
- bigNum.innerHTML =
- '<div>' +
- '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">평당매출</div>' +
- '<div style="font-size:22px;font-weight:900;color:' + salesBorderColor(m.perSales, m.z.id) + ';letter-spacing:-.5px;">' +
- Math.floor(m.perSales).toLocaleString() + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">만/평</span>' +
- '</div>' +
- '</div>' +
- '<div style="text-align:right;">' +
- '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">면적</div>' +
- '<div style="font-size:16px;font-weight:800;color:#374151;">' + Math.round(m.area) + '<span style="font-size:11px;font-weight:600;color:#9ca3af;">평</span></div>' +
- '</div>';
+ if (_isMgn) {
+  var _mColor = _mVal != null ? marginBorderColor(_mVal, _mGid || m.z.id) : '#9ca3af';
+  bigNum.innerHTML =
+  '<div>' +
+  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">이익율</div>' +
+  '<div style="font-size:22px;font-weight:900;color:' + _mColor + ';letter-spacing:-.5px;">' +
+  (_mVal != null ? _mVal.toFixed(1) : '-') + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">%</span>' +
+  '</div>' +
+  '</div>' +
+  '<div style="text-align:right;">' +
+  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">면적</div>' +
+  '<div style="font-size:16px;font-weight:800;color:#374151;">' + Math.round(m.area) + '<span style="font-size:11px;font-weight:600;color:#9ca3af;">평</span></div>' +
+  '</div>';
+ } else {
+  bigNum.innerHTML =
+  '<div>' +
+  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">평당매출</div>' +
+  '<div style="font-size:22px;font-weight:900;color:' + salesBorderColor(m.perSales, m.z.id) + ';letter-spacing:-.5px;">' +
+  Math.floor(m.perSales).toLocaleString() + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">만/평</span>' +
+  '</div>' +
+  '</div>' +
+  '<div style="text-align:right;">' +
+  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">면적</div>' +
+  '<div style="font-size:16px;font-weight:800;color:#374151;">' + Math.round(m.area) + '<span style="font-size:11px;font-weight:600;color:#9ca3af;">평</span></div>' +
+  '</div>';
+ }
  card.appendChild(bigNum);
 
- // ── 목표 평당매출 (설정된 경우만) ──
- var _tgtPS = _getSalesTarget(m.z.id);
- if (_tgtPS && _tgtPS > 0) {
+ // ── 목표 달성률 행 (서브탭에 따라 분기) ──
+ if (_isMgn) {
+  if (_mTgt && _mTgt > 0 && _mVal != null) {
+   var _mAchPct = Math.round(_mVal / _mTgt * 100);
+   var _mAchColor = pctColor(_mVal, _mTgt, MARGIN_FALLBACK_GREEN, MARGIN_FALLBACK_YELLOW, '#16a34a', '#ca8a04', '#dc2626', '#9ca3af');
+   var _mAchBg = _mAchPct >= SALES_TARGET_PCT_GREEN ? '#dcfce7' : _mAchPct >= SALES_TARGET_PCT_YELLOW ? '#fef9c3' : '#fee2e2';
+   var tgtRow = document.createElement('div');
+   tgtRow.style.cssText = 'padding:6px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:' + _mAchBg + ';';
+   tgtRow.innerHTML =
+    '<div style="font-size:9px;color:#6b7280;font-weight:600;">목표 이익율</div>' +
+    '<div style="display:flex;align-items:center;gap:6px;">' +
+    '<span style="font-size:11px;font-weight:700;color:#374151;">' + _mTgt.toFixed(1) + '%</span>' +
+    '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _mAchColor + ';color:#fff;">달성 ' + _mAchPct + '%</span>' +
+    '</div>';
+   card.appendChild(tgtRow);
+  }
+ } else {
+  var _tgtPS = _getSalesTarget(m.z.id);
+  if (_tgtPS && _tgtPS > 0) {
    var _achPct = Math.round(m.perSales / _tgtPS * 100);
    var _achColor = _achPct >= SALES_TARGET_PCT_GREEN ? '#16a34a'
-     : _achPct >= SALES_TARGET_PCT_YELLOW ? '#ca8a04' : '#dc2626';
+    : _achPct >= SALES_TARGET_PCT_YELLOW ? '#ca8a04' : '#dc2626';
    var _achBg = _achPct >= SALES_TARGET_PCT_GREEN ? '#dcfce7'
-     : _achPct >= SALES_TARGET_PCT_YELLOW ? '#fef9c3' : '#fee2e2';
+    : _achPct >= SALES_TARGET_PCT_YELLOW ? '#fef9c3' : '#fee2e2';
    var tgtRow = document.createElement('div');
    tgtRow.style.cssText = 'padding:6px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:' + _achBg + ';';
    tgtRow.innerHTML =
-     '<div style="font-size:9px;color:#6b7280;font-weight:600;">목표 평당매출</div>' +
-     '<div style="display:flex;align-items:center;gap:6px;">' +
-     '<span style="font-size:11px;font-weight:700;color:#374151;">' + Math.round(_tgtPS).toLocaleString() + '만/평</span>' +
-     '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _achColor + ';color:#fff;">달성 ' + _achPct + '%</span>' +
-     '</div>';
+    '<div style="font-size:9px;color:#6b7280;font-weight:600;">목표 평당매출</div>' +
+    '<div style="display:flex;align-items:center;gap:6px;">' +
+    '<span style="font-size:11px;font-weight:700;color:#374151;">' + Math.round(_tgtPS).toLocaleString() + '만/평</span>' +
+    '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _achColor + ';color:#fff;">달성 ' + _achPct + '%</span>' +
+    '</div>';
    card.appendChild(tgtRow);
+  }
  }
 
  // ── 지표 3칸 ──
@@ -14300,7 +14341,12 @@ function showSalesZoneCard(m, zEl) {
  '<div style="font-size:12px;font-weight:900;color:' + color + ';">' + val + '</div>';
  return d;
  }
- grid3.appendChild(mc('실매출(하루)', Math.round(m.sales).toLocaleString()+'만', '#111827', true));
+ if (_isMgn && _mVal != null) {
+  var _profitEst = Math.round(m.sales * _mVal / 100);
+  grid3.appendChild(mc('이익금(추정)', _profitEst.toLocaleString()+'만', '#10b981', true));
+ } else {
+  grid3.appendChild(mc('실매출(하루)', Math.round(m.sales).toLocaleString()+'만', '#111827', true));
+ }
  grid3.appendChild(mc('공간효율', fmtEff(impr.spaceEff), spC, true));
  grid3.appendChild(mc('1H 평당효율', sep+'%', seC, false));
  card.appendChild(grid3);
