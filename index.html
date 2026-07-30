@@ -14740,6 +14740,22 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  '<div style="font-size:12px;font-weight:900;color:#111827;letter-spacing:-.3px;">공간 효율 분석</div>'+
  '<div style="font-size:9px;color:#9ca3af;margin-top:1px;">'+storeName+' · '+metrics.length+'개 구역</div>'+
  '</div>';
+ // ── 닫기(X) 버튼 ──
+ const closePanelBtn = document.createElement('button');
+ closePanelBtn.type = 'button';
+ closePanelBtn.title = '패널 닫기';
+ closePanelBtn.style.cssText =
+  'margin-left:auto;flex-shrink:0;width:24px;height:24px;border:none;background:rgba(0,0,0,.06);' +
+  'border-radius:6px;color:#6b7280;font-size:14px;line-height:1;cursor:pointer;display:flex;' +
+  'align-items:center;justify-content:center;transition:background .12s;';
+ closePanelBtn.textContent = '✕';
+ closePanelBtn.onmouseenter = function() { closePanelBtn.style.background='rgba(0,0,0,.13)'; };
+ closePanelBtn.onmouseleave = function() { closePanelBtn.style.background='rgba(0,0,0,.06)'; };
+ closePanelBtn.onclick = function(e) {
+  e.stopPropagation(); // 드래그 핸들 이벤트 차단
+  setSalesMobilePanelOpen(false);
+ };
+ sumHd.appendChild(closePanelBtn);
  sumWrap.appendChild(sumHd);
 
  const kpiGrid = document.createElement('div');
