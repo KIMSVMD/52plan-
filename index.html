@@ -14949,6 +14949,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
      btnRow.appendChild(delBtn);
      row.appendChild(btnRow);
 
+     row.dataset.gid = gid;
      row.dataset.searchText = ((g.label || '') + ' ' + (g.number || '')).toLowerCase();
      row.onclick = (function(id){ return function(){ if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
      listWrap.appendChild(row);
@@ -14974,6 +14975,14 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
    };
  }
  groupCol.appendChild(listWrap);
+
+ // 선택된 그룹 카드로 스크롤
+ if (typeof salesGroupActiveId !== 'undefined' && salesGroupActiveId) {
+   setTimeout(function() {
+     var activeRow = listWrap.querySelector('[data-gid="' + salesGroupActiveId + '"]');
+     if (activeRow) activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+   }, 30);
+ }
 
  // 추가 버튼
  const addWrap = document.createElement('div');
