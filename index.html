@@ -20324,14 +20324,85 @@ function _xlsZoningVal(val) {
   return _zsuNormText(val == null ? '' : String(val));
 }
 
+/* ── 행 배열 → 파싱 → 미리보기 (파일/붙여넣기 공통 처리) ── */
+function _zsuProcessRows(rows) {
+  if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
+
+  var headerRow = rows[0];
+  var weekCols = [], unmatchedHeaders = [];
+  for (var c = 1; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || '').trim();
+    if (!h) { weekCols.push(null); continue; }
+    var wc = _zsuParseWeekCol(h);
+    weekCols.push(wc);
+    if (!wc) unmatchedHeaders.push(h);
+  }
+  var weekIds = [];
+  weekCols.forEach(function(wc) {
+    if (wc && weekIds.indexOf(wc.weekId) < 0) weekIds.push(wc.weekId);
+  });
+
+  var rawRows = [];
+  var groupAccum = {};
+  var _zsuFirstWid = null;
+  for (var _fw = 0; _fw < weekCols.length; _fw++) {
+    if (weekCols[_fw] && weekCols[_fw].weekId) { _zsuFirstWid = weekCols[_fw].weekId; break; }
+  }
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+    var raw = _xlsZoningVal(row[0]);
+    if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
+    var mr = _zsuMatchGroup(raw, _zsuFirstWid);
+    var weekSales = {}, weekMargins = {}, weekQty = {};
+    for (var c2 = 1; c2 < row.length && (c2 - 1) < weekCols.length; c2++) {
+      var wc2 = weekCols[c2 - 1];
+      if (!wc2) continue;
+      var wid2 = wc2.weekId;
+      var val = parseFloat(String(row[c2] || '').replace(/,/g, ''));
+      if (isNaN(val)) continue;
+      if (wc2.type === 'margin') {
+        if (val >= 0 && val <= 100) weekMargins[wid2] = val;
+      } else if (wc2.type === 'qty') {
+        if (val >= 0) weekQty[wid2] = val;
+      } else {
+        if (val > 0) weekSales[wid2] = val / 10000;
+      }
+    }
+    rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales, weekMargins: weekMargins, weekQty: weekQty });
+    if (mr.gid) {
+      if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
+      if (groupAccum[mr.gid].mcNames.indexOf(raw) < 0) groupAccum[mr.gid].mcNames.push(raw);
+      Object.keys(weekSales).forEach(function(wk) {
+        groupAccum[mr.gid].weekSales[wk] = (groupAccum[mr.gid].weekSales[wk] || 0) + weekSales[wk];
+      });
+    }
+  }
+
+  window._zsuParsed = { weekCols: weekCols, weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
+  _zsuRenderPreview(window._zsuParsed);
+}
+
+/* ── 클립보드 TSV → 행 파싱 → 공통 처리 ── */
+function handleZoneSalesPaste(text) {
+  if (!text) return;
+  var rows = text.split(/\r?\n/).map(function(line) {
+    return line.split('\t');
+  }).filter(function(row) {
+    return row.some(function(cell) { return String(cell).trim() !== ''; });
+  });
+  try {
+    _zsuProcessRows(rows);
+  } catch(e) {
+    _zsuShowError('붙여넣기 처리 오류: ' + e.message);
+  }
+}
+
 /* ── 파일 파싱 + 그룹별 매출 누산 ── */
 function handleZoneSalesFile(file) {
   try {
     if (!file) return;
 
-
     var ext = file.name.split('.').pop().toLowerCase();
-
     var reader = new FileReader();
 
     reader.onerror = function(ev) {
@@ -20355,68 +20426,7 @@ function handleZoneSalesFile(file) {
           var ws2 = wb.Sheets[wb.SheetNames[0]];
           rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
         }
-
-        if (rows.length < 2) {
-          showToast('데이터가 없습니다 (최소 2행 필요)');
-          return;
-        }
-
-        var headerRow = rows[0];
-        var weekCols = [], unmatchedHeaders = [];
-        for (var c = 1; c < headerRow.length; c++) {
-          var h = String(headerRow[c] || '').trim();
-          if (!h) { weekCols.push(null); continue; }
-          var wc = _zsuParseWeekCol(h);
-          weekCols.push(wc);
-          if (!wc) unmatchedHeaders.push(h);
-        }
-        /* 유니크 weekId 목록 (스냅샷·_zsuRenderPreview 하위 호환용) */
-        var weekIds = [];
-        weekCols.forEach(function(wc) {
-          if (wc && weekIds.indexOf(wc.weekId) < 0) weekIds.push(wc.weekId);
-        });
-
-        var rawRows = [];
-        var groupAccum = {};
-        // 헤더 내 첫 번째 유효 weekId → 주차별 매핑 조회 기준
-        var _zsuFirstWid = null;
-        for (var _fw = 0; _fw < weekCols.length; _fw++) {
-          if (weekCols[_fw] && weekCols[_fw].weekId) { _zsuFirstWid = weekCols[_fw].weekId; break; }
-        }
-        for (var r = 1; r < rows.length; r++) {
-          var row = rows[r];
-          var raw = _xlsZoningVal(row[0]);
-          if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
-          var mr = _zsuMatchGroup(raw, _zsuFirstWid);
-          var weekSales = {}, weekMargins = {}, weekQty = {};
-          for (var c2 = 1; c2 < row.length && (c2 - 1) < weekCols.length; c2++) {
-            var wc2 = weekCols[c2 - 1];
-            if (!wc2) continue;
-            var wid2 = wc2.weekId;
-            var val = parseFloat(String(row[c2] || '').replace(/,/g, ''));
-            if (isNaN(val)) continue;
-            if (wc2.type === 'margin') {
-              if (val >= 0 && val <= 100) weekMargins[wid2] = val;
-            } else if (wc2.type === 'qty') {
-              if (val >= 0) weekQty[wid2] = val;
-            } else {
-              if (val > 0) weekSales[wid2] = val / 10000;  /* 원 단위 → 만원 */
-            }
-          }
-          rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales, weekMargins: weekMargins, weekQty: weekQty });
-          if (mr.gid) {
-            if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
-            if (groupAccum[mr.gid].mcNames.indexOf(raw) < 0) groupAccum[mr.gid].mcNames.push(raw);
-            Object.keys(weekSales).forEach(function(wk) {
-              groupAccum[mr.gid].weekSales[wk] = (groupAccum[mr.gid].weekSales[wk] || 0) + weekSales[wk];
-            });
-          }
-        }
-
-        window._zsuParsed = { weekCols: weekCols, weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
-
-        _zsuRenderPreview(window._zsuParsed);
-
+        _zsuProcessRows(rows);
       } catch(innerErr) {
         console.error('[ZSU] ❌ onload 내부 에러:', innerErr.message, '\nstack:', innerErr.stack);
         _zsuShowError('처리 오류: ' + innerErr.message);
@@ -20425,7 +20435,7 @@ function handleZoneSalesFile(file) {
     };
 
     if (ext === 'csv') reader.readAsText(file, 'utf-8');
-    else reader.readAsArrayBuffer(file);   /* readAsBinaryString은 deprecated — ArrayBuffer 사용 */
+    else reader.readAsArrayBuffer(file);
 
   } catch(outerErr) {
     console.error('[ZSU] ❌ 함수 최상위 에러:', outerErr.message, '\nstack:', outerErr.stack);
@@ -20987,12 +20997,18 @@ function openZoneSalesUploadModal() {
     + '<button onclick="openZoningMcMapModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#f5f3ff;border:1.5px solid #7c3aed;color:#5b21b6;border-radius:7px;cursor:pointer;white-space:nowrap;">🗺️ MC 매핑표</button>'
     + '</div>'
     + '<div style="padding:10px 20px 0;flex-shrink:0;">'
-    + '<label id="zsuDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #34d399;border-radius:12px;padding:16px;cursor:pointer;background:#f0fdf4;" ondragover="event.preventDefault();this.style.borderColor=\'#059669\'" ondragleave="this.style.borderColor=\'#34d399\'" ondrop="event.preventDefault();this.style.borderColor=\'#34d399\';handleZoneSalesFile(event.dataTransfer.files[0]);">'
-    + '<div style="font-size:24px;">📥</div>'
-    + '<div style="font-size:12px;font-weight:700;color:#059669;">클릭하거나 파일을 드래그하세요</div>'
-    + '<div style="font-size:10px;color:#6b7280;">.xlsx / .xls / .csv 지원</div>'
+    + '<div style="display:flex;gap:8px;align-items:stretch;">'
+    + '<label id="zsuDropZone" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2.5px dashed #34d399;border-radius:12px;padding:14px;cursor:pointer;background:#f0fdf4;" ondragover="event.preventDefault();this.style.borderColor=\'#059669\'" ondragleave="this.style.borderColor=\'#34d399\'" ondrop="event.preventDefault();this.style.borderColor=\'#34d399\';handleZoneSalesFile(event.dataTransfer.files[0]);">'
+    + '<div style="font-size:22px;">📥</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#059669;">파일 업로드</div>'
+    + '<div style="font-size:9px;color:#6b7280;">.xlsx / .xls / .csv</div>'
     + '</label>'
     + '<input id="zsuFileInput" type="file" accept=".xlsx,.xls,.csv" style="display:none"/>'
+    + '<div id="zsuPasteZone" tabindex="0" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2.5px dashed #bbf7d0;border-radius:12px;padding:14px;cursor:pointer;background:#f9fffe;outline:none;transition:border-color .15s,background .15s;">'
+    + '<div style="font-size:22px;">📋</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#059669;">붙여넣기</div>'
+    + '<div style="font-size:9px;color:#6b7280;text-align:center;">클릭 후 Ctrl+V<br>(엑셀 셀 범위 복사)</div>'
+    + '</div>'
     + '</div>'
     + '<div id="zsuSnapSection" style="padding:0 20px;flex-shrink:0;"></div>'
     + '<div id="zsuPreview" style="flex:1;overflow-y:auto;padding:0 20px 8px;display:none;"></div>'
@@ -21060,10 +21076,42 @@ function openZoneSalesUploadModal() {
       if (file) {
         var safeName = file.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         zsuZone.innerHTML = '<div style="font-size:22px;">📄</div>'
-          + '<div style="font-size:12px;font-weight:700;color:#059669;">' + safeName + '</div>'
-          + '<div style="font-size:10px;color:#6b7280;">파일을 변경하려면 다시 클릭하세요</div>';
+          + '<div style="font-size:11px;font-weight:700;color:#059669;">' + safeName + '</div>'
+          + '<div style="font-size:9px;color:#6b7280;">다시 클릭해서 변경</div>';
       }
       handleZoneSalesFile(file);
+    });
+  }
+
+  /* 붙여넣기 영역 이벤트 */
+  var pasteZone = document.getElementById('zsuPasteZone');
+  if (pasteZone) {
+    pasteZone.addEventListener('focus', function() {
+      this.style.borderColor = '#059669';
+      this.style.background  = '#ecfdf5';
+    });
+    pasteZone.addEventListener('blur', function() {
+      this.style.borderColor = '#bbf7d0';
+      this.style.background  = '#f9fffe';
+    });
+    pasteZone.addEventListener('paste', function(e) {
+      e.preventDefault();
+      var text = e.clipboardData.getData('text/plain');
+      pasteZone.querySelector('div:last-child').textContent = '처리 중…';
+      handleZoneSalesPaste(text);
+      setTimeout(function() {
+        if (pasteZone.querySelector('div:last-child'))
+          pasteZone.querySelector('div:last-child').textContent = '클릭 후 Ctrl+V\n(엑셀 셀 범위 복사)';
+      }, 1500);
+    });
+    /* 모달 전체에서 붙여넣기 감지 (탭 구분자가 있으면 TSV로 처리) */
+    modal.addEventListener('paste', function(e) {
+      if (document.activeElement === pasteZone) return;
+      var text = e.clipboardData.getData('text/plain');
+      if (text && text.indexOf('\t') >= 0) {
+        e.preventDefault();
+        handleZoneSalesPaste(text);
+      }
     });
   }
 }
