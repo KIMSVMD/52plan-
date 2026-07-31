@@ -20737,6 +20737,12 @@ function _zsuEffGidForWeek(normMc, wid, rrGid, groups, overrides) {
       }
     }
   }
+  /* Feature 3: override 없을 때 해당 주차 MC 매핑으로 재조회
+     (rrGid는 첫 주차 기준이므로 주차별 슬롯이 다를 경우 재매칭) */
+  if (typeof _zsuMatchGroup === 'function') {
+    var wkMatch = _zsuMatchGroup(normMc, wid);
+    if (wkMatch && wkMatch.gid) return wkMatch.gid;
+  }
   return rrGid || null;
 }
 
@@ -21423,6 +21429,7 @@ function openZoningMcMapModal() {
     if (!_slotKeys.length) { _wm[0] = JSON.parse(JSON.stringify(window.zoningMcMap || [])); _slotKeys = [0]; }
   }
   window._zmcActiveWkIdx = _slotKeys[_slotKeys.length - 1];
+  window._zmcViewingWkIdx = window._zmcActiveWkIdx;
   window.zoningMcMap = _wm[window._zmcActiveWkIdx] || [];
   window.weekZoningMcMap = _wm;
 
@@ -21463,24 +21470,53 @@ function _renderZmcTimeline() {
   var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
   var _wm = (window.weekZoningMcMapByStore && window.weekZoningMcMapByStore[_store]) || {};
   var _slots = Object.keys(_wm).map(Number).filter(function(n){ return !isNaN(n); }).sort(function(a,b){ return a-b; });
-  var _hc = document.getElementById('zmcHeaderCount');
-  if (_hc) { _hc.textContent = '메모리 슬롯 ' + _slots.length + '개 (키: ' + _slots.join(', ') + ')'; console.log('[ZMC] weekZoningMcMapByStore['+_store+']:', JSON.stringify(_wm)); }
   var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  var _ai = window._zmcActiveWkIdx != null ? window._zmcActiveWkIdx : 0;
+  var _vi = window._zmcViewingWkIdx != null ? window._zmcViewingWkIdx : _ai;
+
+  /* 헤더 업데이트 */
+  var _hc = document.getElementById('zmcHeaderCount');
+  if (_hc) {
+    var _arr = (_wm[_ai] || []);
+    var _slotLbl = ws[_ai] ? ws[_ai].label + ' 이후' : 'W'+String(_ai+1)+' 이후';
+    if (_vi !== _ai) {
+      var _viewLbl = ws[_vi] ? ws[_vi].label : 'W'+String(_vi+1);
+      _hc.textContent = _arr.length + '개 · ' + _viewLbl + ' 조회 중 (→ ' + _slotLbl + ' 슬롯 기준)';
+    } else {
+      _hc.textContent = _arr.length + '개 · ' + _slotLbl + ' 적용 · ' + ((window.storeNames||{})[_store] || '현재 지점');
+    }
+  }
+
   var html = '<span style="font-size:9px;font-weight:800;color:#6d28d9;white-space:nowrap;margin-right:2px;">적용 주차:</span>';
+  /* 구간 슬롯 버튼 */
   _slots.forEach(function(idx, i) {
     var label = (ws[idx] ? ws[idx].label : 'W'+String(idx+1)) + ' 이후';
     var nextSlot = _slots[i + 1];
     var rangeLabel = nextSlot !== undefined ? label.replace(' 이후','') + '~' + (ws[nextSlot-1] ? ws[nextSlot-1].label : '') : label;
-    var isActive = idx === window._zmcActiveWkIdx;
+    var isActive = idx === _ai;
     html += '<button onclick="_zmcSetActiveSlot('+idx+')" style="font-family:inherit;font-size:9px;font-weight:'+(isActive?'900':'700')+';padding:3px 9px;border-radius:6px;border:1.5px solid '+(isActive?'#7c3aed':'#c4b5fd')+';background:'+(isActive?'#7c3aed':'#fff')+';color:'+(isActive?'#fff':'#6d28d9')+';cursor:pointer;white-space:nowrap;">'
       + rangeLabel + ' <span style="font-size:8px;opacity:.7;">(' + ((_wm[idx]||[]).length) + '개)</span>'
       + (idx !== 0 && !isActive ? ' <span onclick="event.stopPropagation();_zmcDeleteSlot('+idx+')" style="margin-left:2px;opacity:.6;font-size:10px;">✕</span>' : '')
       + '</button>';
   });
+  /* 현재 도면 주차 분기 버튼 (해당 주차가 슬롯 시작점이 아닐 때) */
   var curWk = typeof curWkIdx !== 'undefined' ? curWkIdx : 0;
   var curWkLabel = ws[curWk] ? ws[curWk].label : 'W'+String(curWk+1);
   if (_slots.indexOf(curWk) < 0) {
     html += '<button onclick="_zmcBranchFromCurrent()" style="font-family:inherit;font-size:9px;font-weight:800;padding:3px 9px;border-radius:6px;border:1.5px dashed #059669;background:#fff;color:#059669;cursor:pointer;white-space:nowrap;">+ '+curWkLabel+'부터 분기</button>';
+  }
+  /* Feature 1: 임의 주차 조회 드롭다운 */
+  html += '<span style="font-size:9px;color:#9ca3af;margin:0 4px;">|</span>';
+  html += '<span style="font-size:9px;font-weight:700;color:#6b7280;white-space:nowrap;margin-right:3px;">주차 조회:</span>';
+  html += '<select onchange="_zmcViewAtWeek(parseInt(this.value))" style="font-family:inherit;font-size:9px;padding:2px 5px;border:1.5px solid #c4b5fd;border-radius:6px;background:#fff;color:#4c1d95;cursor:pointer;">';
+  html += '<option value="-1"' + (_vi === _ai ? ' selected' : '') + '>— 주차 선택 —</option>';
+  ws.forEach(function(w, wIdx) {
+    html += '<option value="' + wIdx + '"' + (wIdx === _vi && _vi !== _ai ? ' selected' : '') + '>' + w.label + '</option>';
+  });
+  html += '</select>';
+  /* 슬롯 시작이 아닌 주차 조회 중일 때 → 슬롯 보기 복귀 버튼 */
+  if (_vi !== _ai) {
+    html += '<button onclick="_zmcSetActiveSlot(' + _ai + ')" style="font-family:inherit;font-size:9px;padding:2px 7px;border:1px solid #c4b5fd;border-radius:5px;background:#f5f3ff;color:#6d28d9;cursor:pointer;white-space:nowrap;margin-left:3px;">↩ 슬롯 보기</button>';
   }
   tl.innerHTML = html;
 }
@@ -21491,9 +21527,60 @@ function _zmcSetActiveSlot(wkIdx) {
   var _wm = (window.weekZoningMcMapByStore && window.weekZoningMcMapByStore[_store]) || {};
   if (!_wm[wkIdx]) return;
   window._zmcActiveWkIdx = wkIdx;
+  window._zmcViewingWkIdx = wkIdx;
   window.zoningMcMap = _wm[wkIdx];
   _renderZmcTimeline();
   _renderZmcTable();
+}
+
+/* ── Feature 1: 임의 주차 조회 ── */
+function _zmcViewAtWeek(wkIdx) {
+  if (wkIdx < 0) return;
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  var _wm = (window.weekZoningMcMapByStore && window.weekZoningMcMapByStore[_store]) || {};
+  var _slotKeys = Object.keys(_wm).map(Number).filter(function(n){ return !isNaN(n); }).sort(function(a,b){ return a-b; });
+  /* cascade: wkIdx 이하 중 가장 큰 슬롯 키 */
+  var slotIdx = -1;
+  for (var i = _slotKeys.length - 1; i >= 0; i--) {
+    if (_slotKeys[i] <= wkIdx) { slotIdx = _slotKeys[i]; break; }
+  }
+  if (slotIdx < 0 && _slotKeys.length > 0) slotIdx = _slotKeys[0];
+  if (slotIdx < 0) return;
+  window._zmcViewingWkIdx = wkIdx;
+  window._zmcActiveWkIdx = slotIdx;
+  window.zoningMcMap = _wm[slotIdx] || [];
+  _renderZmcTimeline();
+  _renderZmcTable();
+}
+
+/* ── Feature 2: 편집 전 자동 분기 보장 ── */
+function _zmcEnsureSlotForViewing() {
+  var _ai = window._zmcActiveWkIdx != null ? window._zmcActiveWkIdx : 0;
+  var _vi = window._zmcViewingWkIdx != null ? window._zmcViewingWkIdx : _ai;
+  if (_vi === _ai) return; /* 이미 슬롯 시작점 → 분기 불필요 */
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (!window.weekZoningMcMapByStore) window.weekZoningMcMapByStore = {};
+  if (!window.weekZoningMcMapByStore[_store]) window.weekZoningMcMapByStore[_store] = {};
+  var _wm = window.weekZoningMcMapByStore[_store];
+  if (_wm[_vi] || _wm[String(_vi)]) {
+    /* 이미 해당 주차에 슬롯 있음 → 활성만 전환 */
+    window._zmcActiveWkIdx = _vi;
+    window.zoningMcMap = _wm[_vi] || _wm[String(_vi)];
+    return;
+  }
+  /* 슬롯 없음 → 유효 매핑 복사 후 새 슬롯 생성 */
+  var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  var effective = typeof _getMcMapAtWeek === 'function'
+    ? _getMcMapAtWeek(ws[_vi] ? ws[_vi].id : null)
+    : (window.zoningMcMap || []);
+  _wm[_vi] = JSON.parse(JSON.stringify(effective));
+  window.weekZoningMcMap = _wm;
+  window._zmcActiveWkIdx = _vi;
+  window.zoningMcMap = _wm[_vi];
+  var label = ws[_vi] ? ws[_vi].label : 'W'+String(_vi+1);
+  syncZoningMcMap();
+  showToast(label + '부터 새 구간이 생성되었습니다');
+  _renderZmcTimeline();
 }
 
 /* ── 현재 주차에서 분기: 유효 매핑 복사 → 새 슬롯 생성 ── */
@@ -21509,6 +21596,7 @@ function _zmcBranchFromCurrent() {
   window.weekZoningMcMapByStore[_store][curWk] = JSON.parse(JSON.stringify(effective));
   window.weekZoningMcMap = window.weekZoningMcMapByStore[_store];
   window._zmcActiveWkIdx = curWk;
+  window._zmcViewingWkIdx = curWk;
   window.zoningMcMap = window.weekZoningMcMapByStore[_store][curWk];
   _renderZmcTimeline();
   _renderZmcTable();
@@ -21550,9 +21638,15 @@ function _renderZmcTable() {
   var hdrEl = document.getElementById('zmcHeaderCount');
   if (hdrEl) {
     var ws2 = typeof WEEKS !== 'undefined' ? WEEKS : [];
-    var _ai = window._zmcActiveWkIdx != null ? window._zmcActiveWkIdx : 0;
-    var _slotLabel = ws2[_ai] ? ws2[_ai].label + ' 이후' : 'W'+String(_ai+1)+' 이후';
-    hdrEl.textContent = arr.length + '개 · ' + _slotLabel + ' 적용 · ' + ((window.storeNames||{})[typeof currentStore!=='undefined'?currentStore:'gs'] || '현재 지점');
+    var _ai2 = window._zmcActiveWkIdx != null ? window._zmcActiveWkIdx : 0;
+    var _vi2 = window._zmcViewingWkIdx != null ? window._zmcViewingWkIdx : _ai2;
+    var _slotLabel = ws2[_ai2] ? ws2[_ai2].label + ' 이후' : 'W'+String(_ai2+1)+' 이후';
+    if (_vi2 !== _ai2) {
+      var _viewLabel = ws2[_vi2] ? ws2[_vi2].label : 'W'+String(_vi2+1);
+      hdrEl.textContent = arr.length + '개 · ' + _viewLabel + ' 조회 중 (→ ' + _slotLabel + ' 슬롯 기준)';
+    } else {
+      hdrEl.textContent = arr.length + '개 · ' + _slotLabel + ' 적용 · ' + ((window.storeNames||{})[typeof currentStore!=='undefined'?currentStore:'gs'] || '현재 지점');
+    }
   }
 
   if (!filtered.length) { wrap.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px;">검색 결과 없음</div>'; return; }
@@ -21577,6 +21671,7 @@ function _renderZmcTable() {
 }
 
 function _zmcUpdateEntry(idx, field, val) {
+  _zmcEnsureSlotForViewing(); /* Feature 2: 슬롯 시작점 아닌 주차면 자동 분기 */
   if (!window.zoningMcMap || !window.zoningMcMap[idx]) return;
   window.zoningMcMap[idx][field] = val.trim();
   syncZoningMcMap();
@@ -21585,6 +21680,8 @@ function _zmcUpdateEntry(idx, field, val) {
 function _zmcDeleteEntry(idx) {
   if (!window.zoningMcMap || idx < 0 || idx >= window.zoningMcMap.length) return;
   if (!confirm('삭제: ' + window.zoningMcMap[idx].mc + ' → ' + window.zoningMcMap[idx].z + '?')) return;
+  _zmcEnsureSlotForViewing(); /* Feature 2 */
+  if (!window.zoningMcMap || idx < 0 || idx >= window.zoningMcMap.length) return;
   window.zoningMcMap.splice(idx, 1);
   _renderZmcTable();
   syncZoningMcMap();
@@ -21596,6 +21693,7 @@ function _zmcAddEntry() {
   var mc = mcEl ? mcEl.value.trim() : '';
   var z = zEl ? zEl.value.trim() : '';
   if (!mc || !z) { showToast('MC명과 조닝번호를 모두 입력하세요'); return; }
+  _zmcEnsureSlotForViewing(); /* Feature 2 */
   if (!window.zoningMcMap) {
     var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
     if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {};
