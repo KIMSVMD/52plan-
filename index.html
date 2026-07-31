@@ -20589,14 +20589,8 @@ function _zsuNormText(s) {
     .trim();
 }
 
-/* ── 상품코드(SKU) 추출: 7자리 이상 숫자로 시작하면 SKU로 간주 ── */
-function _zsuExtractSku(s) {
-  var m = (s || '').match(/^(\d{7,})/);
-  return m ? m[1] : null;
-}
-
-/* ── 조닝번호/MC명/상품코드 → {gid, via} ── */
-function _zsuMatchGroup(str, weekId) {
+/* ── 조닝번호/MC명/상품코드 → {gid, via} — sku는 업로드 B열에서 명시적으로 읽은 값 ── */
+function _zsuMatchGroup(str, weekId, sku) {
   if (!str) return { gid: null, via: null };
   var s = _zsuNormText(str);
   var store = window.currentStore || 'gs';
@@ -20605,8 +20599,7 @@ function _zsuMatchGroup(str, weekId) {
     groups = window.storeSalesGroupsMap[store] || {};
   }
 
-  /* 0순위: 상품코드(SKU) 예외 매핑 */
-  var sku = _zsuExtractSku(s);
+  /* 0순위: 상품코드(SKU) 예외 매핑 — B열에 값이 있을 때만 조회 */
   if (sku) {
     var skuEntry = window.skuMap && window.skuMap[sku];
     if (skuEntry && skuEntry.z) {
@@ -20714,13 +20707,21 @@ function _xlsZoningVal(val) {
   return _zsuNormText(val == null ? '' : String(val));
 }
 
+/* ── B열(상품코드) 값 추출: 숫자든 문자든 그대로 문자열화 — 날짜 자동변환 방지 ── */
+function _xlsSkuVal(val) {
+  if (val == null) return '';
+  if (typeof val === 'number') return String(Math.trunc(val));
+  return _zsuNormText(String(val));
+}
+
 /* ── 행 배열 → 파싱 → 미리보기 (파일/붙여넣기 공통 처리) ── */
 function _zsuProcessRows(rows) {
   if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
 
   var headerRow = rows[0];
   var weekCols = [], unmatchedHeaders = [];
-  for (var c = 1; c < headerRow.length; c++) {
+  /* A열=MC명, B열=상품코드(선택) — 주차 열은 C열(인덱스 2)부터 시작 */
+  for (var c = 2; c < headerRow.length; c++) {
     var h = String(headerRow[c] || '').trim();
     if (!h) { weekCols.push(null); continue; }
     var wc = _zsuParseWeekCol(h);
@@ -20742,10 +20743,11 @@ function _zsuProcessRows(rows) {
     var row = rows[r];
     var raw = _xlsZoningVal(row[0]);
     if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
-    var mr = _zsuMatchGroup(raw, _zsuFirstWid);
+    var sku = _xlsSkuVal(row[1]) || null;
+    var mr = _zsuMatchGroup(raw, _zsuFirstWid, sku);
     var weekSales = {}, weekMargins = {}, weekQty = {};
-    for (var c2 = 1; c2 < row.length && (c2 - 1) < weekCols.length; c2++) {
-      var wc2 = weekCols[c2 - 1];
+    for (var c2 = 2; c2 < row.length && (c2 - 2) < weekCols.length; c2++) {
+      var wc2 = weekCols[c2 - 2];
       if (!wc2) continue;
       var wid2 = wc2.weekId;
       var val = parseFloat(String(row[c2] || '').replace(/,/g, ''));
@@ -20760,7 +20762,7 @@ function _zsuProcessRows(rows) {
         if (val > 0) weekSales[wid2] = val / 10000;
       }
     }
-    rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales, weekMargins: weekMargins, weekQty: weekQty });
+    rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, sku: sku, weekSales: weekSales, weekMargins: weekMargins, weekQty: weekQty });
     if (mr.gid) {
       if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
       if (groupAccum[mr.gid].mcNames.indexOf(raw) < 0) groupAccum[mr.gid].mcNames.push(raw);
@@ -20845,31 +20847,27 @@ function _zsuShowError(msg) {
 
 /* ── 스냅샷 moKey 헬퍼 ── */
 function _zsuMoKey(store, weekIds) {
-  var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
-  var moSet = {};
-  (weekIds || []).forEach(function(wid) {
-    var w = wsArr.find(function(x) { return x.id === wid; });
-    if (w != null && w.mo != null) moSet[w.mo] = 1;
-  });
-  var sorted = Object.keys(moSet).map(Number).sort(function(a,b){return a-b;});
+  var sorted = (weekIds || []).slice().sort();
   return store + '_' + (sorted.length ? sorted.join('_') : 'x');
 }
 
-/* ── 주차별 effective gid 헬퍼 ── */
-function _zsuEffGidForWeek(normMc, wid, rrGid, groups, overrides) {
-  var ov = (overrides || {})[normMc];
-  if (ov) {
-    var zNum = (ov.wk && ov.wk[wid]) ? ov.wk[wid] : ov.z;
-    if (zNum) {
-      for (var gg in groups) {
-        if (groups[gg] && groups[gg].number && String(groups[gg].number).trim() === zNum) return gg;
+/* ── 주차별 effective gid 헬퍼 — sku 있으면 zoningMcOverrides는 건너뛰고 skuMap 경로만 사용 ── */
+function _zsuEffGidForWeek(normMc, wid, rrGid, groups, overrides, sku) {
+  if (!sku) {
+    var ov = (overrides || {})[normMc];
+    if (ov) {
+      var zNum = (ov.wk && ov.wk[wid]) ? ov.wk[wid] : ov.z;
+      if (zNum) {
+        for (var gg in groups) {
+          if (groups[gg] && groups[gg].number && String(groups[gg].number).trim() === zNum) return gg;
+        }
       }
     }
   }
-  /* Feature 3: override 없을 때 해당 주차 MC 매핑으로 재조회
+  /* Feature 3: override 없을 때 해당 주차 MC 매핑(또는 SKU 매핑)으로 재조회
      (rrGid는 첫 주차 기준이므로 주차별 슬롯이 다를 경우 재매칭) */
   if (typeof _zsuMatchGroup === 'function') {
-    var wkMatch = _zsuMatchGroup(normMc, wid);
+    var wkMatch = _zsuMatchGroup(normMc, wid, sku);
     if (wkMatch && wkMatch.gid) return wkMatch.gid;
   }
   return rrGid || null;
@@ -20924,7 +20922,7 @@ function _zsuRenderPreview(parsed) {
   var matchedRows = 0;
   rawRows.forEach(function(rr) {
     var norm = _zsuNormText(rr.raw);
-    var any = usedWids.some(function(wid) { return !!_zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides); });
+    var any = usedWids.some(function(wid) { return !!_zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides, rr.sku); });
     if (any) matchedRows++;
   });
   var unmatchedCnt = rawRows.length - matchedRows;
@@ -20946,6 +20944,7 @@ function _zsuRenderPreview(parsed) {
   /* 헤더 */
   html += '<thead style="position:sticky;top:0;z-index:2;"><tr style="background:#f8fafc;">'
     + '<th style="padding:5px 8px;text-align:left;color:#374151;font-weight:700;white-space:nowrap;min-width:90px;border-right:1px solid #e5e7eb;">MC명</th>'
+    + '<th style="padding:5px 6px;text-align:left;color:#0f766e;font-weight:700;white-space:nowrap;min-width:70px;border-right:1px solid #e5e7eb;">상품코드</th>'
     + '<th style="padding:5px 6px;text-align:left;color:#0369a1;font-weight:700;white-space:nowrap;min-width:120px;border-right:1px solid #e5e7eb;">전체 일괄</th>'
     + '<th style="padding:5px 4px;text-align:center;color:#d97706;font-weight:700;white-space:nowrap;min-width:36px;border-right:1px solid #e5e7eb;">유지</th>';
   usedWids.forEach(function(wid) {
@@ -20958,16 +20957,18 @@ function _zsuRenderPreview(parsed) {
   /* 데이터 행 */
   rawRows.forEach(function(rr, idx) {
     var norm = _zsuNormText(rr.raw);
-    var ov = overrides[norm];
+    /* 행 종류에 맞는 저장소에서 기존 고정 여부 조회: SKU 행 → skuMap, MC명 행 → zoningMcOverrides */
+    var ov = rr.sku ? (window.skuMap || {})[rr.sku] : overrides[norm];
     /* 스냅샷 복원 시 pinned 상태 우선 사용 */
     var hasPin = (rr._savedPinned !== undefined) ? rr._savedPinned : !!ov;
     var mcEsc = rr.raw.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    var skuEsc = rr.sku ? rr.sku.replace(/&/g,'&amp;').replace(/</g,'&lt;') : '';
 
     /* 주차별 effective gid: 스냅샷 복원값 > 현재 overrides */
     var weekGids = {};
     usedWids.forEach(function(wid) {
       weekGids[wid] = (rr._savedWeekGidMap && rr._savedWeekGidMap[wid])
-        || _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides);
+        || _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides, rr.sku);
     });
 
     var anyMatched = usedWids.some(function(wid) { return !!weekGids[wid]; });
@@ -20983,6 +20984,11 @@ function _zsuRenderPreview(parsed) {
       + mcEsc
       + (rr.via && !hasPin ? '<div style="font-size:8px;color:#9ca3af;">' + rr.via.replace(/</g,'&lt;') + '</div>' : '')
       + (hasPin ? ' <span style="background:#fef3c7;color:#92400e;font-size:7px;padding:1px 3px;border-radius:3px;">📌</span>' : '')
+      + '</td>';
+
+    /* 상품코드(B열) */
+    html += '<td style="padding:3px 8px;white-space:nowrap;border-right:1px solid #f1f5f9;">'
+      + (rr.sku ? '<span style="font-family:monospace;font-weight:700;color:#0f766e;">' + skuEsc + '</span>' : '<span style="color:#d1d5db;">—</span>')
       + '</td>';
 
     /* 전체 일괄 드롭다운 */
@@ -21114,6 +21120,8 @@ function applyZoneSalesUpload() {
   /* 1) DOM 읽어서 품목×주차 단위 groupAccum 재계산 */
   var groupAccum = {};
   var overridesChanged = false;
+  var skuMapChanged = false;
+  if (!window.skuMap) window.skuMap = {};
   var snapshotRows = [];
 
   parsed.rawRows.forEach(function(rr, idx) {
@@ -21132,7 +21140,7 @@ function applyZoneSalesUpload() {
       if (!hasSales && !hasMgn && !hasQty) return;
       var wkSel = document.getElementById('zsu_sel_' + idx + '_' + wid);
       var wkDomGid = wkSel ? (wkSel.value || null) : null;
-      var effGid = _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides);
+      var effGid = _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides, rr.sku);
       weekGidMap[wid] = wkDomGid || bulkGid || effGid;
     });
 
@@ -21142,6 +21150,7 @@ function applyZoneSalesUpload() {
       raw: rr.raw,
       gid: rr.gid || null,
       via: rr.via || null,
+      sku: rr.sku || null,
       weekSales: JSON.parse(JSON.stringify(rr.weekSales || {})),
       weekMargins: JSON.parse(JSON.stringify(rr.weekMargins || {})),
       weekQty: JSON.parse(JSON.stringify(rr.weekQty || {})),
@@ -21176,41 +21185,60 @@ function applyZoneSalesUpload() {
       if (qt != null && qt >= 0) groupAccum[gid].weekQty[wid] = (groupAccum[gid].weekQty[wid] || 0) + qt;
     });
 
-    /* 고정 예외 저장 */
+    /* 고정 예외 저장: SKU로 인식된 행 → 상품코드 예외 매핑(skuMap) / MC명으로 인식된 행 → 기존 MC명 예외 고정(zoningMcOverrides) */
     if (persist) {
       var wids = Object.keys(weekGidMap);
       var hasAny = wids.some(function(wid) { return !!weekGidMap[wid]; });
-      if (hasAny) {
-        if (!overrides[norm]) overrides[norm] = { displayName: rr.raw };
-        overrides[norm].displayName = rr.raw;
-        /* 주차별 zone number 수집 */
-        var newWk = {};
-        wids.forEach(function(wid) {
-          var g = groups[weekGidMap[wid]];
-          if (g && g.number) newWk[wid] = String(g.number).trim();
-        });
-        var wkZones = Object.keys(newWk).map(function(wid) { return newWk[wid]; });
-        var allSame = wkZones.length > 0 && wkZones.every(function(v) { return v === wkZones[0]; });
-        if (allSame) {
-          /* 모든 주차 동일 구역 → z에만 저장, wk 제거 */
-          var prevZ = overrides[norm].z;
-          overrides[norm].z = wkZones[0];
-          delete overrides[norm].wk;
-          if (prevZ !== wkZones[0]) overridesChanged = true;
-          else overridesChanged = true;
-        } else {
-          /* 주차마다 다른 구역 → wk에 저장, z는 폴백값(첫 주차) */
-          var prevWk = overrides[norm].wk || {};
-          var merged = {};
-          for (var k in prevWk) { merged[k] = prevWk[k]; }
-          Object.keys(newWk).forEach(function(wid) { merged[wid] = newWk[wid]; });
-          overrides[norm].wk = merged;
-          overrides[norm].z = wkZones[0];
+      if (rr.sku) {
+        if (hasAny) {
+          /* SKU는 주차별 슬롯을 지원하지 않음 — 첫 매칭 주차의 구역을 대표값으로 저장 */
+          var skuZone = null;
+          for (var swi = 0; swi < wids.length; swi++) {
+            var sg = groups[weekGidMap[wids[swi]]];
+            if (sg && sg.number) { skuZone = String(sg.number).trim(); break; }
+          }
+          if (skuZone) {
+            /* B열이 상품코드 전용 열로 분리됐으므로 A열(MC명 칸) 텍스트를 그대로 상품명으로 사용 */
+            window.skuMap[rr.sku] = { sku: rr.sku, name: rr.raw, z: skuZone };
+            skuMapChanged = true;
+          }
+        } else if (window.skuMap[rr.sku]) {
+          delete window.skuMap[rr.sku];
+          skuMapChanged = true;
+        }
+      } else {
+        if (hasAny) {
+          if (!overrides[norm]) overrides[norm] = { displayName: rr.raw };
+          overrides[norm].displayName = rr.raw;
+          /* 주차별 zone number 수집 */
+          var newWk = {};
+          wids.forEach(function(wid) {
+            var g = groups[weekGidMap[wid]];
+            if (g && g.number) newWk[wid] = String(g.number).trim();
+          });
+          var wkZones = Object.keys(newWk).map(function(wid) { return newWk[wid]; });
+          var allSame = wkZones.length > 0 && wkZones.every(function(v) { return v === wkZones[0]; });
+          if (allSame) {
+            /* 모든 주차 동일 구역 → z에만 저장, wk 제거 */
+            var prevZ = overrides[norm].z;
+            overrides[norm].z = wkZones[0];
+            delete overrides[norm].wk;
+            if (prevZ !== wkZones[0]) overridesChanged = true;
+            else overridesChanged = true;
+          } else {
+            /* 주차마다 다른 구역 → wk에 저장, z는 폴백값(첫 주차) */
+            var prevWk = overrides[norm].wk || {};
+            var merged = {};
+            for (var k in prevWk) { merged[k] = prevWk[k]; }
+            Object.keys(newWk).forEach(function(wid) { merged[wid] = newWk[wid]; });
+            overrides[norm].wk = merged;
+            overrides[norm].z = wkZones[0];
+            overridesChanged = true;
+          }
+        } else if (!hasAny && overrides[norm]) {
+          delete overrides[norm];
           overridesChanged = true;
         }
-      } else if (!hasAny && overrides[norm]) {
-        delete overrides[norm];
-        overridesChanged = true;
       }
     }
   });
@@ -21226,6 +21254,7 @@ function applyZoneSalesUpload() {
   });
 
   if (overridesChanged) syncZoningMcOverrides();
+  if (skuMapChanged) syncSkuMap();
 
   /* 스냅샷 저장 */
   if (!window._zsuSnapshot) window._zsuSnapshot = {};
@@ -21364,6 +21393,7 @@ function applyZoneSalesUpload() {
   if (marginAppliedCount > 0) _toastMsg += ' · 이익율 ' + marginAppliedCount + '건';
   if (qtyAppliedCount > 0) _toastMsg += ' · 수량 ' + qtyAppliedCount + '건';
   if (overridesChanged) _toastMsg += ' · 예외 고정 저장됨';
+  if (skuMapChanged) _toastMsg += ' · 상품코드 예외 저장됨';
   showToast(_toastMsg);
 }
 
@@ -21379,6 +21409,7 @@ function _zsuRestoreSnapshot(moKey) {
         raw: r.raw,
         gid: r.gid || null,
         via: r.via || null,
+        sku: r.sku || null,
         weekSales: r.weekSales || {},
         weekMargins: r.weekMargins || {},
         weekQty: r.weekQty || {},
@@ -21409,8 +21440,8 @@ function openZoneSalesUploadModal() {
     + '<button onclick="document.getElementById(\'zoneSalesUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
     + '</div>'
     + '<div style="padding:10px 20px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
-    + '<div><div style="font-size:11px;font-weight:800;color:#065f46;">📋 A열=MC명 / B열~= "주차 매출" · "주차 매총율" · "주차 판매수량" 세트 반복</div>'
-    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">매총율·판매수량 없어도 동작 | 매총율−22%=이익율 | 수량은 순위 탭 이익 기여도 분석에 활용</div></div>'
+    + '<div><div style="font-size:11px;font-weight:800;color:#065f46;">📋 A열=MC명 / B열=상품코드(선택) / C열~= "주차 매출" · "주차 매총율" · "주차 판매수량" 세트 반복</div>'
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">B열은 예외 매칭이 필요한 상품만 채우면 됨 | 매총율·판매수량 없어도 동작 | 매총율−22%=이익율 | 수량은 순위 탭 이익 기여도 분석에 활용</div></div>'
     + '<button onclick="openZoningMcMapModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#f5f3ff;border:1.5px solid #7c3aed;color:#5b21b6;border-radius:7px;cursor:pointer;white-space:nowrap;">🗺️ MC 매핑표</button>'
     + '</div>'
     + '<div style="padding:10px 20px 0;flex-shrink:0;">'
@@ -21438,8 +21469,9 @@ function openZoneSalesUploadModal() {
     + '</div>';
   document.body.appendChild(modal);
 
-  /* 이전 적용 내역 스냅샷 버튼 — 현재 선택된 월에 해당하는 것만 표시 */
+  /* 이전 적용 내역 스냅샷 버튼 — 현재 선택된 주차에 해당하는 것만 표시 */
   var curStore = window.currentStore || 'gs';
+  var _curWeek = window.currentSalesWeek; // 현재 선택된 주차 id (월 전체 뷰면 null)
   var _curMo   = window.currentSalesMonth; // 현재 선택된 월 인덱스 (0-11 or null)
   var snapSection = document.getElementById('zsuSnapSection');
   if (snapSection && window._zsuSnapshot) {
@@ -21448,11 +21480,17 @@ function openZoneSalesUploadModal() {
     var snaps = Object.keys(window._zsuSnapshot).filter(function(k) {
       var sn = window._zsuSnapshot[k];
       if (sn.store !== curStore) return false;
-      // 현재 월 필터: currentSalesMonth가 설정된 경우 해당 월 키만 포함
+      var wids = sn.weekIds || [];
+      if (_curWeek) {
+        // 주차 필터: 현재 선택된 주차가 이 스냅샷에 포함된 경우만
+        return wids.indexOf(_curWeek) >= 0;
+      }
       if (_curMo !== null && _curMo !== undefined) {
-        var moIdxArr = k.replace(curStore + '_', '').split('_').map(Number).filter(function(n){return !isNaN(n);});
-        var matches = moIdxArr.indexOf(_curMo) >= 0;
-        return matches;
+        // 월 전체 뷰: 현재 월에 속한 주차가 하나라도 포함되면 표시
+        return wids.some(function(wid) {
+          var w = wsArr2.find(function(x) { return x.id === wid; });
+          return w && w.mo === _curMo;
+        });
       }
       return true; // 종합 탭이면 전체 표시
     }).sort(function(a, b) {
@@ -21468,7 +21506,12 @@ function openZoneSalesUploadModal() {
         var lastW  = wsArr2.find(function(x) { return x.id === wids[wids.length - 1]; });
         var rng = (firstW ? firstW.label : (wids[0]||'?'))
           + (wids.length > 1 ? ' ~ ' + (lastW ? lastW.label : (wids[wids.length-1]||'?')) : '');
-        var moIdxArr = mk.replace(curStore + '_', '').split('_').map(Number).filter(function(n){return !isNaN(n);});
+        var moIdxArr = [];
+        wids.forEach(function(wid) {
+          var w = wsArr2.find(function(x) { return x.id === wid; });
+          if (w && w.mo != null && moIdxArr.indexOf(w.mo) < 0) moIdxArr.push(w.mo);
+        });
+        moIdxArr.sort(function(a, b) { return a - b; });
         var moLbl = moIdxArr.map(function(i) { return moNames[i] || (i+1+'월'); }).join('/');
         var dt = sn.appliedAt ? new Date(sn.appliedAt).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'}) : '';
         var mkEsc = mk.replace(/'/g,"\\'");
@@ -21479,9 +21522,9 @@ function openZoneSalesUploadModal() {
       });
       sHtml += '</div>';
       snapSection.innerHTML = sHtml;
-    } else if (_curMo !== null && _curMo !== undefined) {
-      // 현재 월에 해당하는 내역 없음
-      snapSection.innerHTML = '<div style="padding:8px 0 4px;font-size:10px;color:#9ca3af;">이 달 업로드 내역 없음</div>';
+    } else if (_curWeek || (_curMo !== null && _curMo !== undefined)) {
+      // 현재 선택된 주차(또는 월)에 해당하는 내역 없음
+      snapSection.innerHTML = '<div style="padding:8px 0 4px;font-size:10px;color:#9ca3af;">이전 적용 내역 없음</div>';
     }
   }
 
