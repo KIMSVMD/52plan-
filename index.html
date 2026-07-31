@@ -1828,6 +1828,7 @@ body.viewer-mode #salesMonthNav > div > button{
         if (data.weeklySales) window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
         if (data.salesTargets) { window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets)); window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets)); }
         if (data.zoningMcMap) { if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {}; window.zoningMcMapByStore[store] = JSON.parse(JSON.stringify(data.zoningMcMap)); }
+        if (data.skuMap && typeof data.skuMap === 'object') { if (!window.skuMapByStore) window.skuMapByStore = {}; window.skuMapByStore[store] = JSON.parse(JSON.stringify(data.skuMap)); if (store === (window.currentStore || 'gs')) window.skuMap = window.skuMapByStore[store]; }
         if (data.weekZoningMcMap) { if (!window.weekZoningMcMapByStore) window.weekZoningMcMapByStore = {}; var _mcModal = document.getElementById('zoningMcMapModal'); var _mcModalOpen = _mcModal && _mcModal.style.display !== 'none'; if (!_mcModalOpen) { window.weekZoningMcMapByStore[store] = JSON.parse(JSON.stringify(data.weekZoningMcMap)); if (store === (window.currentStore || 'gs')) window.weekZoningMcMap = window.weekZoningMcMapByStore[store]; } }
         if (typeof window._updateServerSnapshot === 'function') window._updateServerSnapshot(store, data);
       } catch(e) { console.warn('[getStoreOnce] 읽기 실패:', store, e); }
@@ -2402,6 +2403,8 @@ body.viewer-mode #salesMonthNav > div > button{
  };
  window.zoningMcMapByStore = {};
  window.zoningMcOverridesByStore = {};
+ if (!window.skuMapByStore) window.skuMapByStore = {};
+ if (!window.skuMap) window.skuMap = {};
  window._firebaseSaveStoreField = async function(store, field, data) {
   try {
    await set(ref(db, 'plan2026/' + store + '/' + field), data);
@@ -2461,6 +2464,17 @@ body.viewer-mode #salesMonthNav > div > button{
    }
   } catch(e) { console.warn('[MC매핑] zoningMcOverrides 로드 실패', store, e); window.zoningMcOverridesByStore[store] = {}; }
   window.zoningMcOverrides = window.zoningMcOverridesByStore[store];
+  try {
+    var skuSnap = await get(ref(db, 'plan2026/' + store + '/skuMap'));
+    if (skuSnap.exists() && skuSnap.val() && typeof skuSnap.val() === 'object') {
+      if (!window.skuMapByStore) window.skuMapByStore = {};
+      window.skuMapByStore[store] = skuSnap.val();
+    } else {
+      if (!window.skuMapByStore) window.skuMapByStore = {};
+      window.skuMapByStore[store] = {};
+    }
+  } catch(e) { console.warn('[SKU매핑] skuMap 로드 실패', store, e); if (!window.skuMapByStore) window.skuMapByStore = {}; window.skuMapByStore[store] = {}; }
+  window.skuMap = window.skuMapByStore[store];
  };
  window._loadZoningMcForStore('gs');
 
@@ -8862,6 +8876,7 @@ function saveAll(){
  allData.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
  allData.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
  allData.weekZoningMcMap = JSON.parse(JSON.stringify(window.weekZoningMcMap || {}));
+ allData.skuMap = JSON.parse(JSON.stringify(window.skuMap || {}));
 
  var ts = _makeTimestamp();
  var storeCount = Object.keys(allMap).length;
@@ -8899,6 +8914,7 @@ function saveStore(store) {
  data.zoningMcMap = JSON.parse(JSON.stringify(window.zoningMcMap || []));
  data.zoningMcOverrides = JSON.parse(JSON.stringify(window.zoningMcOverrides || {}));
  data.weekZoningMcMap = JSON.parse(JSON.stringify(window.weekZoningMcMap || {}));
+ data.skuMap = JSON.parse(JSON.stringify(window.skuMap || {}));
  downloadJSON(data, '킴스클럽_2026도면_' + storeName + '_' + ts + '.json');
  showToast(' ' + storeName + ' JSON 저장 완료!');
 }
@@ -10451,6 +10467,9 @@ function switchStore(store) {
  if (!window.storeCanvasExtra) window.storeCanvasExtra = {};
  window.storeCanvasOffset[currentStore] = { r: canvasOffsetR, c: canvasOffsetC };
  window.storeCanvasExtra[currentStore] = { r: canvasExtraR, c: canvasExtraC };
+ // SKU 매핑 이전 지점 백업
+ if (!window.skuMapByStore) window.skuMapByStore = {};
+ window.skuMapByStore[currentStore] = JSON.parse(JSON.stringify(window.skuMap || {}));
  // 지점 전환 시 이전 지점 편집 잠금 해제
  if (window._salesIAmEditor) {
   window._salesIAmEditor = false;
@@ -20545,6 +20564,14 @@ function syncZoningMcMap() {
     console.warn('[MC매핑] _firebaseSaveStoreField 미정의 — 저장 불가');
   }
 }
+function syncSkuMap() {
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (!window.skuMapByStore) window.skuMapByStore = {};
+  window.skuMapByStore[_store] = JSON.parse(JSON.stringify(window.skuMap || {}));
+  if (typeof window._firebaseSaveStoreField === 'function') {
+    window._firebaseSaveStoreField(_store, 'skuMap', JSON.parse(JSON.stringify(window.skuMap || {})));
+  }
+}
 function syncZoningMcOverrides() {
   var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
   if (typeof window._firebaseSaveStoreField === 'function') {
@@ -20562,7 +20589,13 @@ function _zsuNormText(s) {
     .trim();
 }
 
-/* ── 조닝번호/MC명 → {gid, via} ── */
+/* ── 상품코드(SKU) 추출: 7자리 이상 숫자로 시작하면 SKU로 간주 ── */
+function _zsuExtractSku(s) {
+  var m = (s || '').match(/^(\d{7,})/);
+  return m ? m[1] : null;
+}
+
+/* ── 조닝번호/MC명/상품코드 → {gid, via} ── */
 function _zsuMatchGroup(str, weekId) {
   if (!str) return { gid: null, via: null };
   var s = _zsuNormText(str);
@@ -20571,8 +20604,24 @@ function _zsuMatchGroup(str, weekId) {
   if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
     groups = window.storeSalesGroupsMap[store] || {};
   }
+
+  /* 0순위: 상품코드(SKU) 예외 매핑 */
+  var sku = _zsuExtractSku(s);
+  if (sku) {
+    var skuEntry = window.skuMap && window.skuMap[sku];
+    if (skuEntry && skuEntry.z) {
+      var sz = String(skuEntry.z).trim();
+      for (var gs0 in groups) {
+        if (groups[gs0].number && String(groups[gs0].number).trim() === sz) return { gid: gs0, via: 'SKU→' + sz };
+      }
+      for (var gs0b in groups) {
+        if (groups[gs0b].label && String(groups[gs0b].label).trim() === sz) return { gid: gs0b, via: 'SKU→그룹명' };
+      }
+    }
+  }
+
   var mcMap = weekId ? _getMcMapAtWeek(weekId) : (window.zoningMcMap || window._zoningMcMapDefault || []);
-  // 1순위: MC명 → 조닝번호 → 그룹
+  /* 1순위: MC명 → 조닝번호 → 그룹 */
   for (var i = 0; i < mcMap.length; i++) {
     if (mcMap[i].mc === s) {
       var zoning = mcMap[i].z;
@@ -20582,11 +20631,11 @@ function _zsuMatchGroup(str, weekId) {
       return { gid: null, via: 'MC→' + zoning + '(그룹없음)' };
     }
   }
-  // 2순위: 조닝번호 직접
+  /* 2순위: 조닝번호 직접 */
   for (var g2 in groups) {
     if (groups[g2].number && String(groups[g2].number).trim() === s) return { gid: g2, via: '조닝번호' };
   }
-  // 3순위: 그룹명 직접
+  /* 3순위: 그룹명 직접 */
   for (var g3 in groups) {
     if (groups[g3].label && String(groups[g3].label).trim() === s) return { gid: g3, via: '그룹명' };
   }
@@ -21533,6 +21582,7 @@ function openZoningMcMapModal() {
     + '<button onclick="_zmcOpenUploadModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0369a1;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📥 엑셀 업로드</button>'
     + '<button onclick="_zmcDownloadXlsx()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📤 엑셀 다운로드</button>'
     + '<button onclick="openZoningMcOverrideListModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#d97706;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📌 예외 고정 (<span id="zmcOverrideCnt">' + Object.keys(window.zoningMcOverrides||{}).length + '</span>개)</button>'
+    + '<button onclick="openSkuMapModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0f766e;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">🔢 상품코드 예외 (<span id="zmcSkuCnt">' + Object.keys(window.skuMap||{}).length + '</span>개)</button>'
     + '</div>'
     + '<div style="padding:10px 16px;background:#faf5ff;border-bottom:1px solid #e9d5ff;flex-shrink:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
     + '<span style="font-size:10px;font-weight:700;color:#6d28d9;white-space:nowrap;">➕ 추가:</span>'
@@ -22075,6 +22125,116 @@ function _zmcClearPin(normMc) {
 function _zmoUpdateParentCount() {
   var el = document.getElementById('zmcOverrideCnt');
   if (el) el.textContent = Object.keys(window.zoningMcOverrides||{}).length;
+}
+
+/* ════ 상품코드 예외 매핑 관리 ════ */
+function openSkuMapModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  var ex = document.getElementById('skuMapModal');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'skuMapModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9900;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  var skuCount = Object.keys(window.skuMap || {}).length;
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:640px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#134e4a,#0f766e);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:14px;font-weight:900;color:#fff;">🔢 상품코드 예외 매핑</div>'
+    + '<div style="font-size:10px;color:#99f6e4;margin-top:1px;">상품코드로 특정 구역에 우선 배정 — MC명 매핑보다 높은 우선순위로 적용됩니다</div></div>'
+    + '<button onclick="document.getElementById(\'skuMapModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="padding:8px 14px;background:#f0fdfa;border-bottom:1px solid #99f6e4;flex-shrink:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<input id="skuSearch" type="text" placeholder="상품코드 또는 상품명 검색..." oninput="_renderSkuMapTable()" style="font-family:inherit;font-size:12px;padding:6px 10px;border:1.5px solid #5eead4;border-radius:7px;outline:none;flex:1;min-width:140px;"/>'
+    + '<button onclick="syncSkuMap();showToast(\'☁️ Firebase 저장 완료\')" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0f766e;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">☁️ Firebase 저장</button>'
+    + '</div>'
+    + '<div style="padding:8px 14px;background:#f0fdfa;border-bottom:1px solid #99f6e4;flex-shrink:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
+    + '<span style="font-size:10px;font-weight:700;color:#0f766e;white-space:nowrap;">➕ 추가:</span>'
+    + '<input id="skuNewCode" type="text" placeholder="상품코드 (예: 5042375)" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #5eead4;border-radius:6px;outline:none;width:140px;"/>'
+    + '<input id="skuNewName" type="text" placeholder="상품명 (선택)" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #5eead4;border-radius:6px;outline:none;flex:1;min-width:100px;"/>'
+    + '<input id="skuNewZoning" type="text" placeholder="조닝번호" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #5eead4;border-radius:6px;outline:none;width:90px;"/>'
+    + '<button onclick="_skuAddEntry()" style="font-family:inherit;font-size:11px;font-weight:700;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:6px;cursor:pointer;">추가</button>'
+    + '</div>'
+    + '<div id="skuMapTableWrap" style="flex:1;overflow-y:auto;padding:0 4px 8px;"></div>'
+    + '<div style="padding:8px 16px;border-top:1px solid #e2e8f0;background:#f0fdfa;font-size:10px;color:#9ca3af;flex-shrink:0;">총 <span id="skuCount">' + skuCount + '</span>개 | 수정 후 반드시 ☁️ Firebase 저장을 눌러주세요</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  _renderSkuMapTable();
+}
+
+function _renderSkuMapTable() {
+  var wrap = document.getElementById('skuMapTableWrap');
+  if (!wrap) return;
+  var q = (_zsuNormText(document.getElementById('skuSearch') && document.getElementById('skuSearch').value || '')).toLowerCase();
+  var skuMap = window.skuMap || {};
+  var entries = Object.values(skuMap).filter(function(e) {
+    if (!q) return true;
+    return (e.sku || '').indexOf(q) >= 0 || (_zsuNormText(e.name || '')).toLowerCase().indexOf(q) >= 0 || (e.z || '').indexOf(q) >= 0;
+  }).sort(function(a, b) { return String(a.sku || '').localeCompare(String(b.sku || '')); });
+
+  var cnt = document.getElementById('skuCount');
+  if (cnt) cnt.textContent = Object.keys(skuMap).length;
+
+  if (!entries.length) {
+    wrap.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:12px;">' + (q ? '검색 결과 없음' : '등록된 상품코드 없음 — 위에서 추가하세요') + '</div>';
+    return;
+  }
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+    + '<thead><tr style="background:#f0fdfa;position:sticky;top:0;">'
+    + '<th style="padding:7px 10px;text-align:left;font-weight:700;color:#0f766e;border-bottom:1.5px solid #99f6e4;width:130px;">상품코드</th>'
+    + '<th style="padding:7px 10px;text-align:left;font-weight:700;color:#0f766e;border-bottom:1.5px solid #99f6e4;">상품명</th>'
+    + '<th style="padding:7px 10px;text-align:center;font-weight:700;color:#0f766e;border-bottom:1.5px solid #99f6e4;width:90px;">조닝번호</th>'
+    + '<th style="padding:7px 10px;border-bottom:1.5px solid #99f6e4;width:50px;"></th>'
+    + '</tr></thead><tbody>';
+
+  entries.forEach(function(e, idx) {
+    var rowBg = idx % 2 === 0 ? '#fff' : '#f9fffe';
+    html += '<tr style="background:' + rowBg + ';">'
+      + '<td style="padding:6px 10px;font-weight:700;color:#0f766e;font-family:monospace;">' + _escHtml(e.sku || '') + '</td>'
+      + '<td style="padding:6px 10px;color:#374151;">' + _escHtml(e.name || '') + '</td>'
+      + '<td style="padding:6px 10px;text-align:center;"><span style="display:inline-block;background:#ccfbf1;color:#0f766e;font-weight:700;padding:2px 8px;border-radius:5px;">' + _escHtml(e.z || '') + '</span></td>'
+      + '<td style="padding:6px 10px;text-align:center;"><button onclick="_skuDeleteEntry(\'' + _escAttr(e.sku || '') + '\')" style="font-size:10px;padding:2px 7px;background:#fee2e2;border:none;color:#dc2626;border-radius:4px;cursor:pointer;">삭제</button></td>'
+      + '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function _skuAddEntry() {
+  var code = _zsuNormText(document.getElementById('skuNewCode') && document.getElementById('skuNewCode').value || '');
+  var name = _zsuNormText(document.getElementById('skuNewName') && document.getElementById('skuNewName').value || '');
+  var zoning = _zsuNormText(document.getElementById('skuNewZoning') && document.getElementById('skuNewZoning').value || '');
+  if (!code) { showToast('상품코드를 입력해주세요'); return; }
+  if (!zoning) { showToast('조닝번호를 입력해주세요'); return; }
+  if (!window.skuMap) window.skuMap = {};
+  window.skuMap[code] = { sku: code, name: name, z: zoning };
+  var cnt = document.getElementById('skuCount');
+  if (cnt) cnt.textContent = Object.keys(window.skuMap).length;
+  if (document.getElementById('skuNewCode')) document.getElementById('skuNewCode').value = '';
+  if (document.getElementById('skuNewName')) document.getElementById('skuNewName').value = '';
+  if (document.getElementById('skuNewZoning')) document.getElementById('skuNewZoning').value = '';
+  _renderSkuMapTable();
+  _skuUpdateParentCount();
+}
+
+function _skuDeleteEntry(code) {
+  if (!window.skuMap || !window.skuMap[code]) return;
+  delete window.skuMap[code];
+  _renderSkuMapTable();
+  _skuUpdateParentCount();
+}
+
+function _skuUpdateParentCount() {
+  var el = document.getElementById('zmcSkuCnt');
+  if (el) el.textContent = Object.keys(window.skuMap || {}).length;
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _escAttr(s) {
+  return String(s).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
 }
 
 
