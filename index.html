@@ -20907,6 +20907,19 @@ function _zsuRenderPreview(parsed) {
   preview.style.display = 'block';
   preview.innerHTML = html;
 
+  /* 미리보기 영역 높이 명시 설정 — flex max-height 의존 없이 확실하게 스크롤 */
+  (function() {
+    var container = preview.parentElement;
+    if (!container) return;
+    var fixedH = 0;
+    Array.prototype.forEach.call(container.children, function(el) {
+      if (el !== preview) fixedH += el.offsetHeight;
+    });
+    var maxH = Math.max(160, Math.floor(window.innerHeight * 0.9) - fixedH - 8);
+    preview.style.maxHeight = maxH + 'px';
+    preview.style.overflowY = 'auto';
+  })();
+
   /* 전체 일괄 드롭다운 → 같은 행의 주차별 드롭다운 일괄 변경 */
   rawRows.forEach(function(rr, idx) {
     var bulkEl = document.getElementById('zsu_sel_' + idx);
