@@ -21409,6 +21409,7 @@ function openZoningMcMapModal() {
     + '<button onclick="_zmcResetToDefault()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#fff;border:1.5px solid #c4b5fd;color:#6d28d9;border-radius:7px;cursor:pointer;white-space:nowrap;">기본값 복원</button>'
     + '<button onclick="syncZoningMcMap();showToast(\'☁️ Firebase 저장 완료\');" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#7c3aed;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">☁️ Firebase 저장</button>'
     + '<button onclick="_zmcOpenUploadModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0369a1;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📥 엑셀 업로드</button>'
+    + '<button onclick="_zmcDownloadXlsx()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📤 엑셀 다운로드</button>'
     + '<button onclick="openZoningMcOverrideListModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#d97706;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📌 예외 고정 (<span id="zmcOverrideCnt">' + Object.keys(window.zoningMcOverrides||{}).length + '</span>개)</button>'
     + '</div>'
     + '<div style="padding:10px 16px;background:#faf5ff;border-bottom:1px solid #e9d5ff;flex-shrink:0;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'
@@ -21575,6 +21576,33 @@ function _zmcAddEntry() {
   _renderZmcTable();
   syncZoningMcMap();
   showToast('✅ 추가: ' + mc + ' → ' + z);
+}
+
+function _zmcDownloadXlsx() {
+  if (typeof XLSX === 'undefined') { showToast('XLSX 라이브러리가 로드되지 않았습니다'); return; }
+  // 현재 활성 슬롯 기준 유효 매핑 사용
+  var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  var ws2 = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  var _ai = window._zmcActiveWkIdx != null ? window._zmcActiveWkIdx : 0;
+  var weekId = ws2[_ai] ? ws2[_ai].id : null;
+  var mcMap = (typeof _getMcMapAtWeek === 'function' && weekId)
+    ? _getMcMapAtWeek(weekId)
+    : (window.zoningMcMap || window._zoningMcMapDefault || []);
+
+  if (!mcMap.length) { showToast('다운로드할 매핑 데이터가 없습니다'); return; }
+
+  var rows = [['조닝번호', 'MC명']];
+  mcMap.forEach(function(e) { rows.push([e.z, e.mc]); });
+
+  var wb = XLSX.utils.book_new();
+  var sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet['!cols'] = [{ wch: 14 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(wb, sheet, 'MC매핑표');
+
+  var storeName = ((window.storeNames || {})[_store]) || _store;
+  var slotLabel = ws2[_ai] ? '_' + ws2[_ai].label.replace(/\s/g, '') : '';
+  var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  XLSX.writeFile(wb, storeName + '_MC매핑표' + slotLabel + '_' + dateStr + '.xlsx');
 }
 
 function _zmcResetToDefault() {
