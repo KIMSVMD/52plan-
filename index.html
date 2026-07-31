@@ -3152,6 +3152,7 @@ window.onerror = function(msg, src, line, col, err) {
   <button class="draw-edit-item" onclick="openProductSalesUploadModal();closeSalInputDrop();">📊 매출 업로드</button>
   <button class="draw-edit-item" onclick="openZoneSalesUploadModal();closeSalInputDrop();">📥 구역 매출 업로드</button>
   <button class="draw-edit-item" onclick="openMarginUploadModal();closeSalInputDrop();">📊 이익율 업로드</button>
+  <button class="draw-edit-item" onclick="downloadWeeklySalesXlsx();closeSalInputDrop();">📤 MC데이터 다운로드</button>
   <button class="draw-edit-item" onclick="openZoningMcMapModal();closeSalInputDrop();">🗺️ MC 매핑표</button>
  </div>
  </div>
@@ -21639,6 +21640,96 @@ function _zmcClearPin(normMc) {
 function _zmoUpdateParentCount() {
   var el = document.getElementById('zmcOverrideCnt');
   if (el) el.textContent = Object.keys(window.zoningMcOverrides||{}).length;
+}
+
+/* ══════════════════════════════════════════
+   MC 데이터 엑셀 다운로드 (현재 월 주차 기준)
+══════════════════════════════════════════ */
+function downloadWeeklySalesXlsx() {
+  var store = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : '');
+  var moIdx = window.currentSalesMonth;
+  if (moIdx === null || moIdx === undefined) {
+    if (typeof showToast === 'function') showToast('먼저 월을 선택하세요');
+    return;
+  }
+
+  var weeks = (typeof _weeksForMonth === 'function') ? _weeksForMonth(moIdx) : [];
+  if (!weeks.length) {
+    if (typeof showToast === 'function') showToast('주차 데이터가 없습니다');
+    return;
+  }
+
+  var ws = (window.weeklySalesStore || {})[store] || {};
+
+  // 데이터가 있는 주차만
+  var activeWeeks = weeks.filter(function(w) {
+    var wd = ws[w.id];
+    return wd && Object.keys(wd.salesGroupData || {}).length > 0;
+  });
+
+  if (!activeWeeks.length) {
+    if (typeof showToast === 'function') showToast('이 달에 업로드된 MC 데이터가 없습니다');
+    return;
+  }
+
+  // 그룹 정보
+  var groups =
+    (window.storeSalesGroupsMap && window.storeSalesGroupsMap[store] && Object.keys(window.storeSalesGroupsMap[store]).length)
+      ? window.storeSalesGroupsMap[store]
+      : (window.salesGroups || {});
+
+  // 데이터가 있는 gid 집합
+  var gidSet = {};
+  activeWeeks.forEach(function(w) {
+    Object.keys((ws[w.id] || {}).salesGroupData || {}).forEach(function(gid) { gidSet[gid] = true; });
+  });
+
+  // 헤더 행
+  var header = ['MC명'];
+  activeWeeks.forEach(function(w) {
+    header.push(w.label + ' 매출');
+    header.push(w.label + ' 매총율');
+    header.push(w.label + ' 판매수량');
+  });
+
+  // 데이터 행
+  var rows = [header];
+  Object.keys(gidSet).sort().forEach(function(gid) {
+    var grp = groups[gid];
+    var label = grp ? grp.label : gid;
+    var row = [label];
+    activeWeeks.forEach(function(w) {
+      var gd = ((ws[w.id] || {}).salesGroupData || {})[gid] || {};
+      // 매출
+      row.push(gd.sales != null ? gd.sales : '');
+      // 매총율: grossMargin 우선, 없으면 margin+22
+      var gm = gd.grossMargin != null ? gd.grossMargin
+             : (gd.margin != null ? gd.margin + 22 : '');
+      row.push(gm !== '' ? Math.round(gm * 10) / 10 : '');
+      // 판매수량
+      row.push(gd.qty != null ? gd.qty : '');
+    });
+    rows.push(row);
+  });
+
+  // XLSX 생성
+  if (typeof XLSX === 'undefined') {
+    if (typeof showToast === 'function') showToast('XLSX 라이브러리가 로드되지 않았습니다');
+    return;
+  }
+  var wb = XLSX.utils.book_new();
+  var sheet = XLSX.utils.aoa_to_sheet(rows);
+
+  // 열 너비 자동
+  var colWidths = header.map(function(h, i) { return i === 0 ? { wch: 14 } : { wch: 12 }; });
+  sheet['!cols'] = colWidths;
+
+  XLSX.utils.book_append_sheet(wb, sheet, '매출데이터');
+
+  var storeName = (typeof allNames !== 'undefined' && allNames[store]) || store;
+  var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  var moLabel = (moIdx + 1) + '월';
+  XLSX.writeFile(wb, storeName + '_MC데이터_' + moLabel + '_' + dateStr + '.xlsx');
 }
 </script>
 
