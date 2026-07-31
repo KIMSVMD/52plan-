@@ -3151,6 +3151,7 @@ window.onerror = function(msg, src, line, col, err) {
   <button class="draw-edit-item" onclick="openZoneProductsModal();closeSalInputDrop();">🗂 구역별 상품 배치</button>
   <button class="draw-edit-item" onclick="openProductSalesUploadModal();closeSalInputDrop();">📊 매출 업로드</button>
   <button class="draw-edit-item" onclick="openZoneSalesUploadModal();closeSalInputDrop();">📥 구역 매출 업로드</button>
+  <button class="draw-edit-item" onclick="openMarginUploadModal();closeSalInputDrop();">📊 이익율 업로드</button>
   <button class="draw-edit-item" onclick="openZoningMcMapModal();closeSalInputDrop();">🗺️ MC 매핑표</button>
  </div>
  </div>
@@ -12397,6 +12398,12 @@ function _ensureWeekGlobals() {
   window.salesGroupData = JSON.parse(JSON.stringify(_wd.salesGroupData));
   if (_wd.salesGroups && Object.keys(_wd.salesGroups).length > 0)
     window.salesGroups = JSON.parse(JSON.stringify(_wd.salesGroups));
+  /* 주차별 업로드된 이익율 → marginGroupData 반영 */
+  if (!window.marginGroupData) window.marginGroupData = {};
+  Object.keys(window.salesGroupData).forEach(function(gid) {
+    var m = window.salesGroupData[gid] && window.salesGroupData[gid].margin;
+    if (m != null) window.marginGroupData[gid] = m;
+  });
 }
 
 /* ── 주차별 데이터를 합산해 monthlySalesStore 갱신 (종합 탭 정확도 유지) ── */
@@ -20660,6 +20667,312 @@ function openZoneSalesUploadModal() {
           + '<div style="font-size:10px;color:#6b7280;">파일을 변경하려면 다시 클릭하세요</div>';
       }
       handleZoneSalesFile(file);
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   이익율 엑셀 업로드 (Margin Upload)
+═══════════════════════════════════════════════ */
+
+function _mguShowError(msg) {
+  var preview = document.getElementById('mguPreview');
+  if (preview) {
+    preview.style.display = 'block';
+    preview.innerHTML = '<div style="padding:14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-size:12px;font-weight:700;">❌ ' + msg + '</div>';
+  }
+}
+
+/* ── 파일 파싱: A열=MC명, B열~=주차헤더+이익율(%) ── */
+function handleMarginUploadFile(file) {
+  try {
+    if (!file) return;
+    var ext = file.name.split('.').pop().toLowerCase();
+    var reader = new FileReader();
+    reader.onerror = function(ev) {
+      var msg = ev.target && ev.target.error ? ev.target.error.message : String(ev);
+      _mguShowError('FileReader 오류: ' + msg);
+    };
+    reader.onload = function(ev) {
+      try {
+        var result = ev.target.result;
+        var rows = [];
+        if (ext === 'csv') {
+          rows = result.split('\n').map(function(l) {
+            return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); });
+          });
+        } else {
+          if (typeof XLSX === 'undefined') throw new Error('XLSX 라이브러리 미로드 (typeof XLSX === undefined)');
+          var data = new Uint8Array(result);
+          var wb = XLSX.read(data, { type: 'array', cellDates: true });
+          var ws2 = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
+        }
+        if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
+
+        var headerRow = rows[0];
+        var weekIds = [], unmatchedHeaders = [];
+        for (var c = 1; c < headerRow.length; c++) {
+          var h = String(headerRow[c] || '').trim();
+          if (!h) { weekIds.push(null); continue; }
+          var wid = _zsuParseWeekId(h);
+          weekIds.push(wid);
+          if (!wid) unmatchedHeaders.push(h);
+        }
+
+        var rawRows = [];
+        for (var r = 1; r < rows.length; r++) {
+          var row = rows[r];
+          var raw = _xlsZoningVal(row[0]);
+          if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
+          var mr = _zsuMatchGroup(raw);
+          var weekMargins = {};
+          for (var c2 = 1; c2 < row.length && (c2 - 1) < weekIds.length; c2++) {
+            var wid2 = weekIds[c2 - 1];
+            if (!wid2) continue;
+            var val = parseFloat(String(row[c2] || '').replace(/,/g, ''));
+            if (!isNaN(val) && val >= 0 && val <= 100) weekMargins[wid2] = val;
+          }
+          rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekMargins: weekMargins });
+        }
+
+        window._mguParsed = { weekIds: weekIds, rawRows: rawRows, unmatchedHeaders: unmatchedHeaders };
+        _mguRenderPreview(window._mguParsed);
+      } catch(innerErr) {
+        console.error('[MGU] ❌ onload 내부 에러:', innerErr.message, '\nstack:', innerErr.stack);
+        _mguShowError('처리 오류: ' + innerErr.message);
+        showToast('파일 오류: ' + innerErr.message);
+      }
+    };
+    if (ext === 'csv') reader.readAsText(file, 'utf-8');
+    else reader.readAsArrayBuffer(file);
+  } catch(outerErr) {
+    console.error('[MGU] ❌ 함수 최상위 에러:', outerErr.message);
+    _mguShowError('예상치 못한 오류: ' + outerErr.message);
+  }
+}
+
+/* ── 미리보기 렌더 ── */
+function _mguRenderPreview(parsed) {
+  var preview = document.getElementById('mguPreview');
+  var applyBtn = document.getElementById('mguApplyBtn');
+  if (!preview) return;
+  if (!parsed || !parsed.rawRows || !parsed.rawRows.length) { preview.style.display = 'none'; return; }
+
+  var store = window.currentStore || 'gs';
+  var groups = window.salesGroups || {};
+  if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
+    groups = window.storeSalesGroupsMap[store] || {};
+  }
+  var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+
+  var groupArr = [];
+  for (var gk in groups) {
+    groupArr.push({ gid: gk, number: String(groups[gk].number || '').trim(), label: groups[gk].label || gk });
+  }
+  groupArr.sort(function(a, b) {
+    var ap = a.number.split('-'), bp = b.number.split('-');
+    var av = parseInt(ap[0] || 0, 10) * 100 + parseInt(ap[1] || 0, 10);
+    var bv = parseInt(bp[0] || 0, 10) * 100 + parseInt(bp[1] || 0, 10);
+    return av - bv || a.number.localeCompare(b.number);
+  });
+
+  var rawRows = parsed.rawRows;
+  var allWids = parsed.weekIds || [];
+  var usedWids = allWids.filter(function(wid) {
+    return wid && rawRows.some(function(rr) { return (rr.weekMargins || {})[wid] != null; });
+  });
+
+  var groupOptHtml = '';
+  groupArr.forEach(function(g) {
+    var lbl = (g.number ? g.number + ' · ' : '') + g.label;
+    groupOptHtml += '<option value="' + g.gid + '">' + lbl.replace(/</g, '&lt;').replace(/"/g, '&quot;') + '</option>';
+  });
+
+  var matchedRows = rawRows.filter(function(rr) { return !!rr.gid; }).length;
+  var unmatchedCnt = rawRows.length - matchedRows;
+  var allOk = unmatchedCnt === 0;
+
+  var html = '<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:' + (allOk ? '#ecfdf5' : '#fffbeb') + ';border:1px solid ' + (allOk ? '#34d399' : '#fbbf24') + ';">'
+    + '<span style="font-size:11px;font-weight:800;color:' + (allOk ? '#065f46' : '#92400e') + ';">✅ ' + matchedRows + '개 품목 매칭 | ⚠️ ' + unmatchedCnt + '개 미매칭</span>'
+    + ((parsed.unmatchedHeaders || []).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">같은 그룹으로 매칭된 행이 여러 개면 이익율 평균값이 반영됩니다.</div>'
+    + '</div>';
+
+  html += '<div style="overflow-x:auto;width:100%;">';
+  html += '<table style="border-collapse:collapse;font-size:10px;table-layout:auto;">';
+  html += '<thead><tr style="background:#f8fafc;position:sticky;top:0;z-index:2;">'
+    + '<th style="padding:5px 8px;text-align:left;color:#374151;font-weight:700;white-space:nowrap;min-width:90px;border-right:1px solid #e5e7eb;">MC명</th>'
+    + '<th style="padding:5px 6px;text-align:left;color:#6d28d9;font-weight:700;white-space:nowrap;min-width:120px;border-right:1px solid #e5e7eb;">그룹 배정</th>';
+  usedWids.forEach(function(wid) {
+    var wObj = wsArr.find(function(x) { return x.id === wid; });
+    var wLabel = wObj ? wObj.label : wid;
+    html += '<th style="padding:5px 6px;text-align:center;color:#7c3aed;font-weight:700;white-space:nowrap;min-width:80px;border-right:1px solid #e5e7eb;">' + wLabel.replace(/</g, '&lt;') + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  rawRows.forEach(function(rr, idx) {
+    var mcEsc = rr.raw.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    var rowBg = !rr.gid ? 'background:#fef2f2;' : '';
+
+    html += '<tr style="border-bottom:1px solid #f1f5f9;' + rowBg + '">';
+
+    html += '<td style="padding:3px 8px;font-weight:600;color:#374151;white-space:nowrap;border-right:1px solid #f1f5f9;">'
+      + mcEsc
+      + (rr.via ? '<div style="font-size:8px;color:#9ca3af;">' + rr.via.replace(/</g, '&lt;') + '</div>' : '')
+      + '</td>';
+
+    var selBorder = !rr.gid ? '#fca5a5' : '#e5e7eb';
+    var sel = '<select id="mgu_sel_' + idx + '" style="font-family:inherit;font-size:9px;padding:2px 3px;border:1.5px solid ' + selBorder + ';border-radius:5px;outline:none;width:100%;min-width:110px;">'
+      + '<option value=""' + (!rr.gid ? ' selected' : '') + '>— 미매칭 —</option>';
+    groupArr.forEach(function(g) {
+      var lbl = (g.number ? g.number + ' · ' : '') + g.label;
+      sel += '<option value="' + g.gid + '"' + (g.gid === rr.gid ? ' selected' : '') + '>' + lbl.replace(/</g, '&lt;').replace(/"/g, '&quot;') + '</option>';
+    });
+    sel += '</select>';
+    html += '<td style="padding:3px 6px;border-right:1px solid #f1f5f9;">' + sel + '</td>';
+
+    usedWids.forEach(function(wid) {
+      var val = (rr.weekMargins || {})[wid];
+      html += '<td style="padding:3px 5px;text-align:center;border-right:1px solid #f1f5f9;">'
+        + '<div style="font-size:11px;font-weight:700;color:' + (val != null ? '#6d28d9' : '#d1d5db') + ';">' + (val != null ? val.toFixed(1) + '%' : '—') + '</div>'
+        + '</td>';
+    });
+
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  preview.style.display = 'block';
+  preview.innerHTML = html;
+
+  if (applyBtn) {
+    var can = matchedRows > 0;
+    applyBtn.disabled = !can;
+    applyBtn.style.background = can ? '#6d28d9' : '#94a3b8';
+    applyBtn.style.cursor = can ? 'pointer' : 'not-allowed';
+  }
+}
+
+/* ── 도면에 적용 ── */
+function applyMarginUpload() {
+  if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
+  var parsed = window._mguParsed;
+  if (!parsed || !parsed.rawRows) return;
+  var store = window.currentStore || 'gs';
+  if (!window.weeklySalesStore) window.weeklySalesStore = {};
+  if (!window.weeklySalesStore[store]) window.weeklySalesStore[store] = {};
+
+  var groups = window.salesGroups || {};
+  if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
+    groups = window.storeSalesGroupsMap[store] || {};
+  }
+
+  var allWids = parsed.weekIds || [];
+  var usedWids = allWids.filter(function(wid) {
+    return wid && parsed.rawRows.some(function(rr) { return (rr.weekMargins || {})[wid] != null; });
+  });
+
+  /* DOM을 읽어 그룹별 주차별 이익율 누산 */
+  var groupAccum = {};  /* { gid: { wid: [values] } } */
+  parsed.rawRows.forEach(function(rr, idx) {
+    var selEl = document.getElementById('mgu_sel_' + idx);
+    var gid = selEl ? (selEl.value || rr.gid) : rr.gid;
+    if (!gid) return;
+    usedWids.forEach(function(wid) {
+      var val = (rr.weekMargins || {})[wid];
+      if (val == null) return;
+      if (!groupAccum[gid]) groupAccum[gid] = {};
+      if (!groupAccum[gid][wid]) groupAccum[gid][wid] = [];
+      groupAccum[gid][wid].push(val);
+    });
+  });
+
+  var appliedCount = 0;
+  if (!window.marginGroupData) window.marginGroupData = {};
+
+  Object.keys(groupAccum).forEach(function(gid) {
+    Object.keys(groupAccum[gid]).forEach(function(wid) {
+      var vals = groupAccum[gid][wid];
+      var avg = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+      avg = Math.round(avg * 10) / 10;
+
+      var wd = window.weeklySalesStore[store][wid];
+      if (!wd) {
+        wd = { salesData: {}, areaData: JSON.parse(JSON.stringify(window.areaData || {})), salesGroups: {}, salesGroupData: {} };
+        window.weeklySalesStore[store][wid] = wd;
+      }
+      if (!wd.salesGroupData) wd.salesGroupData = {};
+      if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
+      wd.salesGroupData[gid].margin = avg;
+
+      /* 현재 활성 주차면 전역 변수도 즉시 동기화 */
+      if (window.currentSalesWeek === wid) {
+        window.marginGroupData[gid] = avg;
+        if (!window.salesGroupData) window.salesGroupData = {};
+        if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
+        window.salesGroupData[gid].margin = avg;
+      }
+      appliedCount++;
+    });
+  });
+
+  _markSalesDirty();
+  if (typeof renderSalesView === 'function') renderSalesView();
+  var modal = document.getElementById('marginUploadModal');
+  if (modal) modal.remove();
+  showToast('✅ ' + appliedCount + '건 이익율 반영 완료!');
+}
+
+/* ── 업로드 모달 ── */
+function openMarginUploadModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  var ex = document.getElementById('marginUploadModal');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'marginUploadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:720px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#4c1d95,#7c3aed);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:15px;font-weight:900;color:#fff;">📊 이익율 업로드</div>'
+    + '<div style="font-size:10px;color:#ddd6fe;margin-top:2px;">MC명 or 조닝번호 → 자동 매핑 → 주차별 이익율(%) → 도면 반영</div></div>'
+    + '<button onclick="document.getElementById(\'marginUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="padding:10px 20px;background:#faf5ff;border-bottom:1px solid #e9d5ff;flex-shrink:0;">'
+    + '<div style="font-size:11px;font-weight:800;color:#4c1d95;">📋 A열=MC명(or 조닝번호) / B열~=주차헤더+이익율(%)</div>'
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">주차헤더: W01 · 1월 1주 · 12/29~1/4 형식 모두 지원 | 같은 조닝 품목은 자동 합산 후 평균</div>'
+    + '</div>'
+    + '<div style="padding:10px 20px 0;flex-shrink:0;">'
+    + '<label id="mguDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #a78bfa;border-radius:12px;padding:16px;cursor:pointer;background:#faf5ff;" ondragover="event.preventDefault();this.style.borderColor=\'#7c3aed\'" ondragleave="this.style.borderColor=\'#a78bfa\'" ondrop="event.preventDefault();this.style.borderColor=\'#a78bfa\';handleMarginUploadFile(event.dataTransfer.files[0]);">'
+    + '<div style="font-size:24px;">📊</div>'
+    + '<div style="font-size:12px;font-weight:700;color:#7c3aed;">클릭하거나 파일을 드래그하세요</div>'
+    + '<div style="font-size:10px;color:#6b7280;">.xlsx / .xls / .csv 지원</div>'
+    + '</label>'
+    + '<input id="mguFileInput" type="file" accept=".xlsx,.xls,.csv" style="display:none"/>'
+    + '</div>'
+    + '<div id="mguPreview" style="flex:1;overflow-y:auto;padding:8px 20px;display:none;"></div>'
+    + '<div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">'
+    + '<button id="mguApplyBtn" onclick="applyMarginUpload()" disabled style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#94a3b8;color:#fff;border:none;border-radius:8px;cursor:not-allowed;">도면에 적용하기</button>'
+    + '<button onclick="document.getElementById(\'marginUploadModal\').remove()" style="flex:1;font-family:inherit;font-size:12px;font-weight:700;padding:10px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;border-radius:8px;cursor:pointer;">닫기</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+
+  var mguInput = document.getElementById('mguFileInput');
+  var mguZone  = document.getElementById('mguDropZone');
+  if (mguInput && mguZone) {
+    mguZone.addEventListener('click', function() { mguInput.click(); });
+    mguInput.addEventListener('change', function() {
+      var file = this.files[0];
+      this.value = '';
+      if (file) {
+        var safeName = file.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        mguZone.innerHTML = '<div style="font-size:22px;">📄</div>'
+          + '<div style="font-size:12px;font-weight:700;color:#7c3aed;">' + safeName + '</div>'
+          + '<div style="font-size:10px;color:#6b7280;">파일을 변경하려면 다시 클릭하세요</div>';
+      }
+      handleMarginUploadFile(file);
     });
   }
 }
