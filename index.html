@@ -9440,7 +9440,10 @@ document.addEventListener('keydown',e=>{
  if(e.key==='ArrowRight'&&e.altKey){e.preventDefault();nextWeek();return;}
  // 복사 / 붙여넣기 / 복제 단축키 (selId 없어도 동작)
  if((e.ctrlKey||e.metaKey)&&e.key==='c'){e.preventDefault();copyZone();return;}
- if((e.ctrlKey||e.metaKey)&&e.key==='v'){e.preventDefault();pasteZone();return;}
+ if((e.ctrlKey||e.metaKey)&&e.key==='v'){
+   if(document.getElementById('zoneSalesUploadModal')) return; // 업로드 모달 열려있으면 paste 이벤트에 양보
+   e.preventDefault();pasteZone();return;
+ }
  if((e.ctrlKey||e.metaKey)&&e.key==='d'){e.preventDefault();dupeZone();return;}
  // selId를 즉시 캡처 — 이후 이벤트로 null이 되기 전에 보존
  const _kSelId = selId;
