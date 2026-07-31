@@ -1826,7 +1826,7 @@ body.viewer-mode #salesMonthNav > div > button{
         if (data.weeklySales) window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
         if (data.salesTargets) { window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets)); window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets)); }
         if (data.zoningMcMap) { if (!window.zoningMcMapByStore) window.zoningMcMapByStore = {}; window.zoningMcMapByStore[store] = JSON.parse(JSON.stringify(data.zoningMcMap)); }
-        if (data.weekZoningMcMap) { if (!window.weekZoningMcMapByStore) window.weekZoningMcMapByStore = {}; window.weekZoningMcMapByStore[store] = JSON.parse(JSON.stringify(data.weekZoningMcMap)); if (store === (window.currentStore || 'gs')) window.weekZoningMcMap = window.weekZoningMcMapByStore[store]; }
+        if (data.weekZoningMcMap) { if (!window.weekZoningMcMapByStore) window.weekZoningMcMapByStore = {}; var _mcModal = document.getElementById('zoningMcMapModal'); var _mcModalOpen = _mcModal && _mcModal.style.display !== 'none'; if (!_mcModalOpen) { window.weekZoningMcMapByStore[store] = JSON.parse(JSON.stringify(data.weekZoningMcMap)); if (store === (window.currentStore || 'gs')) window.weekZoningMcMap = window.weekZoningMcMapByStore[store]; } }
         if (typeof window._updateServerSnapshot === 'function') window._updateServerSnapshot(store, data);
       } catch(e) { console.warn('[getStoreOnce] 읽기 실패:', store, e); }
     }
@@ -21434,6 +21434,8 @@ function _renderZmcTimeline() {
   var _store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
   var _wm = (window.weekZoningMcMapByStore && window.weekZoningMcMapByStore[_store]) || {};
   var _slots = Object.keys(_wm).map(Number).filter(function(n){ return !isNaN(n); }).sort(function(a,b){ return a-b; });
+  var _hc = document.getElementById('zmcHeaderCount');
+  if (_hc) { _hc.textContent = '메모리 슬롯 ' + _slots.length + '개 (키: ' + _slots.join(', ') + ')'; console.log('[ZMC] weekZoningMcMapByStore['+_store+']:', JSON.stringify(_wm)); }
   var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
   var html = '<span style="font-size:9px;font-weight:800;color:#6d28d9;white-space:nowrap;margin-right:2px;">적용 주차:</span>';
   _slots.forEach(function(idx, i) {
@@ -21481,7 +21483,8 @@ function _zmcBranchFromCurrent() {
   window.zoningMcMap = window.weekZoningMcMapByStore[_store][curWk];
   _renderZmcTimeline();
   _renderZmcTable();
-  showToast('✅ ' + label + '부터 새 매핑 슬롯 생성 — 수정 후 Firebase 저장하세요');
+  syncZoningMcMap();
+  showToast('✅ ' + label + '부터 새 매핑 슬롯 생성 및 Firebase 저장 완료');
 }
 
 /* ── 슬롯 삭제 (0번 슬롯은 삭제 불가) ── */
