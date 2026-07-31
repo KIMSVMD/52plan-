@@ -15399,6 +15399,74 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
  }
  container.appendChild(rankCard);
 
+ // ── 이익 기여도(원화) 순위 ──
+ (function() {
+  const sgd = window.salesGroupData || {};
+  // rankItems는 이미 perSales 내림차순 정렬됨 → psRank 추출
+  const profitItems = [];
+  rankItems.forEach(function(r, i) {
+   const gd = r.gid ? sgd[r.gid] : null;
+   const gm = gd && gd.grossMargin != null ? gd.grossMargin : null;
+   if (gm == null) return;
+   profitItems.push({
+    name: r.name, color: r.color, gid: r.gid, zids: r.zids,
+    sales: r.sales, area: r.area,
+    grossMargin: gm,
+    grossProfit: r.sales * gm / 100,
+    psRank: i + 1
+   });
+  });
+  if (profitItems.length < 2) return;
+  profitItems.sort(function(a, b) { return b.grossProfit - a.grossProfit; });
+  profitItems.forEach(function(item, idx) { item.profitRank = idx + 1; item.rankDiff = item.psRank - item.profitRank; });
+
+  const pCard = document.createElement('div');
+  pCard.style.cssText = 'margin:0 12px 12px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);';
+  const pHd = document.createElement('div');
+  pHd.style.cssText = 'padding:11px 14px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f1f5f9;';
+  pHd.innerHTML = '<span style="font-size:14px;">💰</span><span style="font-size:12px;font-weight:900;color:#111827;">이익 기여도 순위 <span style="font-size:10px;font-weight:500;color:#9ca3af;">매출×매총율(원화) 기준</span></span>';
+  pCard.appendChild(pHd);
+
+  profitItems.forEach(function(r, i) {
+   const row = document.createElement('div');
+   row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f9fafb;cursor:pointer;transition:background .08s;';
+   row.onmouseover = function() { r.zids.forEach(function(id){ highlightSalesMapZone(id, true); }); row.style.background = '#faf5ff'; };
+   row.onmouseout  = function() { r.zids.forEach(function(id){ highlightSalesMapZone(id, false); }); row.style.background = ''; };
+   row.onclick     = function() { if (r.zids[0]) focusSalesMapZone(r.zids[0]); };
+
+   const rb = document.createElement('div');
+   if (i < 3) {
+    rb.style.cssText = 'width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;';
+    rb.textContent = MEDAL[i];
+   } else {
+    rb.style.cssText = 'width:28px;height:28px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#6b7280;flex-shrink:0;';
+    rb.textContent = i + 1;
+   }
+
+   var badge = '';
+   if (r.rankDiff >= 3)      badge = '<span style="font-size:8px;background:#faf5ff;color:#6d28d9;border:1px solid #c4b5fd;border-radius:3px;padding:1px 4px;margin-left:4px;white-space:nowrap;">% 낮지만 원화 ↑</span>';
+   else if (r.rankDiff <= -3) badge = '<span style="font-size:8px;background:#fef9c3;color:#854d0e;border:1px solid #fde047;border-radius:3px;padding:1px 4px;margin-left:4px;white-space:nowrap;">% 높지만 원화 ↓</span>';
+
+   const info = document.createElement('div');
+   info.style.cssText = 'flex:1;min-width:0;display:flex;align-items:center;gap:6px;';
+   info.innerHTML =
+    (r.color ? '<div style="width:10px;height:10px;border-radius:2px;background:'+r.color+';flex-shrink:0;"></div>' : '') +
+    '<div style="min-width:0;">' +
+    '<div style="font-size:12px;font-weight:800;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + r.name + badge + '</div>' +
+    '<div style="font-size:10px;color:#9ca3af;margin-top:1px;">매총율 ' + r.grossMargin.toFixed(1) + '% · %순위 ' + r.psRank + '위</div>' +
+    '</div>';
+
+   const gp = document.createElement('div');
+   gp.style.cssText = 'font-size:13px;font-weight:900;color:' + (i===0?'#6d28d9':i<3?'#7c3aed':'#374151') + ';flex-shrink:0;text-align:right;';
+   gp.innerHTML = fmtM(r.grossProfit) + '<div style="font-size:8px;font-weight:500;color:#9ca3af;">이익기여</div>';
+
+   row.appendChild(rb); row.appendChild(info); row.appendChild(gp);
+   pCard.appendChild(row);
+  });
+
+  container.appendChild(pCard);
+ })();
+
  // ── 고성과 구역 패턴 (그룹 있으면 그룹 단위) ──
  (function() {
  const gi2 = buildGroupItems(metrics);
@@ -20050,8 +20118,12 @@ function _zsuParseWeekCol(h) {
   var mM = norm.match(/^(.*?)\s*(매총율|매총이익율|마진율|GP율|gp|margin)$/i);
   if (mM) { type = 'margin'; weekPart = mM[1].trim(); }
   else {
-    var mS = norm.match(/^(.*?)\s*(매출액?|sales)$/i);
-    if (mS) { type = 'sales'; weekPart = mS[1].trim(); }
+    var mQ = norm.match(/^(.*?)\s*(판매수량|수량|qty|quantity)$/i);
+    if (mQ) { type = 'qty'; weekPart = mQ[1].trim(); }
+    else {
+      var mS = norm.match(/^(.*?)\s*(매출액?|sales)$/i);
+      if (mS) { type = 'sales'; weekPart = mS[1].trim(); }
+    }
   }
   if (!weekPart) return null;
   var weekId = _zsuParseWeekId(weekPart);
@@ -20136,7 +20208,7 @@ function handleZoneSalesFile(file) {
           var raw = _xlsZoningVal(row[0]);
           if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
           var mr = _zsuMatchGroup(raw);
-          var weekSales = {}, weekMargins = {};
+          var weekSales = {}, weekMargins = {}, weekQty = {};
           for (var c2 = 1; c2 < row.length && (c2 - 1) < weekCols.length; c2++) {
             var wc2 = weekCols[c2 - 1];
             if (!wc2) continue;
@@ -20145,11 +20217,13 @@ function handleZoneSalesFile(file) {
             if (isNaN(val)) continue;
             if (wc2.type === 'margin') {
               if (val >= 0 && val <= 100) weekMargins[wid2] = val;
+            } else if (wc2.type === 'qty') {
+              if (val >= 0) weekQty[wid2] = val;
             } else {
               if (val > 0) weekSales[wid2] = val / 10000;  /* 원 단위 → 만원 */
             }
           }
-          rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales, weekMargins: weekMargins });
+          rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, weekSales: weekSales, weekMargins: weekMargins, weekQty: weekQty });
           if (mr.gid) {
             if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekSales: {}, mcNames: [] };
             if (groupAccum[mr.gid].mcNames.indexOf(raw) < 0) groupAccum[mr.gid].mcNames.push(raw);
@@ -20240,15 +20314,16 @@ function _zsuRenderPreview(parsed) {
     return av - bv || a.number.localeCompare(b.number);
   });
 
-  /* 파일 내 실제 매출 또는 매총율이 있는 주차만 */
+  /* 파일 내 실제 매출·매총율·판매수량이 있는 주차만 */
   var rawRows = parsed.rawRows;
   var allWids = parsed.weekIds || [];
   var usedWids = allWids.filter(function(wid) {
     return rawRows.some(function(rr) {
-      return (rr.weekSales||{})[wid] != null || (rr.weekMargins||{})[wid] != null;
+      return (rr.weekSales||{})[wid] != null || (rr.weekMargins||{})[wid] != null || (rr.weekQty||{})[wid] != null;
     });
   });
   var _hasMgnCols = rawRows.some(function(rr) { return Object.keys(rr.weekMargins||{}).length > 0; });
+  var _hasQtyCols  = rawRows.some(function(rr) { return Object.keys(rr.weekQty||{}).length > 0; });
 
   /* 드롭다운 옵션 문자열 (공통, 그룹 목록) */
   var groupOptHtml = '';
@@ -20272,6 +20347,7 @@ function _zsuRenderPreview(parsed) {
     + '<span style="font-size:11px;font-weight:800;color:' + (allOk?'#065f46':'#92400e') + ';">✅ ' + matchedRows + '개 품목 매칭 | ⚠️ ' + unmatchedCnt + '개 미매칭</span>'
     + ((parsed.unmatchedHeaders||[]).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
     + (_hasMgnCols ? '<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">📊 매총율 열 감지 — 매출 가중 평균 후 −22% 차감해 이익율로 반영</div>' : '')
+    + (_hasQtyCols  ? '<div style="font-size:9px;color:#0369a1;font-weight:700;margin-top:2px;">📦 판매수량 열 감지 — 그룹·주차별 수량 저장 (이익 기여도·회전율 분석에 활용)</div>' : '')
     + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">주차별 구역을 개별 수정하거나, 전체 드롭다운으로 일괄 변경. "유지" 체크 시 다음에도 자동 적용됩니다.</div>'
     + '</div>';
 
@@ -20363,6 +20439,10 @@ function _zsuRenderPreview(parsed) {
         var net = Math.round((mgn - 22) * 10) / 10;
         html += '<div style="font-size:8px;color:#7c3aed;margin-bottom:1px;">' + mgn.toFixed(1) + '%→<b>' + net.toFixed(1) + '%</b></div>';
       }
+      var qty = (rr.weekQty||{})[wid];
+      if (qty != null) {
+        html += '<div style="font-size:8px;color:#0369a1;margin-bottom:1px;">' + Math.round(qty).toLocaleString() + '개</div>';
+      }
       html += wkSel + '</td>';
     });
 
@@ -20447,7 +20527,8 @@ function applyZoneSalesUpload() {
     usedWids.forEach(function(wid) {
       var hasSales = !!((rr.weekSales||{})[wid]);
       var hasMgn   = (rr.weekMargins||{})[wid] != null;
-      if (!hasSales && !hasMgn) return;
+      var hasQty   = (rr.weekQty||{})[wid] != null;
+      if (!hasSales && !hasMgn && !hasQty) return;
       var wkSel = document.getElementById('zsu_sel_' + idx + '_' + wid);
       var wkDomGid = wkSel ? (wkSel.value || null) : null;
       var effGid = _zsuEffGidForWeek(norm, wid, rr.gid, groups, overrides);
@@ -20462,6 +20543,7 @@ function applyZoneSalesUpload() {
       via: rr.via || null,
       weekSales: JSON.parse(JSON.stringify(rr.weekSales || {})),
       weekMargins: JSON.parse(JSON.stringify(rr.weekMargins || {})),
+      weekQty: JSON.parse(JSON.stringify(rr.weekQty || {})),
       weekGidMap: JSON.parse(JSON.stringify(weekGidMap)),
       pinned: persist
     });
@@ -20473,7 +20555,8 @@ function applyZoneSalesUpload() {
       if (!groupAccum[gid]) groupAccum[gid] = {
         weekSales: {}, mcNames: [],
         weekMgnWtSum: {}, weekMgnWtTot: {},
-        weekMgnSimpleSum: {}, weekMgnSimpleCnt: {}
+        weekMgnSimpleSum: {}, weekMgnSimpleCnt: {},
+        weekQty: {}
       };
       if (groupAccum[gid].mcNames.indexOf(rr.raw) < 0) groupAccum[gid].mcNames.push(rr.raw);
       var sl = (rr.weekSales||{})[wid] || 0;
@@ -20488,6 +20571,8 @@ function applyZoneSalesUpload() {
           groupAccum[gid].weekMgnSimpleCnt[wid] = (groupAccum[gid].weekMgnSimpleCnt[wid] || 0) + 1;
         }
       }
+      var qt = (rr.weekQty||{})[wid];
+      if (qt != null && qt >= 0) groupAccum[gid].weekQty[wid] = (groupAccum[gid].weekQty[wid] || 0) + qt;
     });
 
     /* 고정 예외 저장 */
@@ -20614,13 +20699,39 @@ function applyZoneSalesUpload() {
       if (!wd.salesGroupData) wd.salesGroupData = {};
       if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
       wd.salesGroupData[gid].margin = netMargin;
+      wd.salesGroupData[gid].grossMargin = Math.round(grossMargin * 10) / 10;
       if (window.currentSalesWeek === wid) {
         window.marginGroupData[gid] = netMargin;
         if (!window.salesGroupData) window.salesGroupData = {};
         if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
         window.salesGroupData[gid].margin = netMargin;
+        window.salesGroupData[gid].grossMargin = Math.round(grossMargin * 10) / 10;
       }
       marginAppliedCount++;
+    });
+  });
+
+  /* 4) 판매수량 → weeklySalesStore 반영 */
+  var qtyAppliedCount = 0;
+  Object.keys(groupAccum).forEach(function(gid) {
+    var acc = groupAccum[gid];
+    Object.keys(acc.weekQty || {}).forEach(function(wid) {
+      var qty = acc.weekQty[wid];
+      if (qty == null) return;
+      var wd = window.weeklySalesStore[store][wid];
+      if (!wd) {
+        wd = { salesData:{}, areaData: JSON.parse(JSON.stringify(window.areaData||{})), salesGroups:{}, salesGroupData:{} };
+        window.weeklySalesStore[store][wid] = wd;
+      }
+      if (!wd.salesGroupData) wd.salesGroupData = {};
+      if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
+      wd.salesGroupData[gid].qty = qty;
+      if (window.currentSalesWeek === wid) {
+        if (!window.salesGroupData) window.salesGroupData = {};
+        if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
+        window.salesGroupData[gid].qty = qty;
+      }
+      qtyAppliedCount++;
     });
   });
 
@@ -20644,6 +20755,7 @@ function applyZoneSalesUpload() {
   if (modal) modal.remove();
   var _toastMsg = '✅ ' + appliedCount + '개 주차 매출 반영 완료!';
   if (marginAppliedCount > 0) _toastMsg += ' · 이익율 ' + marginAppliedCount + '건';
+  if (qtyAppliedCount > 0) _toastMsg += ' · 수량 ' + qtyAppliedCount + '건';
   if (overridesChanged) _toastMsg += ' · 예외 고정 저장됨';
   showToast(_toastMsg);
 }
@@ -20662,6 +20774,7 @@ function _zsuRestoreSnapshot(moKey) {
         via: r.via || null,
         weekSales: r.weekSales || {},
         weekMargins: r.weekMargins || {},
+        weekQty: r.weekQty || {},
         _savedWeekGidMap: r.weekGidMap || {},
         _savedPinned: r.pinned
       };
@@ -20689,8 +20802,8 @@ function openZoneSalesUploadModal() {
     + '<button onclick="document.getElementById(\'zoneSalesUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
     + '</div>'
     + '<div style="padding:10px 20px;background:#f0fdf4;border-bottom:1px solid #bbf7d0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
-    + '<div><div style="font-size:11px;font-weight:800;color:#065f46;">📋 A열=MC명 / B열~="주차 매출" · "주차 매총율" 열 쌍 반복 (매총율 없어도 동작)</div>'
-    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">헤더 예: "7월1주 매출" · "7월1주 매총율" | 매총율은 −22% 차감해 이익율로 반영 | 같은 조닝 품목은 매출 가중 평균</div></div>'
+    + '<div><div style="font-size:11px;font-weight:800;color:#065f46;">📋 A열=MC명 / B열~= "주차 매출" · "주차 매총율" · "주차 판매수량" 세트 반복</div>'
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">매총율·판매수량 없어도 동작 | 매총율−22%=이익율 | 수량은 순위 탭 이익 기여도 분석에 활용</div></div>'
     + '<button onclick="openZoningMcMapModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#f5f3ff;border:1.5px solid #7c3aed;color:#5b21b6;border-radius:7px;cursor:pointer;white-space:nowrap;">🗺️ MC 매핑표</button>'
     + '</div>'
     + '<div style="padding:10px 20px 0;flex-shrink:0;">'
