@@ -10761,9 +10761,12 @@ window._renderOnReady = function() {
  const isFirebaseLoad = !window._appReady;
  window._appReady = true;
  // 초기 진입은 도면 탭이 기본 → plan-view-active 클래스 설정
- document.body.classList.add('plan-view-active');
- document.body.classList.remove('sales-view-active');
- document.body.classList.remove('omap-view-active');
+ // 이미 앱이 초기화된 이후에는 탭 상태를 건드리지 않음 (숫자 탭에서 Firebase 이벤트로 탭 전환되는 버그 방지)
+ if (isFirebaseLoad) {
+   document.body.classList.add('plan-view-active');
+   document.body.classList.remove('sales-view-active');
+   document.body.classList.remove('omap-view-active');
+ }
 
  // Firebase 로딩 오버레이 제거
  const overlay = document.getElementById('fbLoadingOverlay');
@@ -11930,8 +11933,8 @@ function salesBorderColor(perSales, id) {
 }
 
 /* ── 이익율용 색상 헬퍼 ── */
-const MARGIN_FALLBACK_GREEN  = 30; // 목표 미설정 시: 30%↑ 초록
-const MARGIN_FALLBACK_YELLOW = 15; // 목표 미설정 시: 15%↑ 노랑
+const MARGIN_FALLBACK_GREEN  =  5; // 목표 미설정 시: 5%↑ 초록
+const MARGIN_FALLBACK_YELLOW =  2; // 목표 미설정 시: 2%↑ 노랑, 미만 빨강
 
 function _getMarginTarget(id) {
  if (!id) return null;
@@ -20624,7 +20627,9 @@ function _zsuProcessRows(rows) {
       var val = parseFloat(String(row[c2] || '').replace(/,/g, ''));
       if (isNaN(val)) continue;
       if (wc2.type === 'margin') {
-        if (val >= 0 && val <= 100) weekMargins[wid2] = val;
+        // Excel % 셀은 raw:true 시 소수(0.26)로 반환됨 → 100 곱해서 퍼센트로 변환
+        var mgVal = (val > 0 && val < 1) ? Math.round(val * 10000) / 100 : val;
+        if (mgVal >= 0 && mgVal <= 100) weekMargins[wid2] = mgVal;
       } else if (wc2.type === 'qty') {
         if (val >= 0) weekQty[wid2] = val;
       } else {
@@ -21218,6 +21223,12 @@ function applyZoneSalesUpload() {
     if (_activeWd.salesGroups && Object.keys(_activeWd.salesGroups).length > 0) {
       window.salesGroups = JSON.parse(JSON.stringify(_activeWd.salesGroups));
     }
+    /* salesGroupData.margin → marginGroupData 반영 (section 3 의 조건부 설정을 deep copy 후에도 보장) */
+    if (!window.marginGroupData) window.marginGroupData = {};
+    Object.keys(window.salesGroupData).forEach(function(gid) {
+      var m = window.salesGroupData[gid] && window.salesGroupData[gid].margin;
+      if (m != null) window.marginGroupData[gid] = m;
+    });
   }
 
   /* 영향받은 주차/월을 메모리에만 저장 — Firebase는 저장 버튼으로 */
