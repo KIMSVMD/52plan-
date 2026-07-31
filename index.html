@@ -20801,15 +20801,15 @@ function _zsuRenderPreview(parsed) {
     + ((parsed.unmatchedHeaders||[]).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
     + (_hasMgnCols ? '<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">📊 매총율 열 감지 — 매출 가중 평균 후 −22% 차감해 이익율로 반영</div>' : '')
     + (_hasQtyCols  ? '<div style="font-size:9px;color:#0369a1;font-weight:700;margin-top:2px;">📦 판매수량 열 감지 — 그룹·주차별 수량 저장 (이익 기여도·회전율 분석에 활용)</div>' : '')
-    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">주차별 구역을 개별 수정하거나, 전체 드롭다운으로 일괄 변경. "유지" 체크 시 다음에도 자동 적용됩니다.</div>'
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">구역·유지 여부를 자유롭게 수정 가능 — 아직 반영 안 됨. 하단 <b style="color:#059669;">도면에 적용하기</b> 버튼을 눌러야 저장됩니다.</div>'
     + '</div>';
 
-  /* 가로 스크롤 테이블 */
-  html += '<div style="overflow-x:auto;width:100%;">';
+  /* 가로·세로 스크롤 테이블 */
+  html += '<div style="overflow-x:auto;overflow-y:auto;width:100%;max-height:400px;">';
   html += '<table style="border-collapse:collapse;font-size:10px;table-layout:auto;">';
 
   /* 헤더 */
-  html += '<thead><tr style="background:#f8fafc;position:sticky;top:0;z-index:2;">'
+  html += '<thead style="position:sticky;top:0;z-index:2;"><tr style="background:#f8fafc;">'
     + '<th style="padding:5px 8px;text-align:left;color:#374151;font-weight:700;white-space:nowrap;min-width:90px;border-right:1px solid #e5e7eb;">MC명</th>'
     + '<th style="padding:5px 6px;text-align:left;color:#0369a1;font-weight:700;white-space:nowrap;min-width:120px;border-right:1px solid #e5e7eb;">전체 일괄</th>'
     + '<th style="padding:5px 4px;text-align:center;color:#d97706;font-weight:700;white-space:nowrap;min-width:36px;border-right:1px solid #e5e7eb;">유지</th>';
