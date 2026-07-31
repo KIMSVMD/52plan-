@@ -14530,6 +14530,34 @@ function showSalesZoneCard(m, zEl) {
  card.appendChild(actDiv);
  }
 
+ // ── 이익율 탭 배지: 회전율 + 이익 기여 순위 ──
+ if (_isMgn && _mGid != null) {
+  var _sgdB = window.salesGroupData && window.salesGroupData[_mGid];
+  var _badges = [];
+  if (_sgdB && _sgdB.qty > 0 && m.area > 0) {
+   var _turn = _sgdB.qty / m.area;
+   var _tLabel = _turn > 5 ? '빠름' : _turn > 1.5 ? '보통' : '느림';
+   var _tColor = _turn > 5 ? '#005233' : _turn > 1.5 ? '#b45309' : '#be123c';
+   var _tBg    = _turn > 5 ? '#e6f2ed' : _turn > 1.5 ? '#fef9c3' : '#fff1f2';
+   _badges.push({ text:'회전 '+_tLabel+' ('+Math.round(_turn*10)/10+'개/평)', bg:_tBg, col:_tColor });
+  }
+  if (window._profitRankCache) {
+   var _prc = window._profitRankCache.filter(function(x){ return x.gid == _mGid; })[0];
+   if (_prc) _badges.push({ text:'이익기여 '+_prc.profitRank+'위/'+_prc.total+'개', bg:'#f5f3ff', col:'#6d28d9' });
+  }
+  if (_badges.length) {
+   var _bRow = document.createElement('div');
+   _bRow.style.cssText = 'padding:6px 12px 5px;display:flex;flex-wrap:wrap;gap:4px;border-top:1px solid #f1f5f9;';
+   _badges.forEach(function(b) {
+    var sp = document.createElement('span');
+    sp.style.cssText = 'font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;background:'+b.bg+';color:'+b.col+';';
+    sp.textContent = b.text;
+    _bRow.appendChild(sp);
+   });
+   card.appendChild(_bRow);
+  }
+ }
+
  document.body.appendChild(card);
  _salesCardEl = card;
 
@@ -15419,6 +15447,7 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
   if (profitItems.length < 2) return;
   profitItems.sort(function(a, b) { return b.grossProfit - a.grossProfit; });
   profitItems.forEach(function(item, idx) { item.profitRank = idx + 1; item.rankDiff = item.psRank - item.profitRank; });
+  window._profitRankCache = profitItems.map(function(x) { return { gid:x.gid, profitRank:x.profitRank, total:profitItems.length }; });
 
   const pCard = document.createElement('div');
   pCard.style.cssText = 'margin:0 12px 12px;background:#fff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);';
@@ -15636,7 +15665,7 @@ function renderImproveTab(container, metrics, avgPerSales) {
  if (g.perSales < avgPerSales * 0.5 && g.perSales > 0) tags.push({ text:'저성과', bg:'#fff1f2', col:'#be123c' });
  if (g.grade === 'A') tags.push({ text:'고효율', bg:'#e6f2ed', col:'#003d26' });
  return {
- name:g.name, color:g.color, zids:g.zids,
+ name:g.name, color:g.color, zids:g.zids, gid:g.gid,
  perSales:g.perSales, area:g.area, sales:g.sales,
  effIdx:g.effIdx, salesEff:g.salesEff, grade:g.grade,
  spaceEff:g.effIdx,
@@ -15912,6 +15941,70 @@ function renderImproveTab(container, metrics, avgPerSales) {
 
  renderGroup(needFix, '️', '개선 필요', '#fee2e2', '#dc2626');
  renderGroup(watchOut, '', '효율 주의', '#fef3c7', '#d97706');
+
+ // ── 회전율 × 객단가 4분면 분석 ──
+ (function() {
+  var sgd = window.salesGroupData || {};
+  var qItems = allItems.filter(function(r) {
+   if (!r.gid) return false;
+   var sg = sgd[r.gid];
+   return sg && sg.qty > 0 && r.area > 0 && r.sales > 0;
+  }).map(function(r) {
+   var sg = sgd[r.gid];
+   var turnover = sg.qty / r.area;
+   var atv = r.sales / sg.qty;
+   return { name:r.name, color:r.color, zids:r.zids, gid:r.gid, turnover:turnover, atv:atv, sales:r.sales };
+  });
+  if (qItems.length < 2) return;
+
+  // 중앙값으로 고/저 경계 설정
+  var turns = qItems.map(function(x){ return x.turnover; }).slice().sort(function(a,b){ return a-b; });
+  var atvs  = qItems.map(function(x){ return x.atv; }).slice().sort(function(a,b){ return a-b; });
+  var midT = turns[Math.floor(turns.length / 2)];
+  var midA = atvs[Math.floor(atvs.length / 2)];
+
+  var QUADS = [
+   { key:'HH', label:'고객단가 · 빠른 회전', icon:'⭐', insight:'핵심 매출원 — 현 운영 유지, 재고 안정화 집중', bg:'#e6f2ed', col:'#005233', items:[] },
+   { key:'HL', label:'빠른 회전 · 저객단가', icon:'🔄', insight:'회전 잦으나 단가 낮음 — 번들·업셀링으로 객단가 개선', bg:'#eff6ff', col:'#1d4ed8', items:[] },
+   { key:'LH', label:'느린 회전 · 고객단가', icon:'💎', insight:'고단가이나 구매 빈도 낮음 — 진열·접근성 개선으로 회전율 확보', bg:'#fdf4ff', col:'#7e22ce', items:[] },
+   { key:'LL', label:'저객단가 · 느린 회전', icon:'⚠️', insight:'즉각 개선 필요 — 상품 구성 전환 또는 카테고리 재검토', bg:'#fff1f2', col:'#be123c', items:[] },
+  ];
+  qItems.forEach(function(r) {
+   var ht = r.turnover >= midT, ha = r.atv >= midA;
+   if (ht && ha) QUADS[0].items.push(r);
+   else if (ht && !ha) QUADS[1].items.push(r);
+   else if (!ht && ha) QUADS[2].items.push(r);
+   else QUADS[3].items.push(r);
+  });
+
+  var sec = document.createElement('div');
+  sec.style.cssText = 'margin:10px 12px 12px;border-radius:10px;overflow:hidden;border:1.5px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05);';
+  var secHd = document.createElement('div');
+  secHd.style.cssText = 'padding:10px 14px 8px;background:#f8fafc;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;';
+  secHd.innerHTML =
+   '<span style="font-size:12px;font-weight:900;color:#111827;">📊 회전율 × 객단가 4분면</span>'+
+   '<span style="font-size:9px;color:#9ca3af;">평당 판매수량 기준</span>';
+  sec.appendChild(secHd);
+
+  QUADS.forEach(function(qd) {
+   if (!qd.items.length) return;
+   var qDiv = document.createElement('div');
+   qDiv.style.cssText = 'padding:9px 12px;border-bottom:1px solid #f1f5f9;background:'+qd.bg+';';
+   var namesHTML = qd.items.map(function(r) {
+    return '<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;background:rgba(0,0,0,.07);color:'+qd.col+';cursor:pointer;" onclick="if(\''+r.zids[0]+'\')focusSalesMapZone(\''+r.zids[0]+'\')">'+r.name+'</span>';
+   }).join('');
+   qDiv.innerHTML =
+    '<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">'+
+    '<span style="font-size:12px;">'+qd.icon+'</span>'+
+    '<span style="font-size:10px;font-weight:900;color:'+qd.col+';">'+qd.label+'</span>'+
+    '</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">'+namesHTML+'</div>'+
+    '<div style="font-size:9px;font-weight:600;color:#374151;line-height:1.5;">→ '+qd.insight+'</div>';
+   sec.appendChild(qDiv);
+  });
+
+  container.appendChild(sec);
+ })();
 }
 
 function renderListTab(container, metrics, maxPerSales) {
