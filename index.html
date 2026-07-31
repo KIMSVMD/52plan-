@@ -1822,6 +1822,8 @@ body.viewer-mode #salesMonthNav > div > button{
         if (data.salesGroups) window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
         if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
         if (data.labelOffsets) window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets));
+        if (!window.storeWeekSalesLabelOffsetsMap) window.storeWeekSalesLabelOffsetsMap = {};
+        window.storeWeekSalesLabelOffsetsMap[store] = data.weekLabelOffsets ? JSON.parse(JSON.stringify(data.weekLabelOffsets)) : {};
         if (data.monthlySales) window.monthlySalesStore[store] = JSON.parse(JSON.stringify(data.monthlySales));
         if (data.weeklySales) window.weeklySalesStore[store] = JSON.parse(JSON.stringify(data.weeklySales));
         if (data.salesTargets) { window.salesTargets[store] = JSON.parse(JSON.stringify(data.salesTargets)); window.storeSalesTargetsMap[store] = JSON.parse(JSON.stringify(data.salesTargets)); }
@@ -1993,6 +1995,8 @@ body.viewer-mode #salesMonthNav > div > button{
  if (data.salesGroups) window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
  if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
  if (data.labelOffsets) { window.storeLabelOffsetsMap = window.storeLabelOffsetsMap||{}; window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets)); }
+ if (!window.storeWeekSalesLabelOffsetsMap) window.storeWeekSalesLabelOffsetsMap = {};
+ window.storeWeekSalesLabelOffsetsMap[store] = data.weekLabelOffsets ? JSON.parse(JSON.stringify(data.weekLabelOffsets)) : {};
  if (data.monthlySales) {
    var _loadedMonthly = JSON.parse(JSON.stringify(data.monthlySales));
    // 각 월 데이터는 해당 월에 저장된 그룹만 사용 (전역 백필 제거 — 월간 오염 방지)
@@ -2027,6 +2031,7 @@ body.viewer-mode #salesMonthNav > div > button{
  window.salesGroupData = JSON.parse(JSON.stringify(data.salesGroupData || {}));
  window.marginGroupData = JSON.parse(JSON.stringify(data.marginGroupData || {}));
  window.salesLabelOffsets= JSON.parse(JSON.stringify(data.labelOffsets || {}));
+ window.weekSalesLabelOffsets = JSON.parse(JSON.stringify(data.weekLabelOffsets || {}));
     window.productMaster = JSON.parse(JSON.stringify(data.productMaster || []));
     window.zoneProducts = JSON.parse(JSON.stringify(data.zoneProducts || {}));
     window.productSalesData = (function() {
@@ -2213,6 +2218,8 @@ body.viewer-mode #salesMonthNav > div > button{
  if (data.salesGroups) window.storeSalesGroupsMap[store] = JSON.parse(JSON.stringify(data.salesGroups));
  if (data.salesGroupData) window.storeSalesGroupDataMap[store] = JSON.parse(JSON.stringify(data.salesGroupData));
  if (data.labelOffsets) { window.storeLabelOffsetsMap = window.storeLabelOffsetsMap||{}; window.storeLabelOffsetsMap[store] = JSON.parse(JSON.stringify(data.labelOffsets)); }
+ if (!window.storeWeekSalesLabelOffsetsMap) window.storeWeekSalesLabelOffsetsMap = {};
+ window.storeWeekSalesLabelOffsetsMap[store] = data.weekLabelOffsets ? JSON.parse(JSON.stringify(data.weekLabelOffsets)) : {};
  if (data.monthlySales) {
    var _loadedMonthly2 = JSON.parse(JSON.stringify(data.monthlySales));
    // 각 월 데이터는 해당 월에 저장된 그룹만 사용 (전역 백필 제거 — 월간 오염 방지)
@@ -2254,6 +2261,7 @@ body.viewer-mode #salesMonthNav > div > button{
  window.manualTotalSales = data.manualTotalSales || 0;
  window.manualTotalArea = data.manualTotalArea || 0;
  window.salesLabelOffsets= JSON.parse(JSON.stringify(data.labelOffsets || {}));
+ window.weekSalesLabelOffsets = JSON.parse(JSON.stringify(data.weekLabelOffsets || {}));
     window.productMaster = JSON.parse(JSON.stringify(data.productMaster || []));
     window.zoneProducts = JSON.parse(JSON.stringify(data.zoneProducts || {}));
     window.productSalesData = (function() {
@@ -8079,6 +8087,7 @@ window._getSavePayload = function(store) {
    : JSON.parse(JSON.stringify((window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {}));
  var saveSalesGroupData = isCurrent ? JSON.parse(JSON.stringify(window.salesGroupData || {})) : JSON.parse(JSON.stringify((window.storeSalesGroupDataMap && window.storeSalesGroupDataMap[store]) || {}));
  var saveLabelOffsets = isCurrent ? JSON.parse(JSON.stringify(window.salesLabelOffsets || {})) : JSON.parse(JSON.stringify((window.storeLabelOffsetsMap && window.storeLabelOffsetsMap[store]) || {}));
+ var saveWeekLabelOffsets = isCurrent ? JSON.parse(JSON.stringify(window.weekSalesLabelOffsets || {})) : JSON.parse(JSON.stringify((window.storeWeekSalesLabelOffsetsMap && window.storeWeekSalesLabelOffsetsMap[store]) || {}));
 
  // ── 월별 평당매출 데이터 ──
  if (!window.monthlySalesStore) window.monthlySalesStore = {};
@@ -8115,6 +8124,7 @@ window._getSavePayload = function(store) {
  salesGroups: saveSalesGroups,
  salesGroupData: saveSalesGroupData,
  labelOffsets: saveLabelOffsets,
+ weekLabelOffsets: saveWeekLabelOffsets,
  monthlySales: saveMonthlySales,
  weeklySales: saveWeeklySales,
  salesTargets: JSON.parse(JSON.stringify((window.salesTargets && window.salesTargets[store]) || {})),
@@ -10430,6 +10440,8 @@ function switchStore(store) {
  // 레이블 오프셋 저장
  if (!window.storeLabelOffsetsMap) window.storeLabelOffsetsMap = {};
  window.storeLabelOffsetsMap[currentStore] = JSON.parse(JSON.stringify(window.salesLabelOffsets || {}));
+ if (!window.storeWeekSalesLabelOffsetsMap) window.storeWeekSalesLabelOffsetsMap = {};
+ window.storeWeekSalesLabelOffsetsMap[currentStore] = JSON.parse(JSON.stringify(window.weekSalesLabelOffsets || {}));
  // 현재 지점 seasonOverrides도 백업
  if (typeof seasonOverrides !== 'undefined' && window.storeSeasonOverrides) {
  window.storeSeasonOverrides[currentStore] = JSON.parse(JSON.stringify(seasonOverrides));
@@ -10574,6 +10586,7 @@ function switchStore(store) {
  window.salesGroups = Object.assign({}, (window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) || {});
  window.salesGroupData = Object.assign({}, (window.storeSalesGroupDataMap && window.storeSalesGroupDataMap[store]) || {});
  window.salesLabelOffsets = Object.assign({}, (window.storeLabelOffsetsMap && window.storeLabelOffsetsMap[store]) || {});
+ window.weekSalesLabelOffsets = Object.assign({}, (window.storeWeekSalesLabelOffsetsMap && window.storeWeekSalesLabelOffsetsMap[store]) || {});
  // 2단계: 현재 월/주차 컨텍스트에 맞는 데이터로 덮어씀
  // (monthlySalesStore/weeklySalesStore가 항상 top-level 캐시보다 정확함)
  if (window.currentSalesWeek) {
@@ -12178,6 +12191,7 @@ function _salesSaveAllToFirebase() {
   _salesUpd.salesGroups      = JSON.parse(JSON.stringify(typeof _getActiveGroups === 'function' ? _getActiveGroups(store) : (window.salesGroups || {})));
   _salesUpd.salesGroupData   = JSON.parse(JSON.stringify(window.salesGroupData || {}));
   _salesUpd.labelOffsets     = JSON.parse(JSON.stringify(window.salesLabelOffsets || {}));
+  _salesUpd.weekLabelOffsets = JSON.parse(JSON.stringify(window.weekSalesLabelOffsets || {}));
   _salesUpd.manualTotalSales = window.manualTotalSales || 0;
   _salesUpd.manualTotalArea  = window.manualTotalArea  || 0;
   _salesUpd.salesTargets     = JSON.parse(JSON.stringify((window.salesTargets && window.salesTargets[store]) || {}));
@@ -12848,8 +12862,8 @@ function refreshSalesContent(gcEl, panelEl) {
  var _isMgnMode = (window._salesSubTab === 'margin');
  var _mgnGid = _isMgnMode ? _getGroupForZone(m.z.id) : null;
  var _mgnVal = _isMgnMode && _mgnGid && window.marginGroupData ? window.marginGroupData[_mgnGid] : null;
- zEl.style.background = m.isDead ? '#6b7280' : (_isMgnMode ? (_mgnVal > 0 ? marginHeatColor(_mgnVal, _mgnGid || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
- zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : (_isMgnMode ? (_mgnVal > 0 ? marginBorderColor(_mgnVal, _mgnGid || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id)));
+ zEl.style.background = m.isDead ? '#6b7280' : (_isMgnMode ? (_mgnVal != null ? marginHeatColor(_mgnVal, _mgnGid || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
+ zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : (_isMgnMode ? (_mgnVal != null ? marginBorderColor(_mgnVal, _mgnGid || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id)));
  zEl.style.outlineOffset = '1px';
  zEl.style.opacity = '1';
  const zi = zEl.querySelector('.zi');
@@ -12857,7 +12871,7 @@ function refreshSalesContent(gcEl, panelEl) {
  zi.innerHTML = '';
  const numDiv = document.createElement('div');
  numDiv.style.cssText = 'font-size:12px;font-weight:900;color:#fff;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center;width:100%;';
- numDiv.textContent = _isMgnMode ? (_mgnVal > 0 ? _mgnVal.toFixed(1) + '%' : '-') : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-');
+ numDiv.textContent = _isMgnMode ? (_mgnVal != null ? _mgnVal.toFixed(1) + '%' : '-') : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-');
  zi.appendChild(numDiv);
  }
  } else {
@@ -13700,8 +13714,8 @@ function renderSalesMap(container, metrics, maxPerSales) {
  var _isMgnMode2 = (window._salesSubTab === 'margin');
  var _mgnGid2 = _isMgnMode2 ? _getGroupForZone(m.z.id) : null;
  var _mgnVal2 = _isMgnMode2 && _mgnGid2 && window.marginGroupData ? window.marginGroupData[_mgnGid2] : null;
- const _bgColor = m.isDead ? '#6b7280' : (_isMgnMode2 ? (_mgnVal2 > 0 ? marginHeatColor(_mgnVal2, _mgnGid2 || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
- const _olColor = m.isDead ? '#374151' : (_isMgnMode2 ? (_mgnVal2 > 0 ? marginBorderColor(_mgnVal2, _mgnGid2 || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id));
+ const _bgColor = m.isDead ? '#6b7280' : (_isMgnMode2 ? (_mgnVal2 != null ? marginHeatColor(_mgnVal2, _mgnGid2 || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
+ const _olColor = m.isDead ? '#374151' : (_isMgnMode2 ? (_mgnVal2 != null ? marginBorderColor(_mgnVal2, _mgnGid2 || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id));
  zEl.style.background = _bgColor;
  zEl.style.borderRadius = '4px';
  zEl.style.boxShadow = '';
@@ -13940,20 +13954,14 @@ document.addEventListener('mouseup', function(e) {
  d.grpG.style.transform = '';
  d.hitPath.style.cursor = 'grab';
  var finalDx = d.startDx + dx, finalDy = d.startDy + dy;
- window.salesLabelOffsets['_grp_box_'+d.gid] = { dx: finalDx, dy: finalDy };
+ _setSalesLblOff('_grp_box_'+d.gid, { dx: finalDx, dy: finalDy });
  // 레이블 오프셋도 박스 이동량만큼 누적
- window.salesLabelOffsets['_grp_'+d.gid] = {
- dx: d.lblStartDx + dx,
- dy: d.lblStartDy + dy
- };
+ _setSalesLblOff('_grp_'+d.gid, { dx: d.lblStartDx + dx, dy: d.lblStartDy + dy });
  if (typeof showToast === 'function') showToast(' 그룹 구역 이동됨');
  } else if (d.type === 'label') {
  d.glDiv.style.opacity = '';
  d.glDiv.style.zIndex = '90';
- window.salesLabelOffsets['_grp_'+d.gid] = {
- dx: d.startDx + dx,
- dy: d.startDy + dy
- };
+ _setSalesLblOff('_grp_'+d.gid, { dx: d.startDx + dx, dy: d.startDy + dy });
  if (typeof showToast === 'function') showToast(' 그룹 문구 이동됨');
  }
 });
@@ -14050,7 +14058,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
  var _isMgnGrp = (window._salesSubTab === 'margin');
  var _mgnGrpVal = _isMgnGrp && window.marginGroupData ? window.marginGroupData[gid] : null;
- var heatColor = _isMgnGrp ? (_mgnGrpVal > 0 ? marginHeatColor(_mgnGrpVal, gid) : '#9ca3af') : (tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af');
+ var heatColor = _isMgnGrp ? (_mgnGrpVal != null ? marginHeatColor(_mgnGrpVal, gid) : '#9ca3af') : (tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af');
  var PAD = 8;
 
  var zRects = zids.map(zid => {
@@ -14153,7 +14161,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  if (!polyInfos.length) return;
 
  // ── 박스 오프셋 (이동 배치 저장값) ──
- var _boxOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_box_'+gid]) || { dx:0, dy:0 };
+ var _boxOff = _getSalesLblOff('_grp_box_'+gid);
  var _isAdminGrp = (typeof isAdmin !== 'undefined') && isAdmin;
 
  // ── SVG <g> 로 박스 전체 묶기 (transform으로 이동) ──
@@ -14176,7 +14184,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  var sp = document.createElementNS(ns, 'path');
  sp.setAttribute('d', pi.d);
  sp.setAttribute('fill', 'none');
- sp.setAttribute('stroke', _isMgnGrp ? (_mgnGrpVal > 0 ? marginBorderColor(_mgnGrpVal, gid) : g.color) : (tPS > 0 ? salesBorderColor(tPS, gid) : g.color));
+ sp.setAttribute('stroke', _isMgnGrp ? (_mgnGrpVal != null ? marginBorderColor(_mgnGrpVal, gid) : g.color) : (tPS > 0 ? salesBorderColor(tPS, gid) : g.color));
  sp.setAttribute('stroke-width', '4');
  sp.setAttribute('stroke-linejoin', 'round');
  sp.setAttribute('stroke-linecap', 'round');
@@ -14254,8 +14262,8 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  hitPath.addEventListener('mousedown', function(e) {
  e.preventDefault(); e.stopPropagation();
  hideSalesZoneCard();
- var boxOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_box_'+gid]) || { dx:0, dy:0 };
- var lblOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid]) || { dx:0, dy:0 };
+ var boxOff = _getSalesLblOff('_grp_box_'+gid);
+ var lblOff = _getSalesLblOff('_grp_'+gid);
  var lbl = gcEl.querySelector('#slbl-grp-'+gid);
  window._salesGrpDrag = {
  type: 'box',
@@ -14313,7 +14321,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  var fontSize2 = 30; // 평당매출 고정
 
  // 그룹 레이블 오프셋 (박스 오프셋 포함)
- var _glOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid]) || { dx:0, dy:0 };
+ var _glOff = _getSalesLblOff('_grp_'+gid);
  var _glLblW = 180;
  var _glLblH = 84;
  // baseLeft/baseTop: 박스 이동 전 기준 위치 (박스 드래그 시 동기화용)
@@ -14341,7 +14349,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  'text-align:center;text-shadow:0 1px 4px rgba(0,0,0,.6);white-space:nowrap;">'+
  g.label+
  '</div>'+
- (_isMgnGrp ? (_mgnGrpVal > 0 ?
+ (_isMgnGrp ? (_mgnGrpVal != null ?
  '<div style="font-family:Pretendard,sans-serif;font-size:'+fontSize2+'px;font-weight:900;color:#fff;'+
  'text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap;">'+
  _mgnGrpVal.toFixed(1)+'%</div>' : '') :
@@ -14357,7 +14365,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
 
  glDiv.addEventListener('mousedown', function(e) {
  e.preventDefault(); e.stopPropagation();
- var curOff = (window.salesLabelOffsets && window.salesLabelOffsets['_grp_'+gid]) || { dx:0, dy:0 };
+ var curOff = _getSalesLblOff('_grp_'+gid);
  window._salesGrpDrag = {
  type: 'label',
  gid: gid,
@@ -16672,10 +16680,77 @@ function applySalesGroupOutlines() {
  });
 }
 
+window.debugMarginState = function() {
+  var grps = window.salesGroups || {};
+  var mgd = window.marginGroupData || {};
+  var sgd = window.salesGroupData || {};
+  console.group('=== marginGroupData 진단 ===');
+  Object.keys(grps).forEach(function(gid) {
+    var g = grps[gid];
+    var mgn = mgd[gid];
+    var sgdM = sgd[gid] && sgd[gid].margin;
+    var label = (g.number||'?') + ' ' + (g.label||gid);
+    if (mgn != null || sgdM != null) {
+      console.log(label, '| marginGroupData:', mgn, '| salesGroupData.margin:', sgdM);
+    } else {
+      console.warn(label, '| 데이터 없음 (null/undefined)');
+    }
+  });
+  console.groupEnd();
+  var cur = window.currentSalesWeek;
+  if (cur && window.weeklySalesStore && window.weeklySalesStore[window.currentStore||'gs']) {
+    var wd = window.weeklySalesStore[window.currentStore||'gs'][cur];
+    if (wd && wd.salesGroupData) {
+      console.group('=== weeklySalesStore[' + cur + '].salesGroupData ===');
+      Object.keys(wd.salesGroupData).forEach(function(gid) {
+        var g = grps[gid] || {};
+        var label = (g.number||'?') + ' ' + (g.label||gid);
+        console.log(label, '|', JSON.stringify(wd.salesGroupData[gid]));
+      });
+      console.groupEnd();
+    }
+  }
+};
+
+/* ── 주차별 레이블 오프셋 조회 (현재 주차 이하 backward search) ── */
+function _getSalesLblOff(key) {
+  if (window.weekSalesLabelOffsets) {
+    var wkIdx = -1;
+    if (window.currentSalesWeek) {
+      for (var i = 0; i < WEEKS.length; i++) {
+        if (WEEKS[i].id === window.currentSalesWeek) { wkIdx = i; break; }
+      }
+    }
+    for (var w = wkIdx; w >= 0; w--) {
+      var ovr = window.weekSalesLabelOffsets[w];
+      if (ovr && ovr[key] !== undefined) return ovr[key];
+    }
+  }
+  return (window.salesLabelOffsets && window.salesLabelOffsets[key]) || { dx:0, dy:0 };
+}
+
+function _setSalesLblOff(key, val) {
+  var wkIdx = -1;
+  if (window.currentSalesWeek) {
+    for (var i = 0; i < WEEKS.length; i++) {
+      if (WEEKS[i].id === window.currentSalesWeek) { wkIdx = i; break; }
+    }
+  }
+  if (wkIdx >= 0) {
+    if (!window.weekSalesLabelOffsets) window.weekSalesLabelOffsets = {};
+    if (!window.weekSalesLabelOffsets[wkIdx]) window.weekSalesLabelOffsets[wkIdx] = {};
+    window.weekSalesLabelOffsets[wkIdx][key] = val;
+  } else {
+    if (!window.salesLabelOffsets) window.salesLabelOffsets = {};
+    window.salesLabelOffsets[key] = val;
+  }
+}
+
 function resetSalesLabelOffsets() {
  if (!isAdmin || isViewer) { showToast('️ 관리자만 초기화할 수 있습니다'); return; }
  if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
  window.salesLabelOffsets = {};
+ window.weekSalesLabelOffsets = {};
  showToast('↺ 레이블 위치 초기화됨');
  if (typeof switchSalesMonth === 'function') {
  switchSalesMonth(window.currentSalesMonth);
