@@ -14824,6 +14824,18 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  hint.textContent = '그룹 선택 후 도면 구역 클릭으로 배정';
  groupCol.appendChild(hint);
 
+ // 검색창
+ const searchWrap = document.createElement('div');
+ searchWrap.style.cssText = 'flex-shrink:0;padding:6px 8px;border-bottom:1px solid #f1f5f9;background:#fff;';
+ const searchInput = document.createElement('input');
+ searchInput.type = 'text';
+ searchInput.placeholder = '그룹명 또는 조닝번호 검색...';
+ searchInput.style.cssText = 'width:100%;box-sizing:border-box;font-family:inherit;font-size:11px;padding:5px 9px;border:1.5px solid #e5e7eb;border-radius:7px;outline:none;background:#f9fafb;color:#111827;';
+ searchInput.onfocus = function(){ this.style.borderColor='#f97316'; };
+ searchInput.onblur  = function(){ this.style.borderColor='#e5e7eb'; };
+ searchWrap.appendChild(searchInput);
+ groupCol.appendChild(searchWrap);
+
  // 그룹 목록 (스크롤)
  const listWrap = document.createElement('div');
  listWrap.style.cssText = 'flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;background:#f9fafb;';
@@ -14937,9 +14949,29 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
      btnRow.appendChild(delBtn);
      row.appendChild(btnRow);
 
+     row.dataset.searchText = ((g.label || '') + ' ' + (g.number || '')).toLowerCase();
      row.onclick = (function(id){ return function(){ if(typeof selectSalesGroup==='function') selectSalesGroup(id); }; })(gid);
      listWrap.appendChild(row);
    });
+
+   // 검색 결과 없음 안내
+   var noResult = document.createElement('div');
+   noResult.style.cssText = 'display:none;padding:24px 0;text-align:center;font-size:11px;color:#9ca3af;';
+   noResult.textContent = '검색 결과가 없습니다';
+   listWrap.appendChild(noResult);
+
+   // 검색 필터링
+   searchInput.oninput = function() {
+     var q = this.value.trim().toLowerCase();
+     var rows = listWrap.querySelectorAll('[data-search-text]');
+     var visible = 0;
+     rows.forEach(function(r) {
+       var match = !q || r.dataset.searchText.indexOf(q) >= 0;
+       r.style.display = match ? '' : 'none';
+       if (match) visible++;
+     });
+     noResult.style.display = (q && visible === 0) ? 'block' : 'none';
+   };
  }
  groupCol.appendChild(listWrap);
 
