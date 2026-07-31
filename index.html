@@ -1597,7 +1597,8 @@ body.viewer-mode .zb.cat-zone-border { border-width: 1px !important; border-colo
  }
 }
 
-body.viewer-mode #salesMonthNav > div > button{
+/* 지표(평당매출/이익율) 서브탭 버튼은 열람 전용 컨트롤이라 열람모드에서도 노출 — 수정 버튼(저장/잠금/그룹복사 등)만 숨김 */
+body.viewer-mode #salesMonthNav > div > button:not(#salesSubTab_perSales):not(#salesSubTab_margin){
  display:none !important;
 }
 
@@ -3193,7 +3194,7 @@ window.onerror = function(msg, src, line, col, err) {
   <button class="draw-edit-item" onclick="openZoneProductsModal();closeSalInputDrop();">🗂 구역별 상품 배치</button>
   <div class="draw-edit-sep"></div>
   <button class="draw-edit-item" onclick="resetSalesLabelOffsets();closeSalInputDrop();">↺ 레이블 초기화</button>
-  <button class="draw-edit-item" style="color:#dc2626;" onclick="deleteSalesMonthData();closeSalInputDrop();">이 달 데이터 삭제</button>
+  <button class="draw-edit-item" style="color:#dc2626;" onclick="deleteSalesWeekData();closeSalInputDrop();">이 주 데이터 삭제</button>
  </div>
  </div>
  </div>
@@ -16776,14 +16777,16 @@ function resetSalesLabelOffsets() {
  }
 }
 
-function deleteSalesMonthData() {
+function deleteSalesWeekData() {
  if (!isAdmin || isViewer) { showToast('관리자만 삭제할 수 있습니다'); return; }
  if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
- const mo = window.currentSalesMonth;
- if (mo === null || mo === undefined) { showToast('월을 먼저 선택해주세요'); return; }
+ const weekId = window.currentSalesWeek;
+ if (!weekId) { showToast('주차를 먼저 선택해주세요'); return; }
 
- const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
- const mName = monthNames[mo] || (mo + '월');
+ const wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+ const wObj = wsArr.find(function(w) { return w.id === weekId; });
+ const wLabel = wObj ? wObj.label : weekId;
+ const mo = wObj ? wObj.mo : window.currentSalesMonth;
  const _storeName = (window.storeNames || {})[currentStore] || currentStore;
 
  var ex = document.getElementById('_delMonthModal');
@@ -16794,15 +16797,17 @@ function deleteSalesMonthData() {
  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;';
  modal.addEventListener('click', function(e){ if (e.target === modal) modal.remove(); });
 
+ /* 구역 그룹은 store 전체 공용 저장소(storeSalesGroupsMap)에 있어 특정 주차로 격리되지 않음 —
+    '구역 그룹만 삭제' / '둘 다 삭제'는 그룹 삭제가 다른 주차·월에도 영향을 준다는 점을 명시 */
  var warns = {
-   groups: '구역 그룹이 삭제됩니다. 매출 데이터는 유지됩니다. 되돌릴 수 없습니다.',
-   sales:  '매출 데이터가 삭제됩니다. 구역 그룹 구조는 유지됩니다. 되돌릴 수 없습니다.',
-   all:    '매출금액·구역 그룹 모두 삭제됩니다. 되돌릴 수 없습니다.'
+   groups: '구역 그룹이 삭제됩니다. 매출 데이터는 유지됩니다. ⚠️ 구역 그룹은 전체 주차·월이 함께 쓰는 공용 데이터라, 삭제 시 다른 주차에도 영향을 줍니다. 되돌릴 수 없습니다.',
+   sales:  wLabel + ' 매출 데이터만 삭제됩니다. 구역 그룹 구조는 유지됩니다. 다른 주차는 영향 없습니다. 되돌릴 수 없습니다.',
+   all:    wLabel + ' 매출 데이터가 삭제되고, 구역 그룹도 함께 삭제됩니다. ⚠️ 구역 그룹 삭제는 다른 주차·월에도 영향을 줍니다. 되돌릴 수 없습니다.'
  };
 
  modal.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;width:340px;max-width:94vw;box-shadow:0 20px 50px rgba(0,0,0,.35);">'
-   + '<div style="font-size:14px;font-weight:900;color:#111827;margin-bottom:3px;">🗑 이달 데이터 삭제</div>'
-   + '<div style="font-size:11px;color:#6b7280;margin-bottom:16px;">' + _storeName + ' ' + mName + '</div>'
+   + '<div style="font-size:14px;font-weight:900;color:#111827;margin-bottom:3px;">🗑 이 주 데이터 삭제</div>'
+   + '<div style="font-size:11px;color:#6b7280;margin-bottom:16px;">' + _storeName + ' ' + wLabel + (wObj && wObj.dates ? ' · ' + wObj.dates : '') + '</div>'
    + '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">'
    + '<label style="display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:8px;border:1.5px solid #e5e7eb;cursor:pointer;">'
    +   '<input type="radio" name="_delTarget" value="groups" style="accent-color:#6366f1;width:15px;height:15px;flex-shrink:0;">'
@@ -16840,65 +16845,65 @@ function deleteSalesMonthData() {
    var sel = modal.querySelector('input[name="_delTarget"]:checked');
    var target = sel ? sel.value : 'all';
    modal.remove();
-   _executeSalesMonthDelete(mo, mName, target);
+   _executeSalesWeekDelete(weekId, wLabel, mo, target);
  };
 }
 
-function _executeSalesMonthDelete(mo, mName, target) {
+function _executeSalesWeekDelete(weekId, wLabel, mo, target) {
  var store = currentStore;
- var key = 'm' + mo;
- if (!window.monthlySalesStore) window.monthlySalesStore = {};
- if (!window.monthlySalesStore[store]) window.monthlySalesStore[store] = {};
- var existing = window.monthlySalesStore[store][key] || {};
+ if (!window.weeklySalesStore) window.weeklySalesStore = {};
+ if (!window.weeklySalesStore[store]) window.weeklySalesStore[store] = {};
+ var wd = window.weeklySalesStore[store][weekId] || {};
 
  if (typeof window._firebaseSaveLog === 'function') {
    var _delBranch = (document.getElementById('scmBranchInp') || {}).value || '';
    var _delWho    = (document.getElementById('scmNameInp')   || {}).value || '';
    window._firebaseSaveLog({
-     savedAt: Date.now(), type: 'delete_month', store: store,
+     savedAt: Date.now(), type: 'delete_week', store: store,
      storeName: (window.storeNames || {})[store] || store,
      branch: _delBranch.trim(), who: _delWho.trim(),
-     month: mo, monthName: mName, deleteTarget: target,
+     week: weekId, weekLabel: wLabel, month: mo, deleteTarget: target,
      beforeData: {
-       salesData:      JSON.parse(JSON.stringify(window.salesData      || {})),
-       areaData:       JSON.parse(JSON.stringify(window.areaData       || {})),
+       salesData:      JSON.parse(JSON.stringify(wd.salesData      || {})),
+       areaData:       JSON.parse(JSON.stringify(wd.areaData       || {})),
        salesGroups:    JSON.parse(JSON.stringify(window.salesGroups    || {})),
-       salesGroupData: JSON.parse(JSON.stringify(window.salesGroupData || {}))
+       salesGroupData: JSON.parse(JSON.stringify(wd.salesGroupData || {}))
      }
    });
  }
 
- if (target === 'groups') {
-   window.monthlySalesStore[store][key] = Object.assign({}, existing, { salesGroups: {} });
-   window.salesGroups = {};
-   if (typeof salesGroupActiveId !== 'undefined') salesGroupActiveId = null;
- } else if (target === 'sales') {
-   window.monthlySalesStore[store][key] = Object.assign({}, existing, { salesData:{}, areaData:{}, salesGroupData:{} });
-   window.salesData = {};
-   window.areaData = {};
-   window.salesGroupData = {};
-   var weekArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
-   if (window.weeklySalesStore && window.weeklySalesStore[store]) {
-     weekArr.forEach(function(w) {
-       if (w.mo === mo && window.weeklySalesStore[store][w.id]) {
-         var wd = window.weeklySalesStore[store][w.id];
-         wd.salesData = {}; wd.areaData = {}; wd.salesGroupData = {};
-       }
-     });
+ if (target === 'groups' || target === 'all') {
+   /* 구역 그룹은 주차별로 격리된 데이터가 아니라 store 전체 공용(storeSalesGroupsMap) —
+      기존 '이 달 삭제'와 동일하게 전역 salesGroups + 현재 월 스냅숏만 비움 (다른 주차 영향은 확인창에서 안내) */
+   if (mo !== null && mo !== undefined) {
+     if (!window.monthlySalesStore) window.monthlySalesStore = {};
+     if (!window.monthlySalesStore[store]) window.monthlySalesStore[store] = {};
+     var mKey = _salesMonthKey(mo);
+     var existingMd = window.monthlySalesStore[store][mKey] || {};
+     window.monthlySalesStore[store][mKey] = Object.assign({}, existingMd, { salesGroups: {} });
    }
- } else {
-   window.monthlySalesStore[store][key] = { salesData:{}, areaData:{}, salesGroups:{}, salesGroupData:{} };
-   window.salesData = {};
-   window.areaData = {};
    window.salesGroups = {};
-   window.salesGroupData = {};
    if (typeof salesGroupActiveId !== 'undefined') salesGroupActiveId = null;
  }
 
+ if (target === 'sales' || target === 'all') {
+   wd.salesData = {}; wd.areaData = {}; wd.salesGroupData = {};
+   window.weeklySalesStore[store][weekId] = wd;
+   if (window.currentSalesWeek === weekId) {
+     window.salesData = {};
+     window.areaData = {};
+     window.salesGroupData = {};
+   }
+   if (mo !== null && mo !== undefined && typeof _updateMonthlyAggregateFromWeeks === 'function') {
+     _updateMonthlyAggregateFromWeeks(store, mo);
+   }
+ }
+
  syncToFirebase();
- if (typeof switchSalesMonth === 'function') switchSalesMonth(mo);
+ if (typeof renderSalesMonthNav === 'function') renderSalesMonthNav();
+ if (typeof renderSalesView === 'function') renderSalesView();
  var label = { groups:'구역 그룹', sales:'매출 데이터', all:'전체 데이터' }[target] || '데이터';
- showToast(mName + ' ' + label + ' 삭제 완료');
+ showToast(wLabel + ' ' + label + ' 삭제 완료');
 }
 
 function updateSalesTableGroupBadges() {
