@@ -14827,7 +14827,16 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  const listWrap = document.createElement('div');
  listWrap.style.cssText = 'flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;background:#f9fafb;';
 
- const entries = Object.entries(window.salesGroups || {});
+ const entries = Object.entries(window.salesGroups || {}).sort(function(a, b) {
+   var na = String((a[1] && a[1].number) || '').trim();
+   var nb = String((b[1] && b[1].number) || '').trim();
+   if (!na && !nb) return 0;
+   if (!na) return 1;
+   if (!nb) return -1;
+   var pa = na.split('-').map(function(x){ return parseInt(x, 10) || 0; });
+   var pb = nb.split('-').map(function(x){ return parseInt(x, 10) || 0; });
+   return (pa[0] - pb[0]) || ((pa[1] || 0) - (pb[1] || 0));
+ });
  if (!entries.length) {
    const empty = document.createElement('div');
    empty.style.cssText = 'padding:24px 0;text-align:center;font-size:11px;color:#9ca3af;';
