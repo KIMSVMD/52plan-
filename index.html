@@ -15215,6 +15215,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  {id:'tab-improve', label:'️ 개선'},
  {id:'tab-list', label:' 목록'},
  {id:'tab-group', label:' 그룹'},
+ {id:'tab-change', label:'▲ 변화'},
  ];
 
  function switchTab(tid){
@@ -15230,6 +15231,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  if(tid==='tab-improve') renderImproveTab(tabContents,metrics,avgPerSales);
  if(tid==='tab-list') renderListTab(tabContents,metrics,maxPerSales);
  if(tid==='tab-group') renderGroupTab(tabContents,metrics);
+ if(tid==='tab-change') renderChangeTab(tabContents,metrics,avgPerSales);
  }
 
  TABS.forEach(t=>{
@@ -16208,6 +16210,154 @@ function renderGroupTab(container, metrics) {
  });
  card.appendChild(ml);container.appendChild(card);
  });
+}
+
+/* ─── 탭5: 변화 (전주 대비) ─── */
+function renderChangeTab(container, metrics, avgPerSales) {
+  /* 임계값 상수 — 수정 시 여기만 바꾸면 됨 */
+  var THRESH_PERSALES = 15;  // 평당매출 변화율 임계값 (%)
+  var THRESH_MARGIN   = 5;   // 이익율 변화 임계값 (퍼센트포인트)
+
+  var store = window.currentStore || (typeof currentStore !== 'undefined' ? currentStore : 'gs');
+  var curWid = window.currentSalesWeek;
+
+  if (!curWid) {
+    var msg = document.createElement('div');
+    msg.style.cssText = 'padding:32px 16px;text-align:center;font-size:11px;color:#9ca3af;';
+    msg.textContent = '주차를 선택하면 전주 대비 변화를 보여줍니다.';
+    container.appendChild(msg);
+    return;
+  }
+
+  var ws = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  var curIdx = -1;
+  for (var i = 0; i < ws.length; i++) { if (ws[i].id === curWid) { curIdx = i; break; } }
+  var prevIdx = curIdx > 0 ? curIdx - 1 : -1;
+  var prevWid = prevIdx >= 0 ? ws[prevIdx].id : null;
+
+  if (!prevWid) {
+    var msg2 = document.createElement('div');
+    msg2.style.cssText = 'padding:32px 16px;text-align:center;font-size:11px;color:#9ca3af;';
+    msg2.textContent = '첫 번째 주차는 비교할 이전 주차가 없습니다.';
+    container.appendChild(msg2);
+    return;
+  }
+
+  var weekly  = (window.weeklySalesStore || {})[store] || {};
+  var curWd   = weekly[curWid]  || {};
+  var prevWd  = weekly[prevWid] || {};
+  var curSgd  = curWd.salesGroupData  || {};
+  var prevSgd = prevWd.salesGroupData || {};
+
+  var groups = window.salesGroups || {};
+  if (!Object.keys(groups).length && window.storeSalesGroupsMap && window.storeSalesGroupsMap[store]) {
+    groups = window.storeSalesGroupsMap[store] || {};
+  }
+
+  var areaData = (Object.keys(curWd.areaData || {}).length > 0) ? curWd.areaData : (window.areaData || {});
+
+  var changes = [];
+  Object.keys(groups).forEach(function(gid) {
+    var g = groups[gid];
+    var zids = g.zoneIds || g.zids || [];
+    var area = 0;
+    zids.forEach(function(zid) { area += (parseFloat(areaData[zid]) || 0); });
+    if (area <= 0) return;
+
+    var cur  = curSgd[gid]  || {};
+    var prev = prevSgd[gid] || {};
+
+    var curSales  = cur.sales  != null ? cur.sales  : 0;
+    var prevSales = prev.sales != null ? prev.sales : 0;
+    var curMgn    = cur.margin  != null ? cur.margin  : null;
+    var prevMgn   = prev.margin != null ? prev.margin : null;
+
+    var curPS  = curSales  / area;
+    var prevPS = prevSales / area;
+
+    var perSalesChg = (curSales > 0 && prevSales > 0)
+      ? (curPS - prevPS) / prevPS * 100 : null;
+    var marginChg = (curMgn != null && prevMgn != null) ? curMgn - prevMgn : null;
+
+    var notable = false;
+    if (perSalesChg != null && Math.abs(perSalesChg) >= THRESH_PERSALES) notable = true;
+    if (marginChg   != null && Math.abs(marginChg)   >= THRESH_MARGIN)   notable = true;
+    if (!notable) return;
+
+    var sortScore = Math.max(
+      perSalesChg != null ? Math.abs(perSalesChg) / THRESH_PERSALES : 0,
+      marginChg   != null ? Math.abs(marginChg)   / THRESH_MARGIN   : 0
+    );
+
+    changes.push({ gid: gid, g: g, zids: zids,
+      curPS: curPS, prevPS: prevPS, perSalesChg: perSalesChg,
+      curMgn: curMgn, prevMgn: prevMgn, marginChg: marginChg,
+      sortScore: sortScore });
+  });
+
+  changes.sort(function(a, b) { return b.sortScore - a.sortScore; });
+
+  var curLabel  = ws[curIdx]  ? ws[curIdx].label  : curWid;
+  var prevLabel = ws[prevIdx] ? ws[prevIdx].label : prevWid;
+
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'padding:7px 14px 3px;flex-shrink:0;';
+  hdr.innerHTML = '<span style="font-size:9px;color:#94a3b8;">'
+    + prevLabel + ' → ' + curLabel + ' 비교 &nbsp;|&nbsp; '
+    + '평당매출 ±' + THRESH_PERSALES + '% 또는 이익율 ±' + THRESH_MARGIN + '%p 이상</span>';
+  container.appendChild(hdr);
+
+  if (!changes.length) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'padding:28px 16px;text-align:center;font-size:11px;color:#9ca3af;';
+    empty.textContent = '임계값 이상의 변화가 없습니다.';
+    container.appendChild(empty);
+    return;
+  }
+
+  changes.forEach(function(ch) {
+    var card = document.createElement('div');
+    card.style.cssText = 'margin:6px 10px;padding:10px 12px;background:#fff;border-radius:10px;border:1.5px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.06);cursor:pointer;';
+    card.onmouseover = function() { card.style.borderColor = '#f97316'; };
+    card.onmouseout  = function() { card.style.borderColor = '#e5e7eb'; };
+    card.onclick = function() {
+      if (ch.zids && ch.zids.length && typeof focusSalesMapZone === 'function') focusSalesMapZone(ch.zids[0]);
+    };
+
+    var color = ch.g.color || '#6b7280';
+    var html = '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">'
+      + '<div style="width:5px;height:30px;border-radius:3px;background:' + color + ';flex-shrink:0;"></div>'
+      + '<span style="font-size:12px;font-weight:800;color:#111827;">' + (ch.g.label || ch.gid) + '</span>'
+      + (ch.g.number ? '<span style="font-size:9px;font-weight:800;padding:1px 6px;border-radius:4px;background:' + color + '22;color:' + color + ';">' + ch.g.number + '</span>' : '')
+      + '</div>';
+
+    if (ch.perSalesChg != null) {
+      var ps = ch.perSalesChg, psUp = ps >= 0;
+      var psCol = Math.abs(ps) >= THRESH_PERSALES ? (psUp ? '#16a34a' : '#dc2626') : '#6b7280';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f8fafc;">'
+        + '<span style="font-size:10px;color:#6b7280;font-weight:600;">평당매출</span>'
+        + '<div style="display:flex;align-items:center;gap:5px;">'
+        + '<span style="font-size:9px;color:#9ca3af;">' + Math.round(ch.prevPS * 10) / 10 + '만 →</span>'
+        + '<span style="font-size:10px;font-weight:700;color:#374151;">' + Math.round(ch.curPS * 10) / 10 + '만</span>'
+        + '<span style="font-size:11px;font-weight:900;color:' + psCol + ';">' + (psUp ? '▲' : '▼') + Math.abs(Math.round(ps * 10) / 10) + '%</span>'
+        + '</div></div>';
+    }
+
+    if (ch.marginChg != null) {
+      var mg = ch.marginChg, mgUp = mg >= 0;
+      var mgCol = Math.abs(mg) >= THRESH_MARGIN ? (mgUp ? '#16a34a' : '#dc2626') : '#6b7280';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;">'
+        + '<span style="font-size:10px;color:#6b7280;font-weight:600;">이익율</span>'
+        + '<div style="display:flex;align-items:center;gap:5px;">'
+        + '<span style="font-size:9px;color:#9ca3af;">' + Math.round(ch.prevMgn * 10) / 10 + '% →</span>'
+        + '<span style="font-size:10px;font-weight:700;color:#374151;">' + Math.round(ch.curMgn * 10) / 10 + '%</span>'
+        + '<span style="font-size:11px;font-weight:900;color:' + mgCol + ';">' + (mgUp ? '▲' : '▼') + Math.abs(Math.round(mg * 10) / 10) + '%p</span>'
+        + '</div></div>';
+    }
+
+    card.innerHTML = html;
+    container.appendChild(card);
+  });
 }
 
 function switchSalesPanelTab(tabId) {
