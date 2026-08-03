@@ -12853,7 +12853,6 @@ function refreshSalesContent(gcEl, panelEl) {
  if ((typeof salesGroupEditMode !== 'undefined') && salesGroupEditMode) {
  setTimeout(function(){ if(typeof addSalesGroupClickListeners==='function') addSalesGroupClickListeners(); }, 50);
  }
- if (typeof renderSalesGroupPanel === 'function') renderSalesGroupPanel();
  renderSalesMonthNav();
  return;
  }
@@ -12965,7 +12964,6 @@ function refreshSalesContent(gcEl, panelEl) {
  requestAnimationFrame(() => {
  renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSales);
  });
- if (typeof renderSalesGroupPanel === 'function') renderSalesGroupPanel();
  }
 
  // ── 우측 패널 갱신 ──
@@ -15457,7 +15455,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  {id:'tab-rank', label:' 순위'},
  {id:'tab-improve', label:'️ 개선'},
  {id:'tab-list', label:' 목록'},
- {id:'tab-group', label:' 그룹'},
+ {id:'tab-group', label:' 그룹', hidden:true}, // 탭 버튼만 숨김 — 로직/렌더 함수는 그대로 유지
  {id:'tab-change', label:'▲ 변화'},
  ];
 
@@ -15477,7 +15475,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  if(tid==='tab-change') renderChangeTab(tabContents,metrics,avgPerSales);
  }
 
- TABS.forEach(t=>{
+ TABS.filter(t=>!t.hidden).forEach(t=>{
  const btn=document.createElement('button');
  btn.className='sal-tab';
  btn.dataset.tab=t.id;
@@ -15495,7 +15493,8 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
   outerFlex.style.display = 'none';
   collapseHandle.style.display = 'flex';
  }
- switchTab(window._currentSalesPanelTab || 'tab-rank');
+ // 그룹 탭은 버튼이 숨겨져 있으니 기억된 탭이 그룹이면 순위 탭으로 대체
+ switchTab((window._currentSalesPanelTab && window._currentSalesPanelTab !== 'tab-group') ? window._currentSalesPanelTab : 'tab-rank');
 }
 
 /* ─── 탭1: 순위 ─── */
