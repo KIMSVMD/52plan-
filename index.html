@@ -12894,7 +12894,7 @@ function refreshSalesContent(gcEl, panelEl) {
  if (m) {
  var _isMgnMode = (window._salesSubTab === 'margin');
  var _mgnGid = _isMgnMode ? _getGroupForZone(m.z.id) : null;
- var _mgnVal = _isMgnMode && _mgnGid && window.marginGroupData ? window.marginGroupData[_mgnGid] : null;
+ var _mgnVal = (_isMgnMode && _mgnGid && window.salesGroupData && window.salesGroupData[_mgnGid] && window.salesGroupData[_mgnGid].margin != null) ? window.salesGroupData[_mgnGid].margin : null;
  zEl.style.background = m.isDead ? '#6b7280' : (_isMgnMode ? (_mgnVal != null ? marginHeatColor(_mgnVal, _mgnGid || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
  zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : (_isMgnMode ? (_mgnVal != null ? marginBorderColor(_mgnVal, _mgnGid || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id)));
  zEl.style.outlineOffset = '1px';
@@ -13746,7 +13746,7 @@ function renderSalesMap(container, metrics, maxPerSales) {
  // ① 배경색 = 히트맵 색상
  var _isMgnMode2 = (window._salesSubTab === 'margin');
  var _mgnGid2 = _isMgnMode2 ? _getGroupForZone(m.z.id) : null;
- var _mgnVal2 = _isMgnMode2 && _mgnGid2 && window.marginGroupData ? window.marginGroupData[_mgnGid2] : null;
+ var _mgnVal2 = (_isMgnMode2 && _mgnGid2 && window.salesGroupData && window.salesGroupData[_mgnGid2] && window.salesGroupData[_mgnGid2].margin != null) ? window.salesGroupData[_mgnGid2].margin : null;
  const _bgColor = m.isDead ? '#6b7280' : (_isMgnMode2 ? (_mgnVal2 != null ? marginHeatColor(_mgnVal2, _mgnGid2 || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
  const _olColor = m.isDead ? '#374151' : (_isMgnMode2 ? (_mgnVal2 != null ? marginBorderColor(_mgnVal2, _mgnGid2 || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id));
  zEl.style.background = _bgColor;
@@ -13765,7 +13765,7 @@ function renderSalesMap(container, metrics, maxPerSales) {
  const _elH = parseFloat(zEl.style.height) || 40;
  const _isMgn2 = (window._salesSubTab === 'margin');
  const _mGid2  = _isMgn2 ? _getGroupForZone(m.z.id) : null;
- const _mV2    = _isMgn2 && _mGid2 && window.marginGroupData ? window.marginGroupData[_mGid2] : null;
+ const _mV2    = (_isMgn2 && _mGid2 && window.salesGroupData && window.salesGroupData[_mGid2] && window.salesGroupData[_mGid2].margin != null) ? window.salesGroupData[_mGid2].margin : null;
  const perSalesText = _isMgn2 ? (_mV2 > 0 ? _mV2.toFixed(1) + '%' : '-') : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() + '만/평' : '-');
  const _zName = (m.z && m.z.name) ? m.z.name : '';
 
@@ -14090,7 +14090,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  gMetrics.filter(m=>m.grade==='A').length > gMetrics.length/2 ? 'A' :
  gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
  var _isMgnGrp = (window._salesSubTab === 'margin');
- var _mgnGrpVal = _isMgnGrp && window.marginGroupData ? window.marginGroupData[gid] : null;
+ var _mgnGrpVal = (_isMgnGrp && window.salesGroupData && window.salesGroupData[gid] && window.salesGroupData[gid].margin != null) ? window.salesGroupData[gid].margin : null;
  var heatColor = _isMgnGrp ? (_mgnGrpVal != null ? marginHeatColor(_mgnGrpVal, gid) : '#9ca3af') : (tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af');
  var PAD = 8;
 
@@ -14468,8 +14468,8 @@ function showSalesZoneCard(m, zEl) {
  // ── 이익율 서브탭 변수 ──
  var _isMgn = (window._salesSubTab === 'margin');
  // 그룹 fake metric이면 m.z.id가 이미 gid, 아니면 zone → 그룹 역탐색
- var _mGid  = _isMgn ? (window.marginGroupData && window.marginGroupData[m.z.id] !== undefined ? m.z.id : _getGroupForZone(m.z.id)) : null;
- var _mVal  = (_isMgn && _mGid != null && window.marginGroupData && window.marginGroupData[_mGid] !== undefined) ? window.marginGroupData[_mGid] : null;
+ var _mGid  = _isMgn ? (window.salesGroupData && window.salesGroupData[m.z.id] !== undefined ? m.z.id : _getGroupForZone(m.z.id)) : null;
+ var _mVal  = (_isMgn && _mGid != null && window.salesGroupData && window.salesGroupData[_mGid] && window.salesGroupData[_mGid].margin != null) ? window.salesGroupData[_mGid].margin : null;
  var _mTgt  = _isMgn ? _getMarginTarget(_mGid || m.z.id) : null;
 
  card.style.cssText =
@@ -17513,7 +17513,7 @@ function _buildGroupCard(gid, g, catKey) {
       cardGrid.appendChild(mkInp('평당매출 (만/평)',      'gdsi_ps_'+cardGid,    cPS,    '자동',     '#f97316', '#fff8f0', '0.1', function(){ updateGroupCalc(cardGid,'ps'); }));
       cardGrid.appendChild(mkInp('목표 평당매출 (만/평)', 'gdsi_tgt_'+cardGid,   cTgt,   '미설정',   '#6366f1', '#f5f3ff', '1',   function(){ updateSalesTarget(cardGid); }));
     } else {
-      var cMgn  = (window.marginGroupData && window.marginGroupData[cardGid] !== undefined) ? window.marginGroupData[cardGid] : '';
+      var cMgn  = (window.salesGroupData && window.salesGroupData[cardGid] && window.salesGroupData[cardGid].margin !== undefined) ? window.salesGroupData[cardGid].margin : '';
       var cMTgt = (window.marginTargets && window.marginTargets[currentStore] && window.marginTargets[currentStore][cardGid] > 0) ? window.marginTargets[currentStore][cardGid] : '';
       cardGrid.appendChild(mkInp('실이익율 (%)',  'gdsi_margin_'+cardGid, cMgn,  '예: 25', '#10b981', '#f0fdf4', '0.1', function(){ updateMarginData(cardGid); }));
       cardGrid.appendChild(mkInp('목표 이익율 (%)', 'gdsi_mtgt_'+cardGid, cMTgt, '미설정', '#6366f1', '#f5f3ff', '0.1', function(){ updateMarginTarget(cardGid); }));
@@ -17592,11 +17592,19 @@ function updateSalesTarget(gid) {
  if (gc && panel) { refreshSalesContent(gc, panel); } else { renderSalesView(); }
 }
 
-/* ── 실이익율 저장 ── */
+/* ── 실이익율 저장 (현재 선택된 주차의 salesGroupData에 저장 — sales/area와 동일하게 주차별 스코프) ── */
 function updateMarginData(gid) {
  var el = document.getElementById('gdsi_margin_' + gid);
  if (!el) return;
  var val = parseFloat(el.value);
+ if (!window.salesGroupData) window.salesGroupData = {};
+ if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
+ if (!isNaN(val) && val >= 0) {
+  window.salesGroupData[gid].margin = val;
+ } else {
+  delete window.salesGroupData[gid].margin;
+ }
+ /* flat marginGroupData는 참고용 미러로만 유지 (화면 표시에는 더 이상 쓰지 않음) */
  if (!window.marginGroupData) window.marginGroupData = {};
  if (!isNaN(val) && val >= 0) {
   window.marginGroupData[gid] = val;
