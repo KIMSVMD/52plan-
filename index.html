@@ -14136,30 +14136,10 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  if (hqty > _heatMaxQty) _heatMaxQty = hqty;
  });
  }
- var _heatPoints = []; // {cx, cy, radius, ratio} — 루프 안에서 채우고, 루프 후 한꺼번에 블롭 레이어로 그림
- /* 온도 색상 스케일: 파랑(차가움/0) → 초록 → 노랑 → 주황 → 빨강(뜨거움/1) */
- function _heatTempColor(ratio) {
- var r = Math.max(0, Math.min(1, ratio));
- var stops = [
- { t: 0.00, c: [37, 99, 235] },   // blue
- { t: 0.25, c: [16, 185, 129] },  // green
- { t: 0.50, c: [234, 179, 8] },   // yellow
- { t: 0.75, c: [249, 115, 22] },  // orange
- { t: 1.00, c: [220, 38, 38] },   // red
- ];
- for (var i = 0; i < stops.length - 1; i++) {
- var a = stops[i], b = stops[i+1];
- if (r >= a.t && r <= b.t) {
- var f = (b.t === a.t) ? 0 : (r - a.t) / (b.t - a.t);
- return [
- Math.round(a.c[0] + (b.c[0]-a.c[0])*f),
- Math.round(a.c[1] + (b.c[1]-a.c[1])*f),
- Math.round(a.c[2] + (b.c[2]-a.c[2])*f)
- ];
- }
- }
- return stops[stops.length-1].c;
- }
+ var _heatPoints = []; // {cx, cy, radius, ratio} — 루프 안에서 채우고, 루프 후 한꺼번에 밀도 필드로 그림
+ /* 온도 색상 스케일(파랑(0)→초록→노랑→주황→빨강(1))은 이제 JS가 아니라
+    feComponentTransfer의 table 함수로 필터 안에서 직접 계산됨 (아래 heatFieldFilter 참고) —
+    점 하나하나를 미리 색칠하면 밀도가 아니라 색이 섞여서 각자 따로 보이는 문제가 있었음 */
 
  Object.entries(groups).forEach(function(entry) {
  var gid = entry[0], g = entry[1];
@@ -14519,45 +14499,71 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  gcEl.appendChild(glDiv);
  });
 
- // ── 동선 Heat Map: 그룹 중심점 기준 radialGradient 블롭 + 공유 blur로
- // 인접한 고값 구역끼리 경계 없이 매끄럽게 번져 이어지도록 렌더 ──
+ // ── 동선 Heat Map: "밀도 먼저, 색은 나중" 파이프라인.
+ // 각 점을 무채색(검정) 알파 블롭으로만 그려서 겹치는 곳은 알파가 자연 누적되게 하고,
+ // 그 결과 하나의 밀도 필드 전체에 blur → 색상 램프를 단 한 번만 입힌다.
+ // (점마다 색을 먼저 입히고 blur만 공유하면 경계에서 안 섞이고 각자 따로 보임 — 이전 버전의 문제) ──
  if (_heatOn && _heatPoints.length) {
+ var _heatFilterId = 'heatFieldFilter';
  var _heatFilter = document.createElementNS(ns, 'filter');
- var _heatFilterId = 'heatBlurFilter';
  _heatFilter.setAttribute('id', _heatFilterId);
  _heatFilter.setAttribute('x', '-50%'); _heatFilter.setAttribute('y', '-50%');
  _heatFilter.setAttribute('width', '200%'); _heatFilter.setAttribute('height', '200%');
+
  var _heatBlur = document.createElementNS(ns, 'feGaussianBlur');
- _heatBlur.setAttribute('stdDeviation', '22');
+ _heatBlur.setAttribute('in', 'SourceGraphic');
+ _heatBlur.setAttribute('stdDeviation', '30');
+ _heatBlur.setAttribute('result', 'blurred');
  _heatFilter.appendChild(_heatBlur);
+
+ // 알파(밀도)를 R/G/B에도 복사 — feComponentTransfer가 "밀도"를 입력으로 받게 하기 위함
+ var _heatDup = document.createElementNS(ns, 'feColorMatrix');
+ _heatDup.setAttribute('in', 'blurred');
+ _heatDup.setAttribute('type', 'matrix');
+ _heatDup.setAttribute('values', '0 0 0 1 0  0 0 0 1 0  0 0 0 1 0  0 0 0 1 0');
+ _heatDup.setAttribute('result', 'density');
+ _heatFilter.appendChild(_heatDup);
+
+ // 밀도(0~1) → 파랑·초록·노랑·주황·빨강 색 램프로 변환 (병합된 필드 전체에 한 번만 적용)
+ var _heatColorize = document.createElementNS(ns, 'feComponentTransfer');
+ _heatColorize.setAttribute('in', 'density');
+ var _rMap = [[0.145,0.063,0.918,0.976,0.863], [0.388,0.725,0.702,0.451,0.149], [0.922,0.506,0.031,0.086,0.149]];
+ var _aTable = '0 0.32 0.48 0.6 0.7';
+ ['feFuncR','feFuncG','feFuncB'].forEach(function(tag, ci) {
+ var f = document.createElementNS(ns, tag);
+ f.setAttribute('type', 'table');
+ f.setAttribute('tableValues', _rMap[ci].join(' '));
+ _heatColorize.appendChild(f);
+ });
+ var _fA = document.createElementNS(ns, 'feFuncA');
+ _fA.setAttribute('type', 'table');
+ _fA.setAttribute('tableValues', _aTable);
+ _heatColorize.appendChild(_fA);
+ _heatFilter.appendChild(_heatColorize);
+
  defs.appendChild(_heatFilter);
 
  var _heatLayer = document.createElementNS(ns, 'g');
  _heatLayer.setAttribute('filter', 'url(#' + _heatFilterId + ')');
  _heatLayer.style.pointerEvents = 'none';
- _heatLayer.style.mixBlendMode = 'multiply';
- _heatLayer.style.opacity = '0.6';
 
  _heatPoints.forEach(function(hp, hIdx) {
- var _rgb = _heatTempColor(hp.ratio);
- var _rgbStr = _rgb[0] + ',' + _rgb[1] + ',' + _rgb[2];
- var _gradId = 'heatBlobGrad_' + hIdx;
+ var _gradId = 'heatDensityGrad_' + hIdx;
  var _grad = document.createElementNS(ns, 'radialGradient');
  _grad.setAttribute('id', _gradId);
  _grad.setAttribute('cx', '50%'); _grad.setAttribute('cy', '50%'); _grad.setAttribute('r', '50%');
+ var _peakAlpha = 0.25 + Math.max(0, Math.min(1, hp.ratio)) * 0.65; // 값이 높을수록 이 점의 밀도 기여가 큼
  var _s1 = document.createElementNS(ns, 'stop');
- _s1.setAttribute('offset', '0%'); _s1.setAttribute('stop-color', 'rgb(' + _rgbStr + ')'); _s1.setAttribute('stop-opacity', '0.9');
+ _s1.setAttribute('offset', '0%'); _s1.setAttribute('stop-color', '#000'); _s1.setAttribute('stop-opacity', String(_peakAlpha));
  var _s2 = document.createElementNS(ns, 'stop');
- _s2.setAttribute('offset', '60%'); _s2.setAttribute('stop-color', 'rgb(' + _rgbStr + ')'); _s2.setAttribute('stop-opacity', '0.45');
- var _s3 = document.createElementNS(ns, 'stop');
- _s3.setAttribute('offset', '100%'); _s3.setAttribute('stop-color', 'rgb(' + _rgbStr + ')'); _s3.setAttribute('stop-opacity', '0');
- _grad.appendChild(_s1); _grad.appendChild(_s2); _grad.appendChild(_s3);
+ _s2.setAttribute('offset', '100%'); _s2.setAttribute('stop-color', '#000'); _s2.setAttribute('stop-opacity', '0');
+ _grad.appendChild(_s1); _grad.appendChild(_s2);
  defs.appendChild(_grad);
 
  var _blob = document.createElementNS(ns, 'circle');
  _blob.setAttribute('cx', hp.cx);
  _blob.setAttribute('cy', hp.cy);
- _blob.setAttribute('r', hp.radius * (1.6 + hp.ratio * 1.4));
+ _blob.setAttribute('r', hp.radius * 2.6);
  _blob.setAttribute('fill', 'url(#' + _gradId + ')');
  _heatLayer.appendChild(_blob);
  });
