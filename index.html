@@ -11990,6 +11990,29 @@ function _getGroupForZone(zoneId) {
  return null;
 }
 
+/* ── 그룹의 이익율(%) 조회 — sales와 대칭 구조: 저장은 원본(mgnWtSum/sales)만,
+   가중평균·−22% 계산은 항상 이 함수(조회 시점)에서 수행.
+   수동 입력값(margin)이 있으면 그게 우선(업로드 가중평균보다 사람이 직접 넣은 값 우선). ── */
+function _computeMarginFromSgdEntry(sgd) {
+ if (!sgd) return null;
+ if (sgd.margin != null) return sgd.margin;
+ if (sgd.mgnWtSum == null) return null;
+ var weekTotal = (sgd.sales || 0) * 7;
+ if (weekTotal <= 0) return null;
+ var grossMargin = sgd.mgnWtSum / weekTotal;
+ return Math.round((grossMargin - 22) * 10) / 10;
+}
+function _getGroupMarginPct(gid) {
+ return _computeMarginFromSgdEntry(window.salesGroupData && window.salesGroupData[gid]);
+}
+
+/* ── 그룹의 매총율(%, −22% 차감 전 원값) 조회 — 이익 기여도(원화) 계산용.
+   수동 입력값(순이익율)에 대해서도 앱 전역 관례(매총율−22%=이익율)대로 +22 환산해 근사치 제공. ── */
+function _getGroupGrossMarginPct(gid) {
+ var net = _getGroupMarginPct(gid);
+ return net != null ? Math.round((net + 22) * 10) / 10 : null;
+}
+
 function marginHeatColor(val, id) {
  return pctColor(val, _getMarginTarget(id), MARGIN_FALLBACK_GREEN, MARGIN_FALLBACK_YELLOW, '#16a34a', '#eab308', '#dc2626', '#9ca3af');
 }
@@ -12473,7 +12496,7 @@ function _ensureWeekGlobals() {
      여기서 통째로 초기화하면 그 그룹들이 화면에서 사라짐) */
   if (!window.marginGroupData) window.marginGroupData = {};
   Object.keys(window.salesGroupData).forEach(function(gid) {
-    var m = window.salesGroupData[gid] && window.salesGroupData[gid].margin;
+    var m = _getGroupMarginPct(gid);
     if (m != null) window.marginGroupData[gid] = m;
   });
 }
@@ -12572,7 +12595,7 @@ function switchSalesWeek(weekId) {
     그룹(대부분)이 화면에서 사라지므로 절대 초기화하지 않는다. */
  if (!window.marginGroupData) window.marginGroupData = {};
  Object.keys(window.salesGroupData || {}).forEach(function(gid) {
-  var m = window.salesGroupData[gid] && window.salesGroupData[gid].margin;
+  var m = _getGroupMarginPct(gid);
   if (m != null) window.marginGroupData[gid] = m;
  });
  renderSalesView();
@@ -12894,7 +12917,7 @@ function refreshSalesContent(gcEl, panelEl) {
  if (m) {
  var _isMgnMode = (window._salesSubTab === 'margin');
  var _mgnGid = _isMgnMode ? _getGroupForZone(m.z.id) : null;
- var _mgnVal = (_isMgnMode && _mgnGid && window.salesGroupData && window.salesGroupData[_mgnGid] && window.salesGroupData[_mgnGid].margin != null) ? window.salesGroupData[_mgnGid].margin : null;
+ var _mgnVal = _isMgnMode && _mgnGid ? _getGroupMarginPct(_mgnGid) : null;
  zEl.style.background = m.isDead ? '#6b7280' : (_isMgnMode ? (_mgnVal != null ? marginHeatColor(_mgnVal, _mgnGid || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
  zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : (_isMgnMode ? (_mgnVal != null ? marginBorderColor(_mgnVal, _mgnGid || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id)));
  zEl.style.outlineOffset = '1px';
@@ -13746,7 +13769,7 @@ function renderSalesMap(container, metrics, maxPerSales) {
  // ① 배경색 = 히트맵 색상
  var _isMgnMode2 = (window._salesSubTab === 'margin');
  var _mgnGid2 = _isMgnMode2 ? _getGroupForZone(m.z.id) : null;
- var _mgnVal2 = (_isMgnMode2 && _mgnGid2 && window.salesGroupData && window.salesGroupData[_mgnGid2] && window.salesGroupData[_mgnGid2].margin != null) ? window.salesGroupData[_mgnGid2].margin : null;
+ var _mgnVal2 = _isMgnMode2 && _mgnGid2 ? _getGroupMarginPct(_mgnGid2) : null;
  const _bgColor = m.isDead ? '#6b7280' : (_isMgnMode2 ? (_mgnVal2 != null ? marginHeatColor(_mgnVal2, _mgnGid2 || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
  const _olColor = m.isDead ? '#374151' : (_isMgnMode2 ? (_mgnVal2 != null ? marginBorderColor(_mgnVal2, _mgnGid2 || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id));
  zEl.style.background = _bgColor;
@@ -13765,7 +13788,7 @@ function renderSalesMap(container, metrics, maxPerSales) {
  const _elH = parseFloat(zEl.style.height) || 40;
  const _isMgn2 = (window._salesSubTab === 'margin');
  const _mGid2  = _isMgn2 ? _getGroupForZone(m.z.id) : null;
- const _mV2    = (_isMgn2 && _mGid2 && window.salesGroupData && window.salesGroupData[_mGid2] && window.salesGroupData[_mGid2].margin != null) ? window.salesGroupData[_mGid2].margin : null;
+ const _mV2    = _isMgn2 && _mGid2 ? _getGroupMarginPct(_mGid2) : null;
  const perSalesText = _isMgn2 ? (_mV2 > 0 ? _mV2.toFixed(1) + '%' : '-') : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() + '만/평' : '-');
  const _zName = (m.z && m.z.name) ? m.z.name : '';
 
@@ -14090,7 +14113,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  gMetrics.filter(m=>m.grade==='A').length > gMetrics.length/2 ? 'A' :
  gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
  var _isMgnGrp = (window._salesSubTab === 'margin');
- var _mgnGrpVal = (_isMgnGrp && window.salesGroupData && window.salesGroupData[gid] && window.salesGroupData[gid].margin != null) ? window.salesGroupData[gid].margin : null;
+ var _mgnGrpVal = _isMgnGrp ? _getGroupMarginPct(gid) : null;
  var heatColor = _isMgnGrp ? (_mgnGrpVal != null ? marginHeatColor(_mgnGrpVal, gid) : '#9ca3af') : (tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af');
  var PAD = 8;
 
@@ -14469,7 +14492,7 @@ function showSalesZoneCard(m, zEl) {
  var _isMgn = (window._salesSubTab === 'margin');
  // 그룹 fake metric이면 m.z.id가 이미 gid, 아니면 zone → 그룹 역탐색
  var _mGid  = _isMgn ? (window.salesGroupData && window.salesGroupData[m.z.id] !== undefined ? m.z.id : _getGroupForZone(m.z.id)) : null;
- var _mVal  = (_isMgn && _mGid != null && window.salesGroupData && window.salesGroupData[_mGid] && window.salesGroupData[_mGid].margin != null) ? window.salesGroupData[_mGid].margin : null;
+ var _mVal  = (_isMgn && _mGid != null) ? _getGroupMarginPct(_mGid) : null;
  var _mTgt  = _isMgn ? _getMarginTarget(_mGid || m.z.id) : null;
 
  card.style.cssText =
@@ -15557,12 +15580,10 @@ function renderRankTab(container, metrics, avgPerSales, highEff, sorted_ps) {
 
  // ── 이익 기여도(원화) 순위 ──
  (function() {
-  const sgd = window.salesGroupData || {};
   // rankItems는 이미 perSales 내림차순 정렬됨 → psRank 추출
   const profitItems = [];
   rankItems.forEach(function(r, i) {
-   const gd = r.gid ? sgd[r.gid] : null;
-   const gm = gd && gd.grossMargin != null ? gd.grossMargin : null;
+   const gm = r.gid ? _getGroupGrossMarginPct(r.gid) : null;
    if (gm == null) return;
    profitItems.push({
     name: r.name, color: r.color, gid: r.gid, zids: r.zids,
@@ -16356,8 +16377,8 @@ function renderChangeTab(container, metrics, avgPerSales) {
 
     var curSales  = cur.sales  != null ? cur.sales  : 0;
     var prevSales = prev.sales != null ? prev.sales : 0;
-    var curMgn    = cur.margin  != null ? cur.margin  : null;
-    var prevMgn   = prev.margin != null ? prev.margin : null;
+    var curMgn    = _computeMarginFromSgdEntry(cur);
+    var prevMgn   = _computeMarginFromSgdEntry(prev);
 
     var curPS  = curSales  / area;
     var prevPS = prevSales / area;
@@ -16715,16 +16736,15 @@ function applySalesGroupOutlines() {
 
 window.debugMarginState = function() {
   var grps = window.salesGroups || {};
-  var mgd = window.marginGroupData || {};
   var sgd = window.salesGroupData || {};
-  console.group('=== marginGroupData 진단 ===');
+  console.group('=== 이익율 진단 (조회 시점 계산값 기준) ===');
   Object.keys(grps).forEach(function(gid) {
     var g = grps[gid];
-    var mgn = mgd[gid];
-    var sgdM = sgd[gid] && sgd[gid].margin;
+    var computed = _getGroupMarginPct(gid);
+    var raw = sgd[gid] || {};
     var label = (g.number||'?') + ' ' + (g.label||gid);
-    if (mgn != null || sgdM != null) {
-      console.log(label, '| marginGroupData:', mgn, '| salesGroupData.margin:', sgdM);
+    if (computed != null) {
+      console.log(label, '| 이익율:', computed, '| margin(수동):', raw.margin, '| mgnWtSum(업로드):', raw.mgnWtSum, '| sales:', raw.sales);
     } else {
       console.warn(label, '| 데이터 없음 (null/undefined)');
     }
@@ -17513,7 +17533,8 @@ function _buildGroupCard(gid, g, catKey) {
       cardGrid.appendChild(mkInp('평당매출 (만/평)',      'gdsi_ps_'+cardGid,    cPS,    '자동',     '#f97316', '#fff8f0', '0.1', function(){ updateGroupCalc(cardGid,'ps'); }));
       cardGrid.appendChild(mkInp('목표 평당매출 (만/평)', 'gdsi_tgt_'+cardGid,   cTgt,   '미설정',   '#6366f1', '#f5f3ff', '1',   function(){ updateSalesTarget(cardGid); }));
     } else {
-      var cMgn  = (window.salesGroupData && window.salesGroupData[cardGid] && window.salesGroupData[cardGid].margin !== undefined) ? window.salesGroupData[cardGid].margin : '';
+      var _cMgnVal = _getGroupMarginPct(cardGid);
+      var cMgn  = (_cMgnVal != null) ? _cMgnVal : '';
       var cMTgt = (window.marginTargets && window.marginTargets[currentStore] && window.marginTargets[currentStore][cardGid] > 0) ? window.marginTargets[currentStore][cardGid] : '';
       cardGrid.appendChild(mkInp('실이익율 (%)',  'gdsi_margin_'+cardGid, cMgn,  '예: 25', '#10b981', '#f0fdf4', '0.1', function(){ updateMarginData(cardGid); }));
       cardGrid.appendChild(mkInp('목표 이익율 (%)', 'gdsi_mtgt_'+cardGid, cMTgt, '미설정', '#6366f1', '#f5f3ff', '0.1', function(){ updateMarginTarget(cardGid); }));
@@ -20698,17 +20719,20 @@ function _zsuParseWeekId(h) {
   return null;
 }
 
-/* ── 헤더 → { weekId, type:'sales'|'margin' } ──
+/* ── 헤더 → { weekId, type:'sales'|'margin'|'qty', ambiguous? } ──
    "N월M주 매출" / "N월M주 매총율" 등의 접미사를 제거한 뒤 _zsuParseWeekId에 위임.
-   접미사 없으면 하위 호환으로 'sales' 처리. */
+   접미사 없으면 하위 호환으로 'sales' 처리하되 ambiguous:true를 달아 업로드
+   미리보기에서 "접미사 없어 매출로 처리됨" 경고를 띄울 수 있게 함 — 접미사를
+   빠뜨린 매총율 헤더가 조용히 매출로 둔갑해 이익율 데이터가 유실되는 문제 방지. */
 function _zsuParseWeekCol(h) {
   if (!h) return null;
   var norm = _zsuNormText(h);
   if (!norm) return null;
   var type = 'sales';
   var weekPart = norm;
+  var ambiguous = false;
   /* 매총율 계열 먼저 (더 긴 패턴 우선) */
-  var mM = norm.match(/^(.*?)\s*(매총율|매총이익율|마진율|GP율|gp|margin)$/i);
+  var mM = norm.match(/^(.*?)\s*(매총율|매총이익율|매총이익률|이익율|이익률|마진율|마진률|GP율|gp|margin)$/i);
   if (mM) { type = 'margin'; weekPart = mM[1].trim(); }
   else {
     var mQ = norm.match(/^(.*?)\s*(판매수량|수량|qty|quantity)$/i);
@@ -20716,12 +20740,13 @@ function _zsuParseWeekCol(h) {
     else {
       var mS = norm.match(/^(.*?)\s*(매출액?|sales)$/i);
       if (mS) { type = 'sales'; weekPart = mS[1].trim(); }
+      else { ambiguous = true; } // 접미사 없음 → 하위 호환으로 sales 처리하되 표시해 둠
     }
   }
   if (!weekPart) return null;
   var weekId = _zsuParseWeekId(weekPart);
   if (!weekId) return null;
-  return { weekId: weekId, type: type };
+  return { weekId: weekId, type: type, ambiguous: ambiguous, rawHeader: h };
 }
 
 /* ── 엑셀 날짜 일련번호 → 조닝번호 역변환 공통 함수 ──
@@ -20754,7 +20779,7 @@ function _zsuProcessRows(rows) {
   if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
 
   var headerRow = rows[0];
-  var weekCols = [], unmatchedHeaders = [];
+  var weekCols = [], unmatchedHeaders = [], ambiguousHeaders = [];
   /* A열=MC명, B열=상품코드(선택) — 주차 열은 C열(인덱스 2)부터 시작 */
   for (var c = 2; c < headerRow.length; c++) {
     var h = String(headerRow[c] || '').trim();
@@ -20762,6 +20787,7 @@ function _zsuProcessRows(rows) {
     var wc = _zsuParseWeekCol(h);
     weekCols.push(wc);
     if (!wc) unmatchedHeaders.push(h);
+    else if (wc.ambiguous) ambiguousHeaders.push(h);
   }
   var weekIds = [];
   weekCols.forEach(function(wc) {
@@ -20807,7 +20833,7 @@ function _zsuProcessRows(rows) {
     }
   }
 
-  window._zsuParsed = { weekCols: weekCols, weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders };
+  window._zsuParsed = { weekCols: weekCols, weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum, unmatchedHeaders: unmatchedHeaders, ambiguousHeaders: ambiguousHeaders };
   _zsuRenderPreview(window._zsuParsed);
 }
 
@@ -20967,6 +20993,7 @@ function _zsuRenderPreview(parsed) {
   var html = '<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:' + (allOk?'#ecfdf5':'#fffbeb') + ';border:1px solid ' + (allOk?'#34d399':'#fbbf24') + ';">'
     + '<span style="font-size:11px;font-weight:800;color:' + (allOk?'#065f46':'#92400e') + ';">✅ ' + matchedRows + '개 품목 매칭 | ⚠️ ' + unmatchedCnt + '개 미매칭</span>'
     + ((parsed.unmatchedHeaders||[]).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
+    + ((parsed.ambiguousHeaders||[]).length ? '<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px;">⚠️ "' + parsed.ambiguousHeaders.join(', ') + '" — 매출/매총율 구분 접미사가 없어 매출로 처리됩니다. 매총율이었다면 헤더를 "N월M주 매총율"로 바꿔 다시 업로드하세요.</div>' : '')
     + (_hasMgnCols ? '<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">📊 매총율 열 감지 — 매출 가중 평균 후 −22% 차감해 이익율로 반영</div>' : '')
     + (_hasQtyCols  ? '<div style="font-size:9px;color:#0369a1;font-weight:700;margin-top:2px;">📦 판매수량 열 감지 — 그룹·주차별 수량 저장 (이익 기여도·회전율 분석에 활용)</div>' : '')
     + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">구역·유지 여부를 자유롭게 수정 가능 — 아직 반영 안 됨. 하단 <b style="color:#059669;">도면에 적용하기</b> 버튼을 눌러야 저장됩니다.</div>'
@@ -21199,22 +21226,17 @@ function applyZoneSalesUpload() {
       if (!gid) return;
       if (!groupAccum[gid]) groupAccum[gid] = {
         weekSales: {}, mcNames: [],
-        weekMgnWtSum: {}, weekMgnWtTot: {},
-        weekMgnSimpleSum: {}, weekMgnSimpleCnt: {},
+        weekMgnWtSum: {},
         weekQty: {}
       };
       if (groupAccum[gid].mcNames.indexOf(rr.raw) < 0) groupAccum[gid].mcNames.push(rr.raw);
       var sl = (rr.weekSales||{})[wid] || 0;
       if (sl > 0) groupAccum[gid].weekSales[wid] = (groupAccum[gid].weekSales[wid] || 0) + sl;
+      /* 매출×매총율 가중합만 누적 — 가중평균·−22% 계산은 read 시점(_getGroupMarginPct)에서 수행.
+         (평당매출과 동일하게: 저장은 원본 합계만, 파생값은 항상 조회 시점 계산) */
       var mgn = (rr.weekMargins||{})[wid];
-      if (mgn != null) {
-        if (sl > 0) {
-          groupAccum[gid].weekMgnWtSum[wid]  = (groupAccum[gid].weekMgnWtSum[wid]  || 0) + sl * mgn;
-          groupAccum[gid].weekMgnWtTot[wid]  = (groupAccum[gid].weekMgnWtTot[wid]  || 0) + sl;
-        } else {
-          groupAccum[gid].weekMgnSimpleSum[wid] = (groupAccum[gid].weekMgnSimpleSum[wid] || 0) + mgn;
-          groupAccum[gid].weekMgnSimpleCnt[wid] = (groupAccum[gid].weekMgnSimpleCnt[wid] || 0) + 1;
-        }
+      if (mgn != null && sl > 0) {
+        groupAccum[gid].weekMgnWtSum[wid] = (groupAccum[gid].weekMgnWtSum[wid] || 0) + sl * mgn;
       }
       var qt = (rr.weekQty||{})[wid];
       if (qt != null && qt >= 0) groupAccum[gid].weekQty[wid] = (groupAccum[gid].weekQty[wid] || 0) + qt;
@@ -21337,25 +21359,14 @@ function applyZoneSalesUpload() {
     if (typeof _updateMonthlyAggregateFromWeeks === 'function') _updateMonthlyAggregateFromWeeks(store, moIdx);
   });
 
-  /* 3) 매총율 → 이익율(−22%) → weeklySalesStore 반영 */
+  /* 3) 매출×매총율 가중합(mgnWtSum) → weeklySalesStore 반영
+     가중평균·−22% 계산은 여기서 하지 않음 — read 시점(_getGroupMarginPct)에서
+     sales와 대칭으로 계산. 업로드 시점에 "조용히 skip"하는 분기 자체를 없앰. */
   var marginAppliedCount = 0;
-  if (!window.marginGroupData) window.marginGroupData = {};
   Object.keys(groupAccum).forEach(function(gid) {
     var acc = groupAccum[gid];
-    var mgnWids = {};
-    Object.keys(acc.weekMgnWtSum    || {}).forEach(function(w){ mgnWids[w] = 1; });
-    Object.keys(acc.weekMgnSimpleSum|| {}).forEach(function(w){ mgnWids[w] = 1; });
-    Object.keys(mgnWids).forEach(function(wid) {
-      var grossMargin;
-      var wtTot = (acc.weekMgnWtTot || {})[wid] || 0;
-      if (wtTot > 0) {
-        grossMargin = (acc.weekMgnWtSum[wid] || 0) / wtTot;
-      } else {
-        var cnt = (acc.weekMgnSimpleCnt || {})[wid] || 0;
-        if (cnt > 0) grossMargin = (acc.weekMgnSimpleSum[wid] || 0) / cnt;
-      }
-      if (grossMargin == null) return;
-      var netMargin = Math.round((grossMargin - 22) * 10) / 10;
+    Object.keys(acc.weekMgnWtSum || {}).forEach(function(wid) {
+      var wtSum = acc.weekMgnWtSum[wid];
       var wd = window.weeklySalesStore[store][wid];
       if (!wd) {
         wd = { salesData:{}, areaData: JSON.parse(JSON.stringify(window.areaData||{})), salesGroups:{}, salesGroupData:{} };
@@ -21363,14 +21374,11 @@ function applyZoneSalesUpload() {
       }
       if (!wd.salesGroupData) wd.salesGroupData = {};
       if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
-      wd.salesGroupData[gid].margin = netMargin;
-      wd.salesGroupData[gid].grossMargin = Math.round(grossMargin * 10) / 10;
+      wd.salesGroupData[gid].mgnWtSum = wtSum;
       if (window.currentSalesWeek === wid) {
-        window.marginGroupData[gid] = netMargin;
         if (!window.salesGroupData) window.salesGroupData = {};
         if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
-        window.salesGroupData[gid].margin = netMargin;
-        window.salesGroupData[gid].grossMargin = Math.round(grossMargin * 10) / 10;
+        window.salesGroupData[gid].mgnWtSum = wtSum;
       }
       marginAppliedCount++;
     });
@@ -21416,7 +21424,7 @@ function applyZoneSalesUpload() {
        없고 기존 marginGroupData(기본값)만 갖고 있으므로, 초기화하면 화면에서 사라짐. */
     if (!window.marginGroupData) window.marginGroupData = {};
     Object.keys(window.salesGroupData).forEach(function(gid) {
-      var m = window.salesGroupData[gid] && window.salesGroupData[gid].margin;
+      var m = _getGroupMarginPct(gid);
       if (m != null) window.marginGroupData[gid] = m;
     });
   }
@@ -21455,7 +21463,8 @@ function _zsuRestoreSnapshot(moKey) {
       };
     }),
     groupAccum: {},
-    unmatchedHeaders: []
+    unmatchedHeaders: [],
+    ambiguousHeaders: []
   };
   window._zsuParsed = parsed;
   _zsuRenderPreview(parsed);
