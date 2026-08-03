@@ -20607,7 +20607,16 @@ function _zsuNormText(s) {
     .trim();
 }
 
-/* ── 조닝번호/MC명/상품코드 → {gid, via} — sku는 업로드 B열에서 명시적으로 읽은 값 ── */
+/* ── 그룹이 도면에 실제로 배치되어 있는지(zoneIds 보유) 검증 ──
+   zoneIds가 없는 그룹(고아 그룹)은 도면에 전혀 렌더링되지 않으므로 업로드 매칭 대상에서 제외 */
+function _zsuIsLiveGroup(g) {
+  return !!(g && g.zoneIds && g.zoneIds.length > 0);
+}
+
+/* ── 조닝번호/MC명/상품코드 → {gid, via} — sku는 업로드 B열에서 명시적으로 읽은 값 ──
+   매칭 대상은 항상 zoneIds를 가진(도면에 실제로 표시되는) 살아있는 그룹으로 한정한다.
+   조닝번호가 같은 고아 그룹(zoneIds 없음)이 먼저 매칭되어 업로드 데이터가 도면에
+   표시되지 않는 그룹으로 조용히 흡수되는 문제(예: "14-1 견과" 중복 그룹)를 방지. */
 function _zsuMatchGroup(str, weekId, sku) {
   if (!str) return { gid: null, via: null };
   var s = _zsuNormText(str);
@@ -20623,10 +20632,10 @@ function _zsuMatchGroup(str, weekId, sku) {
     if (skuEntry && skuEntry.z) {
       var sz = String(skuEntry.z).trim();
       for (var gs0 in groups) {
-        if (groups[gs0].number && String(groups[gs0].number).trim() === sz) return { gid: gs0, via: 'SKU→' + sz };
+        if (_zsuIsLiveGroup(groups[gs0]) && groups[gs0].number && String(groups[gs0].number).trim() === sz) return { gid: gs0, via: 'SKU→' + sz };
       }
       for (var gs0b in groups) {
-        if (groups[gs0b].label && String(groups[gs0b].label).trim() === sz) return { gid: gs0b, via: 'SKU→그룹명' };
+        if (_zsuIsLiveGroup(groups[gs0b]) && groups[gs0b].label && String(groups[gs0b].label).trim() === sz) return { gid: gs0b, via: 'SKU→그룹명' };
       }
     }
   }
@@ -20637,18 +20646,18 @@ function _zsuMatchGroup(str, weekId, sku) {
     if (mcMap[i].mc === s) {
       var zoning = mcMap[i].z;
       for (var g1 in groups) {
-        if (groups[g1].number && String(groups[g1].number).trim() === zoning) return { gid: g1, via: 'MC→' + zoning };
+        if (_zsuIsLiveGroup(groups[g1]) && groups[g1].number && String(groups[g1].number).trim() === zoning) return { gid: g1, via: 'MC→' + zoning };
       }
-      return { gid: null, via: 'MC→' + zoning + '(그룹없음)' };
+      return { gid: null, via: 'MC→' + zoning + '(살아있는 그룹없음)' };
     }
   }
   /* 2순위: 조닝번호 직접 */
   for (var g2 in groups) {
-    if (groups[g2].number && String(groups[g2].number).trim() === s) return { gid: g2, via: '조닝번호' };
+    if (_zsuIsLiveGroup(groups[g2]) && groups[g2].number && String(groups[g2].number).trim() === s) return { gid: g2, via: '조닝번호' };
   }
   /* 3순위: 그룹명 직접 */
   for (var g3 in groups) {
-    if (groups[g3].label && String(groups[g3].label).trim() === s) return { gid: g3, via: '그룹명' };
+    if (_zsuIsLiveGroup(groups[g3]) && groups[g3].label && String(groups[g3].label).trim() === s) return { gid: g3, via: '그룹명' };
   }
   return { gid: null, via: null };
 }
