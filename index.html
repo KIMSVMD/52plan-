@@ -15519,95 +15519,199 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  '</div>';
  sumWrap.appendChild(gradeBar);
 
- // ─── 월별 평당매출 추이 미니 차트 ───
- (function renderMonthlyTrend() {
- if (!window.monthlySalesStore || !window.monthlySalesStore[currentStore]) return;
- const mStore = window.monthlySalesStore[currentStore];
- const months = (typeof MONTHS !== 'undefined') ? MONTHS : [
- {idx:0,label:'1월'},{idx:1,label:'2월'},{idx:2,label:'3월'},{idx:3,label:'4월'},
- {idx:4,label:'5월'},{idx:5,label:'6월'},{idx:6,label:'7월'},{idx:7,label:'8월'},
- {idx:8,label:'9월'},{idx:9,label:'10월'},{idx:10,label:'11월'},{idx:11,label:'12월'}
- ];
- const vals = months.map(function(m) {
- const md = mStore[_salesMonthKey(m.idx)];
- if (!md) return null;
- const gd = md.salesGroupData || {};
- const sv = Object.keys(gd).length > 0
- ? Object.values(gd).reduce(function(s,g){return s+(Number(g.sales)||0);},0)
- : Object.values(md.salesData||{}).reduce(function(s,v){return s+(Number(v)||0);},0);
- const av = Object.keys(gd).length > 0
- ? Object.values(gd).reduce(function(s,g){return s+(Number(g.area)||0);},0)
- : Object.values(md.areaData||{}).reduce(function(s,v){return s+(Number(v)||0);},0);
- return av > 0 ? Math.round(sv / av) : (sv > 0 ? sv : null);
+ // ─── 주차별 추이 꺾은선 그래프 (지표 탭에 따라 평당매출/이익율/객수 전환) ───
+ (function renderWeeklyTrend() {
+ var wStore = (window.weeklySalesStore && window.weeklySalesStore[currentStore]) || {};
+ var weeksArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+ if (!weeksArr.length) return;
+ var subTab = window._salesSubTab || 'perSales';
+ var metricLabel = subTab === 'margin' ? '이익율' : subTab === 'visits' ? '객수' : '평당매출';
+ var metricUnit  = subTab === 'margin' ? '%' : subTab === 'visits' ? '건/평' : '만/평';
+
+ /* 주차별: 지표 평균값 + 총매출 + A등급 구역수 — 전부 그 주차의 원본 데이터에서 매번 새로 계산
+    (write 시점 캐시나 fallback 없음 — 데이터 없는 주차는 hasData:false로 명확히 구분) */
+ var pts = weeksArr.map(function(w) {
+ var wd = wStore[w.id];
+ var sgd = (wd && wd.salesGroupData) || {};
+ var gids = Object.keys(sgd);
+ if (!gids.length) return { weekId: w.id, mo: w.mo, wom: w.wom, label: w.label, metricVal: null, totalSales: null, gradeACount: null, hasData: false };
+
+ var totalSales = 0, totalArea = 0;
+ var rows = gids.map(function(gid) {
+ var g = sgd[gid];
+ var sales = Number(g.sales) || 0, area = Number(g.area) || 0;
+ totalSales += sales; totalArea += area;
+ return { gid: gid, sales: sales, area: area, margin: _computeMarginFromSgdEntry(g), visits: g.visits };
  });
- const hasAny = vals.some(function(v){return v !== null;});
- if (!hasAny) return;
+ var gradeACount = 0;
+ rows.forEach(function(r) {
+ var contrib = totalSales > 0 ? r.sales / totalSales : 0;
+ var areaShare = totalArea > 0 ? r.area / totalArea : 0;
+ var effIdx = areaShare > 0 ? contrib / areaShare : 0;
+ if (effIdx >= 1.2) gradeACount++;
+ });
 
- const trendWrap = document.createElement('div');
- trendWrap.style.cssText = 'padding:5px 12px 7px;border-top:1px solid #f1f5f9;';
- trendWrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:9px;font-weight:700;color:#374151;"> 월별 추이</span><span style="font-size:8px;color:#9ca3af;">클릭으로 월 전환</span></div>';
-
- const maxVal = Math.max.apply(null, vals.filter(function(v){return v!==null;})) || 1;
- const chartH = 28;
- const barW = 12;
- const barGap = 3;
- const totalW = months.length * (barW + barGap);
-
- const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
- svg.setAttribute('width', totalW);
- svg.setAttribute('height', chartH + 16);
- svg.style.cssText = 'overflow:visible;display:block;margin:0 auto;';
-
- vals.forEach(function(v, i) {
- const x = i * (barW + barGap);
- const isActive = window.currentSalesMonth === months[i].idx;
- const isCurMonth = (typeof curMonthIdx !== 'undefined') && curMonthIdx === months[i].idx;
- const hasVal = v !== null;
- const bh = hasVal ? Math.max(4, Math.round((v / maxVal) * chartH)) : 3;
- const by = chartH - bh;
- const fillColor = !hasVal ? '#374151' : (isActive ? '#38bdf8' : (isCurMonth ? '#818cf8' : '#3b82f6'));
-
- const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
- rect.setAttribute('x', x); rect.setAttribute('y', by);
- rect.setAttribute('width', barW); rect.setAttribute('height', bh);
- rect.setAttribute('rx', '3'); rect.setAttribute('fill', fillColor);
- rect.setAttribute('opacity', hasVal ? '1' : '0.2');
- rect.style.cursor = 'pointer';
- rect.setAttribute('title', months[i].label + (hasVal ? ': ' + v + '만원/평' : ': 데이터 없음'));
- rect.addEventListener('click', (function(mi){ return function(){
- // 기존 jumpToMonth 활용 (nav 탭도 같이 변경)
- if (typeof jumpToMonth === 'function') jumpToMonth(mi);
- else switchSalesMonth(mi);
- }; })(months[i].idx));
- svg.appendChild(rect);
-
- if (hasVal && v > 0) {
- const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
- txt.setAttribute('x', x + barW/2); txt.setAttribute('y', by - 2);
- txt.setAttribute('text-anchor','middle'); txt.setAttribute('font-size','7');
- txt.setAttribute('fill', isActive ? '#38bdf8' : '#9ca3af');
- txt.setAttribute('font-weight', isActive ? '800' : '500');
- txt.textContent = v >= 1000 ? (Math.round(v/100)/10)+'k' : v;
- svg.appendChild(txt);
+ var metricVal = null;
+ if (subTab === 'margin') {
+ var wtSum = 0, wtTot = 0;
+ rows.forEach(function(r) { if (r.margin != null && r.sales > 0) { wtSum += r.sales * r.margin; wtTot += r.sales; } });
+ metricVal = wtTot > 0 ? wtSum / wtTot : null;
+ } else if (subTab === 'visits') {
+ var vSum = 0, vCnt = 0;
+ rows.forEach(function(r) { if (r.visits != null && r.area > 0) { vSum += r.visits / r.area; vCnt++; } });
+ metricVal = vCnt > 0 ? vSum / vCnt : null;
+ } else {
+ metricVal = totalArea > 0 ? totalSales / totalArea : null;
  }
 
- const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
- lbl.setAttribute('x', x + barW/2); lbl.setAttribute('y', chartH + 13);
- lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('font-size','7.5');
- lbl.setAttribute('fill', isActive ? '#38bdf8' : (isCurMonth ? '#818cf8' : '#9ca3af'));
- lbl.setAttribute('font-weight', (isActive || isCurMonth) ? '800' : '400');
- lbl.textContent = months[i].label.replace('월','');
+ return { weekId: w.id, mo: w.mo, wom: w.wom, label: w.label, metricVal: metricVal,
+ totalSales: totalSales > 0 ? totalSales : null, gradeACount: gradeACount, hasData: metricVal != null };
+ });
+
+ var hasAny = pts.some(function(p){ return p.hasData; });
+ if (!hasAny) return;
+
+ var trendWrap = document.createElement('div');
+ trendWrap.style.cssText = 'padding:5px 12px 7px;border-top:1px solid #f1f5f9;';
+ trendWrap.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+ + '<span style="font-size:9px;font-weight:700;color:#374151;"> 주차별 추이 (' + metricLabel + ')</span>'
+ + '<span style="font-size:8px;color:#9ca3af;">클릭으로 주차 이동</span></div>';
+
+ // ── 범례(클릭 토글) ──
+ var legendRow = document.createElement('div');
+ legendRow.style.cssText = 'display:flex;gap:10px;margin-bottom:3px;';
+ function legendItem(colorCss, dashed, text) {
+ var it = document.createElement('span');
+ it.style.cssText = 'display:inline-flex;align-items:center;gap:3px;font-size:8px;font-weight:700;color:#6b7280;cursor:pointer;user-select:none;';
+ it.innerHTML = '<span style="display:inline-block;width:12px;height:0;border-top:2px ' + (dashed?'dashed':'solid') + ' ' + colorCss + ';"></span>' + text;
+ return it;
+ }
+ var legend1 = legendItem('#f97316', false, metricLabel);
+ var legend2 = legendItem('#8b5cf6', true, '총매출');
+ legendRow.appendChild(legend1); legendRow.appendChild(legend2);
+ trendWrap.appendChild(legendRow);
+
+ var chartH = 46, padTop = 8, padBottom = 14, padL = 2, padR = 2;
+ var stepX = 7;
+ var totalW = pts.length * stepX + padL + padR;
+ var svgH = chartH + padTop + padBottom;
+
+ var svgWrapOuter = document.createElement('div');
+ svgWrapOuter.style.cssText = 'overflow-x:auto;overflow-y:hidden;';
+ var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+ svg.setAttribute('width', totalW);
+ svg.setAttribute('height', svgH);
+ svg.style.cssText = 'overflow:visible;display:block;';
+
+ var validVals = pts.filter(function(p){return p.hasData;}).map(function(p){return p.metricVal;});
+ var minV = Math.min.apply(null, validVals), maxV = Math.max.apply(null, validVals);
+ if (minV === maxV) { minV -= 1; maxV += 1; }
+ function yOf(v) { return padTop + chartH - ((v - minV) / (maxV - minV)) * chartH; }
+
+ var validSales = pts.filter(function(p){return p.totalSales != null;}).map(function(p){return p.totalSales;});
+ var maxSales = validSales.length ? Math.max.apply(null, validSales) : 1;
+ function ySalesOf(v) { return padTop + chartH - (v / (maxSales || 1)) * chartH; }
+
+ var maxGradeA = Math.max.apply(null, pts.map(function(p){return p.gradeACount||0;})) || 1;
+ function radiusOf(cnt) { return 1.5 + (cnt / maxGradeA) * 3; }
+
+ function xOf(i) { return padL + i * stepX + stepX/2; }
+
+ var curWeekIdx = -1;
+ if (window.currentSalesWeek) { curWeekIdx = weeksArr.findIndex(function(w){ return w.id === window.currentSalesWeek; }); }
+
+ // ── 월 경계 눈금 ──
+ pts.forEach(function(p, i) {
+ if (p.wom !== 1) return;
+ var tick = document.createElementNS('http://www.w3.org/2000/svg','line');
+ tick.setAttribute('x1', xOf(i)); tick.setAttribute('x2', xOf(i));
+ tick.setAttribute('y1', padTop); tick.setAttribute('y2', padTop + chartH);
+ tick.setAttribute('stroke', '#f1f5f9'); tick.setAttribute('stroke-width', '1');
+ svg.appendChild(tick);
+ var lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+ lbl.setAttribute('x', xOf(i)); lbl.setAttribute('y', svgH - 3);
+ lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('font-size','6.5'); lbl.setAttribute('fill','#9ca3af');
+ lbl.textContent = (p.mo+1) + '월';
  svg.appendChild(lbl);
  });
 
- trendWrap.appendChild(svg);
+ // ── 총매출 선(점선, 보조축) — 데이터 없는 구간은 끊어서 그림 ──
+ var salesPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+ var salesD = '', salesOpen = false;
+ pts.forEach(function(p, i) {
+ if (p.totalSales == null) { salesOpen = false; return; }
+ var cmd = salesOpen ? 'L' : 'M';
+ salesD += cmd + xOf(i) + ' ' + ySalesOf(p.totalSales) + ' ';
+ salesOpen = true;
+ });
+ salesPath.setAttribute('d', salesD.trim());
+ salesPath.setAttribute('fill', 'none');
+ salesPath.setAttribute('stroke', '#8b5cf6');
+ salesPath.setAttribute('stroke-width', '1.3');
+ salesPath.setAttribute('stroke-dasharray', '3,2');
+ salesPath.setAttribute('opacity', '0.75');
+ svg.appendChild(salesPath);
 
- const curLabel = window.currentSalesMonth !== null && window.currentSalesMonth !== undefined
- ? ((typeof MONTHS !== 'undefined' ? MONTHS[window.currentSalesMonth].label : (window.currentSalesMonth+1)+'월'))
- : '종합';
- const info = document.createElement('div');
+ // ── 지표 선(실선) — 데이터 없는 구간은 끊어서 그림 ──
+ var metricD = '', metricOpen = false;
+ pts.forEach(function(p, i) {
+ if (!p.hasData) { metricOpen = false; return; }
+ var cmd = metricOpen ? 'L' : 'M';
+ metricD += cmd + xOf(i) + ' ' + yOf(p.metricVal) + ' ';
+ metricOpen = true;
+ });
+ var metricPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+ metricPath.setAttribute('d', metricD.trim());
+ metricPath.setAttribute('fill', 'none');
+ metricPath.setAttribute('stroke', '#f97316');
+ metricPath.setAttribute('stroke-width', '1.6');
+ svg.appendChild(metricPath);
+
+ legend1.onclick = function() {
+ var on = metricPath.style.display !== 'none';
+ metricPath.style.display = on ? 'none' : '';
+ legend1.style.opacity = on ? '0.4' : '1';
+ };
+ legend2.onclick = function() {
+ var on = salesPath.style.display !== 'none';
+ salesPath.style.display = on ? 'none' : '';
+ legend2.style.opacity = on ? '0.4' : '1';
+ };
+
+ // ── 점 + 클릭/툴팁 (A등급 구역수 → 점 크기) ──
+ pts.forEach(function(p, i) {
+ var isCur = i === curWeekIdx;
+ var dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+ dot.setAttribute('cx', xOf(i));
+ dot.setAttribute('cy', p.hasData ? yOf(p.metricVal) : (padTop + chartH));
+ dot.setAttribute('r', p.hasData ? (isCur ? radiusOf(p.gradeACount) + 1.5 : radiusOf(p.gradeACount)) : 1.2);
+ dot.setAttribute('fill', !p.hasData ? '#d1d5db' : (isCur ? '#dc2626' : '#f97316'));
+ dot.setAttribute('opacity', p.hasData ? '1' : '0.4');
+ dot.style.cursor = 'pointer';
+ var tipVal = p.hasData ? (Math.round(p.metricVal*10)/10) + metricUnit : '데이터 없음';
+ dot.setAttribute('title', p.label + ': ' + tipVal + (p.totalSales!=null ? ' · 총매출 ' + fmtM(p.totalSales) : '') + ' · A등급 ' + (p.gradeACount||0) + '개');
+ dot.addEventListener('click', (function(week){ return function(){
+ if (typeof switchSalesMonth === 'function') switchSalesMonth(week.mo);
+ if (typeof switchSalesWeek === 'function') switchSalesWeek(week.weekId);
+ }; })(p));
+ svg.appendChild(dot);
+ });
+
+ svgWrapOuter.appendChild(svg);
+ trendWrap.appendChild(svgWrapOuter);
+
+ // 현재 주차로 자동 스크롤
+ if (curWeekIdx >= 0) {
+ setTimeout(function() {
+ var targetX = xOf(curWeekIdx) - svgWrapOuter.clientWidth / 2;
+ svgWrapOuter.scrollLeft = Math.max(0, targetX);
+ }, 0);
+ }
+
+ var curWLabel = window.currentSalesWeek ? (weeksArr[curWeekIdx] ? weeksArr[curWeekIdx].label : window.currentSalesWeek) : '월 전체';
+ var info = document.createElement('div');
  info.style.cssText = 'font-size:8px;color:#64748b;text-align:center;margin-top:3px;';
- info.textContent = '현재: ' + curLabel + ' · 보라색=현재 상단 월 탭 · 파란색=데이터 있음';
+ info.textContent = '현재: ' + curWLabel + ' · 점 크기=A등급 구역수 · 빨간점=현재 주차 · 점선=데이터 없음(끊김)';
  trendWrap.appendChild(info);
 
  sumWrap.appendChild(trendWrap);
