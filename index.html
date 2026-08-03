@@ -3184,6 +3184,7 @@ window.onerror = function(msg, src, line, col, err) {
  <div style="padding:5px 0;">
   <button class="draw-edit-item" onclick="toggleSalesGroupEdit();closeSalInputDrop();"> 구역 그룹</button>
   <button class="draw-edit-item" onclick="openZoneSalesUploadModal();closeSalInputDrop();">📥 구역 매출 업로드</button>
+  <button class="draw-edit-item" onclick="openZoneVisitUploadModal();closeSalInputDrop();">🧾 객수(방문) 업로드</button>
   <button class="draw-edit-item" onclick="openZoningMcMapModal();closeSalInputDrop();">🗺️ MC 매핑표</button>
   <div class="draw-edit-sep"></div>
   <button class="draw-edit-item" onclick="openSalesDataModal();closeSalInputDrop();">️ 데이터 입력</button>
@@ -3290,6 +3291,7 @@ window.onerror = function(msg, src, line, col, err) {
   <span style="font-size:9px;font-weight:800;color:#9ca3af;letter-spacing:.5px;margin-right:2px;">지표</span>
   <button id="salesSubTab_perSales" onclick="_setSalesSubTab('perSales')" style="padding:4px 14px;border:1.5px solid #6366f1;border-radius:6px;background:#6366f1;color:#fff;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:800;cursor:pointer;transition:all .12s;">평당매출</button>
   <button id="salesSubTab_margin"   onclick="_setSalesSubTab('margin')"   style="padding:4px 14px;border:1.5px solid #d1d5db;border-radius:6px;background:#f3f4f6;color:#6b7280;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:600;cursor:pointer;transition:all .12s;">이익율</button>
+  <button id="salesSubTab_visits"   onclick="_setSalesSubTab('visits')"   style="padding:4px 14px;border:1.5px solid #d1d5db;border-radius:6px;background:#f3f4f6;color:#6b7280;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:600;cursor:pointer;transition:all .12s;">객수</button>
   <div style="width:1px;height:16px;background:#d1d5db;margin:0 6px;flex-shrink:0;"></div>
   <button id="salesHeatmapToggle" onclick="_toggleSalesHeatmap()" title="지표 색상은 그대로 두고, 매출×판매수량 기준 동선 히트맵을 도면 위에 겹쳐 보여줍니다" style="padding:4px 12px;border:1.5px dashed #f97316;border-radius:6px;background:transparent;color:#f97316;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;transition:all .12s;white-space:nowrap;">🔥 동선 Heat Map</button>
  </div>
@@ -12031,6 +12033,47 @@ function _getStoreNetProfitTotals() {
  return { totalProfit: totalProfit, avgMarginPct: wtSalesTot > 0 ? wtMgnSum / wtSalesTot : null };
 }
 
+/* ══════════ 객수(방문) 지표 — sales와 동일한 구조: 저장은 원본(영수증건수 합계)만,
+   "평당 방문건수"는 항상 조회 시점에 salesGroupData[gid].visits / area로 계산.
+   목표값 개념이 없어 매장 평균 대비 상대 순위로만 등급 매김. ══════════ */
+const VISIT_REL_GREEN  = 1.2; // 매장 평균의 120% 이상 → 초록
+const VISIT_REL_YELLOW = 0.8; // 매장 평균의 80% 이상 → 노랑, 미만 → 빨강
+
+function _getGroupVisitPerArea(gid) {
+ var sgd = window.salesGroupData && window.salesGroupData[gid];
+ if (!sgd || sgd.visits == null || !(sgd.area > 0)) return null;
+ return sgd.visits / sgd.area;
+}
+
+/* 매장 전체 "평당 방문건수" 평균(구역 수 기준 단순평균) — 상대 등급 매김의 기준선 */
+function _getStoreAvgVisitPerArea() {
+ var grps = window.salesGroups || {};
+ var sum = 0, cnt = 0;
+ Object.keys(grps).forEach(function(gid) {
+  var v = _getGroupVisitPerArea(gid);
+  if (v == null) return;
+  sum += v; cnt++;
+ });
+ return cnt > 0 ? sum / cnt : null;
+}
+
+function visitHeatColor(perArea, avgPerArea) {
+ if (!perArea) return '#9ca3af';
+ if (!avgPerArea || avgPerArea <= 0) return '#9ca3af';
+ var ratio = perArea / avgPerArea;
+ if (ratio >= VISIT_REL_GREEN) return '#16a34a';
+ if (ratio >= VISIT_REL_YELLOW) return '#eab308';
+ return '#dc2626';
+}
+function visitBorderColor(perArea, avgPerArea) {
+ if (!perArea) return '#6b7280';
+ if (!avgPerArea || avgPerArea <= 0) return '#6b7280';
+ var ratio = perArea / avgPerArea;
+ if (ratio >= VISIT_REL_GREEN) return '#15803d';
+ if (ratio >= VISIT_REL_YELLOW) return '#ca8a04';
+ return '#b91c1c';
+}
+
 function marginHeatColor(val, id) {
  return pctColor(val, _getMarginTarget(id), MARGIN_FALLBACK_GREEN, MARGIN_FALLBACK_YELLOW, '#16a34a', '#eab308', '#dc2626', '#9ca3af');
 }
@@ -12133,7 +12176,7 @@ window._salesSubTab = window._salesSubTab || 'perSales';
 /* ── 숫자 탭 서브탭 전환 ── */
 function _setSalesSubTab(tab) {
  window._salesSubTab = tab;
- ['perSales','margin'].forEach(function(k) {
+ ['perSales','margin','visits'].forEach(function(k) {
   var btn = document.getElementById('salesSubTab_' + k);
   if (!btn) return;
   var active = k === tab;
@@ -12951,10 +12994,17 @@ function refreshSalesContent(gcEl, panelEl) {
  } else {
  if (m) {
  var _isMgnMode = (window._salesSubTab === 'margin');
- var _mgnGid = _isMgnMode ? _getGroupForZone(m.z.id) : null;
+ var _isVisitMode = (window._salesSubTab === 'visits');
+ var _mgnGid = (_isMgnMode || _isVisitMode) ? _getGroupForZone(m.z.id) : null;
  var _mgnVal = _isMgnMode && _mgnGid ? _getGroupMarginPct(_mgnGid) : null;
- zEl.style.background = m.isDead ? '#6b7280' : (_isMgnMode ? (_mgnVal != null ? marginHeatColor(_mgnVal, _mgnGid || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
- zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : (_isMgnMode ? (_mgnVal != null ? marginBorderColor(_mgnVal, _mgnGid || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id)));
+ var _visitVal = _isVisitMode && _mgnGid ? _getGroupVisitPerArea(_mgnGid) : null;
+ var _visitAvg = _isVisitMode ? _getStoreAvgVisitPerArea() : null;
+ zEl.style.background = m.isDead ? '#6b7280' : (_isMgnMode ? (_mgnVal != null ? marginHeatColor(_mgnVal, _mgnGid || m.z.id) : '#9ca3af')
+  : _isVisitMode ? (_visitVal != null ? visitHeatColor(_visitVal, _visitAvg) : '#9ca3af')
+  : salesColor(m.perSales, m.z.id));
+ zEl.style.outline = '4px solid ' + (m.isDead ? '#374151' : (_isMgnMode ? (_mgnVal != null ? marginBorderColor(_mgnVal, _mgnGid || m.z.id) : '#6b7280')
+  : _isVisitMode ? (_visitVal != null ? visitBorderColor(_visitVal, _visitAvg) : '#6b7280')
+  : salesBorderColor(m.perSales, m.z.id)));
  zEl.style.outlineOffset = '1px';
  zEl.style.opacity = '1';
  const zi = zEl.querySelector('.zi');
@@ -12962,7 +13012,9 @@ function refreshSalesContent(gcEl, panelEl) {
  zi.innerHTML = '';
  const numDiv = document.createElement('div');
  numDiv.style.cssText = 'font-size:12px;font-weight:900;color:#fff;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,.5);text-align:center;width:100%;';
- numDiv.textContent = _isMgnMode ? (_mgnVal != null ? _mgnVal.toFixed(1) + '%' : '-') : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-');
+ numDiv.textContent = _isMgnMode ? (_mgnVal != null ? _mgnVal.toFixed(1) + '%' : '-')
+  : _isVisitMode ? (_visitVal != null ? (Math.round(_visitVal*10)/10) + '건/평' : '-')
+  : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() : '-');
  zi.appendChild(numDiv);
  }
  } else {
@@ -13802,10 +13854,17 @@ function renderSalesMap(container, metrics, maxPerSales) {
  if (m) {
  // ① 배경색 = 히트맵 색상
  var _isMgnMode2 = (window._salesSubTab === 'margin');
- var _mgnGid2 = _isMgnMode2 ? _getGroupForZone(m.z.id) : null;
+ var _isVisitMode2 = (window._salesSubTab === 'visits');
+ var _mgnGid2 = (_isMgnMode2 || _isVisitMode2) ? _getGroupForZone(m.z.id) : null;
  var _mgnVal2 = _isMgnMode2 && _mgnGid2 ? _getGroupMarginPct(_mgnGid2) : null;
- const _bgColor = m.isDead ? '#6b7280' : (_isMgnMode2 ? (_mgnVal2 != null ? marginHeatColor(_mgnVal2, _mgnGid2 || m.z.id) : '#9ca3af') : salesColor(m.perSales, m.z.id));
- const _olColor = m.isDead ? '#374151' : (_isMgnMode2 ? (_mgnVal2 != null ? marginBorderColor(_mgnVal2, _mgnGid2 || m.z.id) : '#6b7280') : salesBorderColor(m.perSales, m.z.id));
+ var _visitVal2 = _isVisitMode2 && _mgnGid2 ? _getGroupVisitPerArea(_mgnGid2) : null;
+ var _visitAvg2 = _isVisitMode2 ? _getStoreAvgVisitPerArea() : null;
+ const _bgColor = m.isDead ? '#6b7280' : (_isMgnMode2 ? (_mgnVal2 != null ? marginHeatColor(_mgnVal2, _mgnGid2 || m.z.id) : '#9ca3af')
+  : _isVisitMode2 ? (_visitVal2 != null ? visitHeatColor(_visitVal2, _visitAvg2) : '#9ca3af')
+  : salesColor(m.perSales, m.z.id));
+ const _olColor = m.isDead ? '#374151' : (_isMgnMode2 ? (_mgnVal2 != null ? marginBorderColor(_mgnVal2, _mgnGid2 || m.z.id) : '#6b7280')
+  : _isVisitMode2 ? (_visitVal2 != null ? visitBorderColor(_visitVal2, _visitAvg2) : '#6b7280')
+  : salesBorderColor(m.perSales, m.z.id));
  zEl.style.background = _bgColor;
  zEl.style.borderRadius = '4px';
  zEl.style.boxShadow = '';
@@ -13821,9 +13880,13 @@ function renderSalesMap(container, metrics, maxPerSales) {
  const _elW = parseFloat(zEl.style.width) || 60;
  const _elH = parseFloat(zEl.style.height) || 40;
  const _isMgn2 = (window._salesSubTab === 'margin');
- const _mGid2  = _isMgn2 ? _getGroupForZone(m.z.id) : null;
+ const _isVisit2 = (window._salesSubTab === 'visits');
+ const _mGid2  = (_isMgn2 || _isVisit2) ? _getGroupForZone(m.z.id) : null;
  const _mV2    = _isMgn2 && _mGid2 ? _getGroupMarginPct(_mGid2) : null;
- const perSalesText = _isMgn2 ? (_mV2 > 0 ? _mV2.toFixed(1) + '%' : '-') : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() + '만/평' : '-');
+ const _vV2    = _isVisit2 && _mGid2 ? _getGroupVisitPerArea(_mGid2) : null;
+ const perSalesText = _isMgn2 ? (_mV2 > 0 ? _mV2.toFixed(1) + '%' : '-')
+  : _isVisit2 ? (_vV2 != null ? (Math.round(_vV2*10)/10) + '건/평' : '-')
+  : (m.perSales > 0 ? Math.floor(m.perSales).toLocaleString() + '만/평' : '-');
  const _zName = (m.z && m.z.name) ? m.z.name : '';
 
  // 값 표시 (크게, 한 줄)
@@ -14154,6 +14217,7 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  /* 온도 색상 스케일(파랑(0)→초록→노랑→주황→빨강(1))은 이제 JS가 아니라
     feComponentTransfer의 table 함수로 필터 안에서 직접 계산됨 (아래 heatFieldFilter 참고) —
     점 하나하나를 미리 색칠하면 밀도가 아니라 색이 섞여서 각자 따로 보이는 문제가 있었음 */
+ var _storeAvgVisitPA = (window._salesSubTab === 'visits') ? _getStoreAvgVisitPerArea() : null;
 
  Object.entries(groups).forEach(function(entry) {
  var gid = entry[0], g = entry[1];
@@ -14177,8 +14241,12 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  gMetrics.filter(m=>m.grade==='A').length > gMetrics.length/2 ? 'A' :
  gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
  var _isMgnGrp = (window._salesSubTab === 'margin');
+ var _isVisitGrp = (window._salesSubTab === 'visits');
  var _mgnGrpVal = _isMgnGrp ? _getGroupMarginPct(gid) : null;
- var heatColor = _isMgnGrp ? (_mgnGrpVal != null ? marginHeatColor(_mgnGrpVal, gid) : '#9ca3af') : (tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af');
+ var _visitGrpVal = _isVisitGrp ? _getGroupVisitPerArea(gid) : null;
+ var heatColor = _isMgnGrp ? (_mgnGrpVal != null ? marginHeatColor(_mgnGrpVal, gid) : '#9ca3af')
+  : _isVisitGrp ? (_visitGrpVal != null ? visitHeatColor(_visitGrpVal, _storeAvgVisitPA) : '#9ca3af')
+  : (tPS > 0 ? salesHeatColor(tPS, maxPerSales, gid) : '#9ca3af');
  var PAD = 8;
 
  var zRects = zids.map(zid => {
@@ -14304,7 +14372,9 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  var sp = document.createElementNS(ns, 'path');
  sp.setAttribute('d', pi.d);
  sp.setAttribute('fill', 'none');
- sp.setAttribute('stroke', _isMgnGrp ? (_mgnGrpVal != null ? marginBorderColor(_mgnGrpVal, gid) : g.color) : (tPS > 0 ? salesBorderColor(tPS, gid) : g.color));
+ sp.setAttribute('stroke', _isMgnGrp ? (_mgnGrpVal != null ? marginBorderColor(_mgnGrpVal, gid) : g.color)
+  : _isVisitGrp ? (_visitGrpVal != null ? visitBorderColor(_visitGrpVal, _storeAvgVisitPA) : g.color)
+  : (tPS > 0 ? salesBorderColor(tPS, gid) : g.color));
  sp.setAttribute('stroke-width', '4');
  sp.setAttribute('stroke-linejoin', 'round');
  sp.setAttribute('stroke-linecap', 'round');
@@ -14484,6 +14554,10 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  '<div style="font-family:Pretendard,sans-serif;font-size:'+fontSize2+'px;font-weight:900;color:#fff;'+
  'text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap;">'+
  _mgnGrpVal.toFixed(1)+'%</div>' : '') :
+ _isVisitGrp ? (_visitGrpVal != null ?
+ '<div style="font-family:Pretendard,sans-serif;font-size:'+fontSize2+'px;font-weight:900;color:#fff;'+
+ 'text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap;">'+
+ (Math.round(_visitGrpVal*10)/10)+'건/평</div>' : '') :
  (tPS>0?
  '<div style="font-family:Pretendard,sans-serif;font-size:'+fontSize2+'px;font-weight:900;color:#fff;'+
  'text-align:center;text-shadow:0 1px 6px rgba(0,0,0,.6);white-space:nowrap;">'+
@@ -14656,7 +14730,28 @@ function showSalesZoneCard(m, zEl) {
   var _mSeverity = (_profitSpaceEff < 0.5 || _mgnVsAvg < 0.5) ? 'high' : (_profitSpaceEff < 0.8 || _mgnVsAvg < 0.8) ? 'mid' : 'ok';
   imprM = { spaceEff: _profitSpaceEff, salesEff: _mgnVsAvg, profitContrib: _profitContrib, actions: _mActions, severity: _mSeverity };
  }
- var _cardImpr = _isMgn ? (imprM || { spaceEff:0, salesEff:0, profitContrib:0, actions:[], severity:'ok' }) : impr;
+ // ── 객수 서브탭 변수 ──
+ var _isVisit = (window._salesSubTab === 'visits');
+ var _vGid = _isVisit ? (window.salesGroupData && window.salesGroupData[m.z.id] !== undefined ? m.z.id : _getGroupForZone(m.z.id)) : null;
+ var _vVal = (_isVisit && _vGid != null) ? _getGroupVisitPerArea(_vGid) : null; // 평당 방문건수
+ var _vAvg = _isVisit ? _getStoreAvgVisitPerArea() : null;
+ var _vSgd = (_isVisit && _vGid != null) ? (window.salesGroupData && window.salesGroupData[_vGid]) : null;
+ var _vTotal = null, _vContrib = 0, _vSpaceEff = 0, _vRelRatio = 0;
+ if (_isVisit && _vSgd && _vSgd.visits != null) {
+  var _grps = window.salesGroups || {};
+  _vTotal = 0;
+  Object.keys(_grps).forEach(function(gg) {
+   var sg = window.salesGroupData && window.salesGroupData[gg];
+   if (sg && sg.visits != null) _vTotal += sg.visits;
+  });
+  _vContrib = _vTotal > 0 ? _vSgd.visits / _vTotal : 0;
+  _vSpaceEff = m.areaShare > 0 ? _vContrib / m.areaShare : 0;
+  _vRelRatio = (_vVal != null && _vAvg > 0) ? _vVal / _vAvg : 0;
+ }
+
+ var _cardImpr = _isMgn ? (imprM || { spaceEff:0, salesEff:0, profitContrib:0, actions:[], severity:'ok' })
+  : _isVisit ? { spaceEff: _vSpaceEff, salesEff: _vRelRatio, profitContrib: _vContrib, actions: [], severity: 'ok' }
+  : impr;
  const sep = Math.round(_cardImpr.salesEff * 100);
  const spC = _cardImpr.spaceEff>=1.2?'#005233':_cardImpr.spaceEff>=0.8?'#eab308':'#dc2626';
  const seC = sep>=80?'#005233':sep>=50?'#eab308':'#dc2626';
@@ -14673,6 +14768,7 @@ function showSalesZoneCard(m, zEl) {
  // ── 상단 헤더 (지표 기준 색상 배경) ──
  const _hdColor = m.isDead ? '#6b7280'
   : _isMgn ? (_mVal != null ? marginBorderColor(_mVal, _mGid || m.z.id) : '#6b7280')
+  : _isVisit ? (_vVal != null ? visitBorderColor(_vVal, _vAvg) : '#6b7280')
   : salesBorderColor(m.perSales, m.z.id);
  const hd = document.createElement('div');
  hd.style.cssText =
@@ -14699,6 +14795,19 @@ function showSalesZoneCard(m, zEl) {
   '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">이익율</div>' +
   '<div style="font-size:22px;font-weight:900;color:' + _mColor + ';letter-spacing:-.5px;">' +
   (_mVal != null ? _mVal.toFixed(1) : '-') + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">%</span>' +
+  '</div>' +
+  '</div>' +
+  '<div style="text-align:right;">' +
+  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">면적</div>' +
+  '<div style="font-size:16px;font-weight:800;color:#374151;">' + Math.round(m.area) + '<span style="font-size:11px;font-weight:600;color:#9ca3af;">평</span></div>' +
+  '</div>';
+ } else if (_isVisit) {
+  var _vColor = _vVal != null ? visitBorderColor(_vVal, _vAvg) : '#9ca3af';
+  bigNum.innerHTML =
+  '<div>' +
+  '<div style="font-size:10px;color:#9ca3af;margin-bottom:2px;">평당 방문건수</div>' +
+  '<div style="font-size:22px;font-weight:900;color:' + _vColor + ';letter-spacing:-.5px;">' +
+  (_vVal != null ? (Math.round(_vVal*10)/10) : '-') + '<span style="font-size:12px;font-weight:700;color:#9ca3af;">건/평</span>' +
   '</div>' +
   '</div>' +
   '<div style="text-align:right;">' +
@@ -14746,6 +14855,22 @@ function showSalesZoneCard(m, zEl) {
     '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _mFbColor + ';color:#fff;">기준치 ' + (_mVal >= MARGIN_FALLBACK_GREEN ? '이상' : _mVal >= MARGIN_FALLBACK_YELLOW ? '보통' : '미달') + '</span>';
    card.appendChild(tgtRowFb);
   }
+ } else if (_isVisit) {
+  // 목표값 개념이 없어 매장 평균 대비 상대 배지만 표시
+  if (_vVal != null) {
+   var _vRelPct = Math.round(_vRelRatio * 100);
+   var _vRelColor = visitBorderColor(_vVal, _vAvg);
+   var _vRelBg = _vRelRatio >= VISIT_REL_GREEN ? '#dcfce7' : _vRelRatio >= VISIT_REL_YELLOW ? '#fef9c3' : '#fee2e2';
+   var vRelRow = document.createElement('div');
+   vRelRow.style.cssText = 'padding:6px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:' + _vRelBg + ';';
+   vRelRow.innerHTML =
+    '<div style="font-size:9px;color:#6b7280;font-weight:600;">매장 평균 대비</div>' +
+    '<div style="display:flex;align-items:center;gap:6px;">' +
+    '<span style="font-size:11px;font-weight:700;color:#374151;">' + (_vAvg != null ? (Math.round(_vAvg*10)/10) : '-') + '건/평 평균</span>' +
+    '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _vRelColor + ';color:#fff;">' + _vRelPct + '%</span>' +
+    '</div>';
+   card.appendChild(vRelRow);
+  }
  } else {
   var _tgtPS = _getSalesTarget(m.z.id);
   if (_tgtPS && _tgtPS > 0) {
@@ -14779,17 +14904,19 @@ function showSalesZoneCard(m, zEl) {
  }
  if (_isMgn) {
   grid3.appendChild(mc('이익금(추정)', _profitEst != null ? _profitEst.toLocaleString()+'만' : '-', '#10b981', true));
+ } else if (_isVisit) {
+  grid3.appendChild(mc('영수증건수(합계)', _vSgd && _vSgd.visits != null ? Math.round(_vSgd.visits).toLocaleString()+'건' : '-', '#0891b2', true));
  } else {
   grid3.appendChild(mc('실매출(하루)', Math.round(m.sales).toLocaleString()+'만', '#111827', true));
  }
  grid3.appendChild(mc('공간효율', fmtEff(_cardImpr.spaceEff), spC, true));
- grid3.appendChild(mc(_isMgn ? '평균대비 이익율' : '1H 평당효율', sep+'%', seC, false));
+ grid3.appendChild(mc(_isMgn ? '평균대비 이익율' : _isVisit ? '평균대비 방문' : '1H 평당효율', sep+'%', seC, false));
  card.appendChild(grid3);
 
  // ── 기여도 / 점유율 ──
  const row2 = document.createElement('div');
  row2.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #f1f5f9;';
- row2.appendChild(mc(_isMgn ? '이익 기여도' : '매출 기여도', fmtPct(_isMgn ? _cardImpr.profitContrib : m.contrib), '#2563eb', true));
+ row2.appendChild(mc(_isMgn ? '이익 기여도' : _isVisit ? '방문 기여도' : '매출 기여도', fmtPct(_isMgn ? _cardImpr.profitContrib : _isVisit ? _vContrib : m.contrib), '#2563eb', true));
  row2.appendChild(mc('면적 점유율', fmtPct(m.areaShare), '#7c3aed', false));
  card.appendChild(row2);
 
@@ -17667,9 +17794,9 @@ function _buildGroupCard(gid, g, catKey) {
   var stBar = document.createElement('div');
   stBar.style.cssText = 'display:flex;gap:4px;margin-bottom:10px;';
   stBar.setAttribute('data-subtab-bar', '1');
-  ['perSales','margin'].forEach(function(k) {
+  ['perSales','margin','visits'].forEach(function(k) {
     var btn = document.createElement('button');
-    btn.textContent = k === 'perSales' ? '평당매출' : '이익율';
+    btn.textContent = k === 'perSales' ? '평당매출' : k === 'margin' ? '이익율' : '객수';
     btn.dataset.subtab = k;
     var isActive = (window._salesSubTab || 'perSales') === k;
     btn.style.cssText = 'flex:1;padding:5px 0;border:1.5px solid '+(isActive?'#6366f1':'#d1d5db')+';border-radius:6px;background:'+(isActive?'#6366f1':'#f3f4f6')+';color:'+(isActive?'#fff':'#6b7280')+';font-family:inherit;font-size:10px;font-weight:'+(isActive?'800':'600')+';cursor:pointer;transition:all .12s;';
@@ -17691,7 +17818,7 @@ function _buildGroupCard(gid, g, catKey) {
       });
       // 상단 서브탭 버튼도 동기화
       if (typeof _setSalesSubTab === 'function') {
-        ['perSales','margin'].forEach(function(k2) {
+        ['perSales','margin','visits'].forEach(function(k2) {
           var b2 = document.getElementById('salesSubTab_' + k2);
           if (!b2) return;
           var a2 = k2 === k;
@@ -17723,12 +17850,18 @@ function _buildGroupCard(gid, g, catKey) {
       cardGrid.appendChild(mkInp('평수 (평)',             'gdsi_area_'+cardGid,  cArea,  '예: 8',    '#374151', '#f9fafb', '0.1', function(){ updateGroupCalc(cardGid,'area'); }));
       cardGrid.appendChild(mkInp('평당매출 (만/평)',      'gdsi_ps_'+cardGid,    cPS,    '자동',     '#f97316', '#fff8f0', '0.1', function(){ updateGroupCalc(cardGid,'ps'); }));
       cardGrid.appendChild(mkInp('목표 평당매출 (만/평)', 'gdsi_tgt_'+cardGid,   cTgt,   '미설정',   '#6366f1', '#f5f3ff', '1',   function(){ updateSalesTarget(cardGid); }));
-    } else {
+    } else if (curTab === 'margin') {
       var _cMgnVal = _getGroupMarginPct(cardGid);
       var cMgn  = (_cMgnVal != null) ? _cMgnVal : '';
       var cMTgt = (window.marginTargets && window.marginTargets[currentStore] && window.marginTargets[currentStore][cardGid] > 0) ? window.marginTargets[currentStore][cardGid] : '';
       cardGrid.appendChild(mkInp('실이익율 (%)',  'gdsi_margin_'+cardGid, cMgn,  '예: 25', '#10b981', '#f0fdf4', '0.1', function(){ updateMarginData(cardGid); }));
       cardGrid.appendChild(mkInp('목표 이익율 (%)', 'gdsi_mtgt_'+cardGid, cMTgt, '미설정', '#6366f1', '#f5f3ff', '0.1', function(){ updateMarginTarget(cardGid); }));
+    } else {
+      var _cVisits = (window.salesGroupData && window.salesGroupData[cardGid] && window.salesGroupData[cardGid].visits != null) ? window.salesGroupData[cardGid].visits : '';
+      var _cVArea  = window.salesGroupData && window.salesGroupData[cardGid] !== undefined ? window.salesGroupData[cardGid].area : '';
+      var _cVPA = (_cVisits !== '' && Number(_cVArea) > 0) ? Math.round(Number(_cVisits) / Number(_cVArea) * 10) / 10 : '';
+      cardGrid.appendChild(mkInp('영수증건수 (합계)', 'gdsi_visits_'+cardGid, _cVisits, '예: 350', '#0891b2', '#ecfeff', '1', function(){ updateVisitData(cardGid); }));
+      cardGrid.appendChild(mkInp('평당 방문건수', 'gdsi_vpa_'+cardGid, _cVPA, '자동', '#0891b2', '#ecfeff', '0.1', null));
     }
   }
 
@@ -17822,6 +17955,27 @@ function updateMarginData(gid) {
   window.marginGroupData[gid] = val;
  } else {
   delete window.marginGroupData[gid];
+ }
+ _markSalesDirty();
+ if (typeof renderSalesView === 'function') {
+  var gc = document.getElementById('gc-sales');
+  var panel = document.querySelector('#salesWrap [data-sales-panel]');
+  if (gc && panel && typeof refreshSalesContent === 'function') refreshSalesContent(gc, panel);
+  else renderSalesView();
+ }
+}
+
+/* ── 영수증건수(합계) 저장 — 주차별 salesGroupData에 원본 합계만 저장, 평당 방문건수는 항상 조회 시점 계산 ── */
+function updateVisitData(gid) {
+ var el = document.getElementById('gdsi_visits_' + gid);
+ if (!el) return;
+ var val = parseFloat(el.value);
+ if (!window.salesGroupData) window.salesGroupData = {};
+ if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
+ if (!isNaN(val) && val >= 0) {
+  window.salesGroupData[gid].visits = val;
+ } else {
+  delete window.salesGroupData[gid].visits;
  }
  _markSalesDirty();
  if (typeof renderSalesView === 'function') {
@@ -21664,6 +21818,286 @@ function _zsuRestoreSnapshot(moKey) {
   };
   window._zsuParsed = parsed;
   _zsuRenderPreview(parsed);
+}
+
+/* ══════════════════════════════════════════════════════════
+   객수(방문) 업로드 — 구역 매출 업로드와 완전히 분리된 모달/저장 대상.
+   MC명/SKU 매칭(_zsuMatchGroup)과 헤더 정규화(_zsuNormText)만 공유하고,
+   나머지(헤더 타입 파서, 행 처리, 미리보기, 적용)는 전부 별도로 둠.
+   저장은 sales와 동일한 원칙: 원본 합계(영수증건수 합)만 저장하고,
+   "평당 방문건수"는 항상 조회 시점(_getGroupVisitPerArea)에 계산 —
+   write 시점 계산이나 조용한 스킵을 넣지 않는다.
+   ══════════════════════════════════════════════════════════ */
+
+/* ── 헤더 → { weekId, type:'visits', ambiguous? } — 영수증건수/구매건수/방문건수/방문객수/객수/건수 인식 ── */
+function _zvuParseWeekCol(h) {
+  if (!h) return null;
+  var norm = _zsuNormText(h);
+  if (!norm) return null;
+  var weekPart = norm;
+  var ambiguous = false;
+  var mV = norm.match(/^(.*?)\s*(영수증건수|영수증|구매건수|방문건수|방문객수|객수|건수)$/i);
+  if (mV) { weekPart = mV[1].trim(); }
+  else { ambiguous = true; } // 접미사 없음 — 하위호환으로 객수 처리하되 표시해 둠
+  if (!weekPart) return null;
+  var weekId = _zsuParseWeekId(weekPart);
+  if (!weekId) return null;
+  return { weekId: weekId, type: 'visits', ambiguous: ambiguous, rawHeader: h };
+}
+
+/* ── 엑셀/붙여넣기 행렬 → 매칭 + 주차별 영수증건수 누산 ── */
+function _zvuProcessRows(rows) {
+  if (rows.length < 2) { showToast('데이터가 없습니다 (최소 2행 필요)'); return; }
+
+  var headerRow = rows[0];
+  var weekCols = [], unmatchedHeaders = [], ambiguousHeaders = [];
+  for (var c = 2; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || '').trim();
+    if (!h) { weekCols.push(null); continue; }
+    var wc = _zvuParseWeekCol(h);
+    weekCols.push(wc);
+    if (!wc) unmatchedHeaders.push(h);
+    else if (wc.ambiguous) ambiguousHeaders.push(h);
+  }
+  var weekIds = [];
+  weekCols.forEach(function(wc) { if (wc && weekIds.indexOf(wc.weekId) < 0) weekIds.push(wc.weekId); });
+
+  var rawRows = [];
+  var groupAccum = {}; // gid -> { weekVisits: {wid: sum}, mcNames: [] }
+  var _zvuFirstWid = null;
+  for (var _fw = 0; _fw < weekCols.length; _fw++) {
+    if (weekCols[_fw] && weekCols[_fw].weekId) { _zvuFirstWid = weekCols[_fw].weekId; break; }
+  }
+  var matchedCnt = 0, unmatchedCnt = 0;
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+    var raw = _xlsZoningVal(row[0]);
+    if (!raw || /^(소계|합계|합|계|total|sum)$/i.test(raw)) continue;
+    var sku = _xlsSkuVal(row[1]) || null;
+    var mr = _zsuMatchGroup(raw, _zvuFirstWid, sku);
+    if (mr.gid) matchedCnt++; else unmatchedCnt++;
+    var weekVisits = {};
+    for (var c2 = 2; c2 < row.length && (c2 - 2) < weekCols.length; c2++) {
+      var wc2 = weekCols[c2 - 2];
+      if (!wc2) continue;
+      var val = parseFloat(String(row[c2] || '').replace(/,/g, ''));
+      if (isNaN(val)) continue;
+      // 영수증건수 0도 유효한 값 — 조용히 0으로 반영 (DIV/0은 조회 시점 area>0 가드에서 이미 방지됨)
+      if (val >= 0) weekVisits[wc2.weekId] = val;
+    }
+    rawRows.push({ raw: raw, gid: mr.gid, via: mr.via, sku: sku, weekVisits: weekVisits });
+    if (mr.gid) {
+      if (!groupAccum[mr.gid]) groupAccum[mr.gid] = { weekVisits: {}, mcNames: [] };
+      if (groupAccum[mr.gid].mcNames.indexOf(raw) < 0) groupAccum[mr.gid].mcNames.push(raw);
+      Object.keys(weekVisits).forEach(function(wk) {
+        groupAccum[mr.gid].weekVisits[wk] = (groupAccum[mr.gid].weekVisits[wk] || 0) + weekVisits[wk];
+      });
+    }
+  }
+
+  window._zvuParsed = { weekCols: weekCols, weekIds: weekIds, rawRows: rawRows, groupAccum: groupAccum,
+    unmatchedHeaders: unmatchedHeaders, ambiguousHeaders: ambiguousHeaders, matchedCnt: matchedCnt, unmatchedCnt: unmatchedCnt };
+  _zvuRenderPreview(window._zvuParsed);
+}
+
+function handleZoneVisitPaste(text) {
+  if (!text) return;
+  var rows = text.split(/\r?\n/).map(function(line) { return line.split('\t'); })
+    .filter(function(row) { return row.some(function(cell) { return String(cell).trim() !== ''; }); });
+  try { _zvuProcessRows(rows); }
+  catch(e) { _zvuShowError('붙여넣기 처리 오류: ' + e.message); }
+}
+
+function handleZoneVisitFile(file) {
+  try {
+    if (!file) return;
+    var ext = file.name.split('.').pop().toLowerCase();
+    var reader = new FileReader();
+    reader.onerror = function(ev) {
+      var msg = ev.target && ev.target.error ? ev.target.error.message : String(ev);
+      _zvuShowError('FileReader 오류: ' + msg);
+    };
+    reader.onload = function(ev) {
+      try {
+        var result = ev.target.result;
+        var rows = [];
+        if (ext === 'csv') {
+          rows = result.split('\n').map(function(l) { return l.split(',').map(function(c) { return c.trim().replace(/^"|"$/g, ''); }); });
+        } else {
+          if (typeof XLSX === 'undefined') throw new Error('XLSX 라이브러리 미로드');
+          var data = new Uint8Array(result);
+          var wb = XLSX.read(data, { type: 'array', cellDates: true });
+          var ws2 = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(ws2, { header: 1, raw: true, cellDates: true });
+        }
+        _zvuProcessRows(rows);
+      } catch(innerErr) {
+        _zvuShowError('처리 오류: ' + innerErr.message);
+        showToast('파일 오류: ' + innerErr.message);
+      }
+    };
+    if (ext === 'csv') reader.readAsText(file, 'utf-8');
+    else reader.readAsArrayBuffer(file);
+  } catch(outerErr) {
+    _zvuShowError('예상치 못한 오류: ' + outerErr.message);
+  }
+}
+
+function _zvuShowError(msg) {
+  var preview = document.getElementById('zvuPreview');
+  if (preview) {
+    preview.style.display = 'block';
+    preview.innerHTML = '<div style="padding:14px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-size:12px;font-weight:700;">❌ ' + msg + '</div>';
+  }
+}
+
+/* ── 미리보기 렌더 (요약 배너 + 품목×주차 표, 매칭 실패 항목은 수동 재매칭 없이 MC매핑표 안내만) ── */
+function _zvuRenderPreview(parsed) {
+  var preview = document.getElementById('zvuPreview');
+  var applyBtn = document.getElementById('zvuApplyBtn');
+  if (!preview) return;
+  if (!parsed || !parsed.rawRows || !parsed.rawRows.length) { preview.style.display = 'none'; return; }
+
+  var wsArr = typeof WEEKS !== 'undefined' ? WEEKS : [];
+  function wLabel(wid) { var w = wsArr.find(function(x){ return x.id === wid; }); return w ? w.label : wid; }
+
+  var allOk = parsed.unmatchedCnt === 0;
+  var html = '<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:' + (allOk?'#ecfeff':'#fffbeb') + ';border:1px solid ' + (allOk?'#67e8f9':'#fbbf24') + ';">'
+    + '<span style="font-size:11px;font-weight:800;color:' + (allOk?'#0e7490':'#92400e') + ';">✅ ' + parsed.matchedCnt + '개 품목 매칭 | ⚠️ ' + parsed.unmatchedCnt + '개 미매칭</span>'
+    + ((parsed.unmatchedHeaders||[]).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
+    + ((parsed.ambiguousHeaders||[]).length ? '<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px;">⚠️ "' + parsed.ambiguousHeaders.join(', ') + '" — "영수증건수" 등 접미사가 없어도 객수로 처리됩니다(하위호환). 다른 뜻이었다면 헤더를 확인하세요.</div>' : '')
+    + (parsed.unmatchedCnt > 0 ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">미매칭 품목은 🗺️ MC 매핑표에서 조닝번호를 먼저 지정한 뒤 다시 업로드하세요.</div>' : '')
+    + '</div>';
+
+  html += '<div style="max-height:260px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:10px;">'
+    + '<thead><tr style="background:#f8fafc;position:sticky;top:0;">'
+    + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">MC명</th>'
+    + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb;">매칭 그룹</th>'
+    + (parsed.weekIds||[]).map(function(wid) { return '<th style="text-align:right;padding:6px 8px;border-bottom:1px solid #e5e7eb;">' + wLabel(wid) + '</th>'; }).join('')
+    + '</tr></thead><tbody>';
+  parsed.rawRows.forEach(function(rr) {
+    var grp = rr.gid ? (window.salesGroups && window.salesGroups[rr.gid]) : null;
+    var grpLabel = grp ? (grp.number + ' ' + grp.label) : '미매칭';
+    html += '<tr style="border-bottom:1px solid #f1f5f9;">'
+      + '<td style="padding:5px 8px;color:#374151;">' + rr.raw + '</td>'
+      + '<td style="padding:5px 8px;color:' + (rr.gid ? '#0e7490' : '#dc2626') + ';font-weight:700;">' + grpLabel + '</td>'
+      + (parsed.weekIds||[]).map(function(wid) {
+          var v = (rr.weekVisits||{})[wid];
+          return '<td style="text-align:right;padding:5px 8px;color:#374151;">' + (v != null ? v.toLocaleString() : '-') + '</td>';
+        }).join('')
+      + '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  preview.innerHTML = html;
+  preview.style.display = 'block';
+  if (applyBtn) {
+    var hasMatched = parsed.matchedCnt > 0;
+    applyBtn.disabled = !hasMatched;
+    applyBtn.style.background = hasMatched ? '#0891b2' : '#94a3b8';
+    applyBtn.style.cursor = hasMatched ? 'pointer' : 'not-allowed';
+  }
+}
+
+/* ── 도면에 적용: weeklySalesStore[store][wid].salesGroupData[gid].visits에 원본 합계 저장 (write 시점 계산 없음) ── */
+function applyZoneVisitUpload() {
+  var parsed = window._zvuParsed;
+  if (!parsed || !parsed.groupAccum) { showToast('먼저 파일을 업로드하세요'); return; }
+  var store = window.currentStore || 'gs';
+  if (!window.weeklySalesStore) window.weeklySalesStore = {};
+  if (!window.weeklySalesStore[store]) window.weeklySalesStore[store] = {};
+
+  var appliedCount = 0;
+  Object.keys(parsed.groupAccum).forEach(function(gid) {
+    var acc = parsed.groupAccum[gid];
+    Object.keys(acc.weekVisits).forEach(function(wid) {
+      var sum = acc.weekVisits[wid];
+      var wd = window.weeklySalesStore[store][wid];
+      if (!wd) {
+        wd = { salesData:{}, areaData: JSON.parse(JSON.stringify(window.areaData||{})), salesGroups:{}, salesGroupData:{} };
+        window.weeklySalesStore[store][wid] = wd;
+      }
+      if (!wd.salesGroupData) wd.salesGroupData = {};
+      if (!wd.salesGroupData[gid]) wd.salesGroupData[gid] = {};
+      wd.salesGroupData[gid].visits = sum;
+      if (window.currentSalesWeek === wid) {
+        if (!window.salesGroupData) window.salesGroupData = {};
+        if (!window.salesGroupData[gid]) window.salesGroupData[gid] = {};
+        window.salesGroupData[gid].visits = sum;
+      }
+      appliedCount++;
+    });
+  });
+
+  _markSalesDirty();
+  if (typeof renderSalesView === 'function') renderSalesView();
+  var modal = document.getElementById('zoneVisitUploadModal');
+  if (modal) modal.remove();
+  showToast('✅ 객수 반영 완료 · 그룹 ' + Object.keys(parsed.groupAccum).length + '개 · ' + appliedCount + '건 · "서버 저장" 버튼으로 저장하세요');
+}
+
+/* ── 객수(방문) 업로드 모달 ── */
+function openZoneVisitUploadModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  var ex = document.getElementById('zoneVisitUploadModal');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'zoneVisitUploadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9600;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#0e7490,#0891b2);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:15px;font-weight:900;color:#fff;">🧾 객수(방문) 업로드</div>'
+    + '<div style="font-size:10px;color:#cffafe;margin-top:2px;">MC명 or 조닝번호 → 자동 매핑 → 주차별 영수증건수 합계 → 도면 반영</div></div>'
+    + '<button onclick="document.getElementById(\'zoneVisitUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="padding:10px 20px;background:#ecfeff;border-bottom:1px solid #a5f3fc;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
+    + '<div><div style="font-size:11px;font-weight:800;color:#0e7490;">📋 A열=MC명 / B열=상품코드(선택) / C열~= "주차 영수증건수" 반복</div>'
+    + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">"영수증건수"/"구매건수"/"방문건수"/"객수" 등 다양한 표현 인식 | B열은 예외 매칭이 필요한 상품만 채우면 됨 | 매출/이익율 업로드와 완전히 별도 저장</div></div>'
+    + '<button onclick="openZoningMcMapModal()" style="font-family:inherit;font-size:10px;font-weight:700;padding:5px 12px;background:#f5f3ff;border:1.5px solid #7c3aed;color:#5b21b6;border-radius:7px;cursor:pointer;white-space:nowrap;">🗺️ MC 매핑표</button>'
+    + '</div>'
+    + '<div style="padding:10px 20px 0;flex-shrink:0;">'
+    + '<div style="display:flex;gap:8px;align-items:stretch;">'
+    + '<label id="zvuDropZone" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2.5px dashed #22d3ee;border-radius:12px;padding:14px;cursor:pointer;background:#ecfeff;" ondragover="event.preventDefault();this.style.borderColor=\'#0891b2\'" ondragleave="this.style.borderColor=\'#22d3ee\'" ondrop="event.preventDefault();this.style.borderColor=\'#22d3ee\';handleZoneVisitFile(event.dataTransfer.files[0]);">'
+    + '<div style="font-size:22px;">📥</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#0891b2;">파일 업로드</div>'
+    + '<div style="font-size:9px;color:#6b7280;">.xlsx / .xls / .csv</div>'
+    + '</label>'
+    + '<input id="zvuFileInput" type="file" accept=".xlsx,.xls,.csv" style="display:none"/>'
+    + '<div id="zvuPasteZone" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2.5px dashed #a5f3fc;border-radius:12px;padding:14px;cursor:pointer;background:#f9feff;outline:none;transition:border-color .15s,background .15s;position:relative;">'
+    + '<div style="font-size:22px;pointer-events:none;">📋</div>'
+    + '<div style="font-size:11px;font-weight:700;color:#0891b2;pointer-events:none;">붙여넣기</div>'
+    + '<div id="zvuPasteHint" style="font-size:9px;color:#6b7280;text-align:center;pointer-events:none;">클릭 후 Ctrl+V<br>(엑셀 셀 범위 복사)</div>'
+    + '<textarea id="zvuPasteTa" tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;top:0;left:0;" aria-hidden="true"></textarea>'
+    + '</div>'
+    + '</div>'
+    + '</div>'
+    + '<div id="zvuPreview" style="flex:1;overflow-y:auto;padding:10px 20px 8px;min-height:0;display:none;"></div>'
+    + '<div style="padding:12px 20px;border-top:1px solid #f1f5f9;background:#f8fafc;display:flex;gap:8px;flex-shrink:0;">'
+    + '<button id="zvuApplyBtn" onclick="applyZoneVisitUpload()" disabled style="flex:2;font-family:inherit;font-size:13px;font-weight:800;padding:10px;background:#94a3b8;color:#fff;border:none;border-radius:8px;cursor:not-allowed;">도면에 적용하기</button>'
+    + '<button onclick="document.getElementById(\'zoneVisitUploadModal\').remove()" style="flex:1;font-family:inherit;font-size:12px;font-weight:700;padding:10px;background:#fff;border:1.5px solid #e5e7eb;color:#6b7280;border-radius:8px;cursor:pointer;">닫기</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+
+  var fileInput = document.getElementById('zvuFileInput');
+  var dropZone = document.getElementById('zvuDropZone');
+  if (dropZone && fileInput) {
+    dropZone.addEventListener('click', function(e) { e.preventDefault(); fileInput.click(); });
+    fileInput.addEventListener('change', function(e) { if (e.target.files[0]) handleZoneVisitFile(e.target.files[0]); });
+  }
+
+  var pasteZone = document.getElementById('zvuPasteZone');
+  var pasteTa   = document.getElementById('zvuPasteTa');
+  if (pasteZone && pasteTa) {
+    pasteZone.addEventListener('click', function() { pasteTa.focus(); });
+    pasteTa.addEventListener('paste', function(e) {
+      e.preventDefault();
+      var text = (e.clipboardData || window.clipboardData).getData('text');
+      handleZoneVisitPaste(text);
+    });
+  }
 }
 
 /* ── 업로드 모달 ── */
