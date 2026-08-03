@@ -15453,7 +15453,6 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  {id:'tab-list', label:' 목록'},
  {id:'tab-group', label:' 그룹'},
  {id:'tab-change', label:'▲ 변화'},
- {id:'tab-deadzone', label:'Dead Zone'},
  ];
 
  function switchTab(tid){
@@ -15470,7 +15469,6 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  if(tid==='tab-list') renderListTab(tabContents,metrics,maxPerSales);
  if(tid==='tab-group') renderGroupTab(tabContents,metrics);
  if(tid==='tab-change') renderChangeTab(tabContents,metrics,avgPerSales);
- if(tid==='tab-deadzone') renderDeadZoneTab(tabContents,metrics);
  }
 
  TABS.forEach(t=>{
@@ -15911,97 +15909,6 @@ function buildGroupItems(metrics) {
  const severity = (sales===0||salesEff<0.3||effIdx<0.5)?'high':(salesEff<0.6||effIdx<0.8)?'mid':'ok';
  return { name:g.label, color:g.color, gid, zids, sales, area, perSales, contrib, areaShare, effIdx, grade, salesEff, severity };
  }).filter(Boolean);
-}
-
-/* ══════════ Dead Zone 판정 ══════════
-   판정 기준을 상수로 분리 — 나중에 조정 가능 */
-const DEADZONE_PS_PERCENTILE = 0.10;   // 평당매출 하위 10% 이내면 후보
-const DEADZONE_MIN_SALES = 0;          // 매출 자체가 0인 경우도 포함할지 (0=포함)
-
-/* 그룹의 특정 주차 평당매출 계산 (weeklySalesStore 스냅샷 기반) */
-function _wkGroupPerSales(store, weekId, gid) {
- var wd = window.weeklySalesStore && window.weeklySalesStore[store] && window.weeklySalesStore[store][weekId];
- var sgd = wd && wd.salesGroupData && wd.salesGroupData[gid];
- if (!sgd || sgd.sales == null || !(sgd.area > 0)) return null;
- return sgd.sales / sgd.area;
-}
-
-/* Dead Zone 목록 계산: 평당매출 하위 DEADZONE_PS_PERCENTILE 구역을 찾고,
-   "방치 기간"은 평당매출 기준으로 이 임계값을 마지막으로 넘었던 주차까지 거슬러 계산
-   (판매수량은 일부 주차에만 존재해 안정적인 기준이 못 됨 — 확인 후 평당매출 기준으로 결정) */
-function _computeDeadZones(metrics) {
- var groupItems = buildGroupItems(metrics);
- if (!groupItems || !groupItems.length) return [];
- var candidates = groupItems.filter(function(g) { return g.sales >= DEADZONE_MIN_SALES; });
- if (!candidates.length) return [];
- var sorted = candidates.slice().sort(function(a,b){ return a.perSales - b.perSales; });
- var cutoffIdx = Math.max(0, Math.ceil(sorted.length * DEADZONE_PS_PERCENTILE) - 1);
- var psThreshold = sorted[cutoffIdx] ? sorted[cutoffIdx].perSales : 0;
-
- var store = window.currentStore || 'gs';
- var curWid = window.currentSalesWeek;
- var curIdx = (curWid && typeof WEEKS !== 'undefined') ? WEEKS.findIndex(function(w){ return w.id === curWid; }) : -1;
-
- return candidates.filter(function(g) { return g.perSales <= psThreshold; }).map(function(g) {
-  var stagnantWeeks = null;
-  if (curIdx >= 0) {
-   var cnt = 0;
-   for (var i = curIdx; i >= 0; i--) {
-    var ps = _wkGroupPerSales(store, WEEKS[i].id, g.gid);
-    if (ps != null && ps > psThreshold) break;
-    cnt++;
-   }
-   stagnantWeeks = cnt;
-  }
-  var sgd = window.salesGroupData && window.salesGroupData[g.gid];
-  var qty = sgd && sgd.qty != null ? sgd.qty : null;
-  return Object.assign({}, g, { psThreshold: psThreshold, stagnantWeeks: stagnantWeeks, qty: qty });
- });
-}
-
-function renderDeadZoneTab(container, metrics) {
- var hint = document.createElement('div');
- hint.style.cssText = 'padding:8px 14px 4px;';
- hint.innerHTML = '<span style="font-size:9px;color:#94a3b8;display:flex;align-items:center;gap:3px;"><span></span><span>구역 클릭 시 도면에서 위치 이동 · 평당매출 하위 ' + Math.round(DEADZONE_PS_PERCENTILE*100) + '% 기준</span></span>';
- container.appendChild(hint);
-
- var deadZones = _computeDeadZones(metrics);
- if (!deadZones.length) {
-  var empty = document.createElement('div');
-  empty.style.cssText = 'padding:32px 14px;text-align:center;color:#9ca3af;font-size:11px;';
-  empty.textContent = 'Dead Zone으로 분류된 구역이 없습니다';
-  container.appendChild(empty);
-  return;
- }
- deadZones.sort(function(a,b){ return a.perSales - b.perSales; });
-
- var hd = document.createElement('div');
- hd.style.cssText = 'position:sticky;top:0;z-index:5;background:#fef2f2;border-bottom:2px solid #fecaca;display:grid;grid-template-columns:1fr 64px 56px 48px;align-items:center;padding:6px 12px;gap:4px;';
- hd.innerHTML =
-  '<span style="font-size:9px;font-weight:700;color:#6b7280;">구역(그룹)</span>' +
-  '<span style="font-size:9px;font-weight:700;color:#dc2626;text-align:right;">평당매출</span>' +
-  '<span style="font-size:9px;font-weight:700;color:#6b7280;text-align:right;">판매수량</span>' +
-  '<span style="font-size:9px;font-weight:700;color:#dc2626;text-align:right;">방치</span>';
- container.appendChild(hd);
-
- deadZones.forEach(function(r, i) {
-  var row = document.createElement('div');
-  row.style.cssText = 'display:grid;grid-template-columns:1fr 64px 56px 48px;align-items:center;padding:7px 12px;gap:4px;border-bottom:1px solid #f1f5f9;background:' + (i%2===0?'#fff':'#fef2f2') + ';cursor:pointer;transition:background .08s;';
-  row.onmouseover = function(){ row.style.background='#fee2e2'; r.zids.forEach(function(id){ highlightSalesMapZone(id,true); }); };
-  row.onmouseout  = function(){ row.style.background=(i%2===0?'#fff':'#fef2f2'); r.zids.forEach(function(id){ highlightSalesMapZone(id,false); }); };
-  row.onclick = function(){ focusSalesMapZone(r.zids[0]); };
-  row.innerHTML =
-   '<span style="font-size:11px;font-weight:700;color:#111827;">' + r.name + '</span>' +
-   '<span style="font-size:11px;font-weight:800;color:#dc2626;text-align:right;">' + Math.floor(r.perSales).toLocaleString() + '</span>' +
-   '<span style="font-size:11px;font-weight:600;color:#6b7280;text-align:right;">' + (r.qty != null ? r.qty.toLocaleString() : '-') + '</span>' +
-   '<span style="font-size:11px;font-weight:700;color:#dc2626;text-align:right;">' + (r.stagnantWeeks != null ? r.stagnantWeeks + '주' : '-') + '</span>';
-  container.appendChild(row);
- });
-
- var foot = document.createElement('div');
- foot.style.cssText = 'padding:10px 14px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#92400e;font-weight:600;';
- foot.textContent = '⚠️ 이 구역들은 재배치를 검토하세요.';
- container.appendChild(foot);
 }
 
 function renderImproveTab(container, metrics, avgPerSales) {
