@@ -20626,12 +20626,17 @@ function syncZoningMcOverrides() {
   }
 }
 
-/* ── 전각 문자 → 반각 정규화 (전각숫자·전각공백 → 반각) ── */
+/* ── 전각 문자 → 반각 정규화 (전각숫자·전각공백 → 반각) + 엑셀 강제텍스트 아포스트로피 제거 ──
+   엑셀에서 셀을 "텍스트"로 강제할 때 붙는 선행 작은따옴표(')가 헤더에 섞여 들어오면
+   "N월M주"로 시작해야 하는 정규식(^(\d+)월...)이 어긋나 주차 자체를 못 읽어버림 —
+   "7월5주 매총율"은 실패하고 "7월5주 매출"만 우연히 성공하는 식으로 컬럼별로 다르게
+   깨지는 문제의 원인. 위치 무관하게 모든 아포스트로피를 제거해 방지. */
 function _zsuNormText(s) {
   if (s == null) return '';
   return String(s)
     .replace(/[０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFF10 + 0x30); })
     .replace(/　/g, ' ')
+    .replace(/['’´`]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
