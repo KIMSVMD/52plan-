@@ -12015,6 +12015,22 @@ function _getGroupGrossMarginPct(gid) {
  return net != null ? Math.round((net + 22) * 10) / 10 : null;
 }
 
+/* ── 매장 전체 추정 순이익(하루) 합계 + 매출가중평균 이익율 — 이익율 팝업 카드의
+   "이익 기여도"/"평균 대비 이익율" 계산에 사용. 이익율 데이터가 있는 그룹만 합산. ── */
+function _getStoreNetProfitTotals() {
+ var grps = window.salesGroups || {};
+ var totalProfit = 0, wtMgnSum = 0, wtSalesTot = 0;
+ Object.keys(grps).forEach(function(gid) {
+  var sgd = window.salesGroupData && window.salesGroupData[gid];
+  var mgn = _getGroupMarginPct(gid);
+  if (mgn == null || !sgd || !(sgd.sales > 0)) return;
+  totalProfit += sgd.sales * mgn / 100;
+  wtMgnSum += sgd.sales * mgn;
+  wtSalesTot += sgd.sales;
+ });
+ return { totalProfit: totalProfit, avgMarginPct: wtSalesTot > 0 ? wtMgnSum / wtSalesTot : null };
+}
+
 function marginHeatColor(val, id) {
  return pctColor(val, _getMarginTarget(id), MARGIN_FALLBACK_GREEN, MARGIN_FALLBACK_YELLOW, '#16a34a', '#eab308', '#dc2626', '#9ca3af');
 }
@@ -14615,9 +14631,6 @@ function showSalesZoneCard(m, zEl) {
  _curProd = (_wk && _wk.overrides && _wk.overrides[m.z.id] && _wk.overrides[m.z.id].prod) || "";
  }
  if (!_curProd && m.z.prod) _curProd = m.z.prod;
- const sep = Math.round(impr.salesEff * 100);
- const spC = impr.spaceEff>=1.2?'#005233':impr.spaceEff>=0.8?'#eab308':'#dc2626';
- const seC = sep>=80?'#005233':sep>=50?'#eab308':'#dc2626';
 
  // ── 이익율 서브탭 변수 ──
  var _isMgn = (window._salesSubTab === 'margin');
@@ -14625,6 +14638,28 @@ function showSalesZoneCard(m, zEl) {
  var _mGid  = _isMgn ? (window.salesGroupData && window.salesGroupData[m.z.id] !== undefined ? m.z.id : _getGroupForZone(m.z.id)) : null;
  var _mVal  = (_isMgn && _mGid != null) ? _getGroupMarginPct(_mGid) : null;
  var _mTgt  = _isMgn ? _getMarginTarget(_mGid || m.z.id) : null;
+
+ /* ── 이익율 모드 전용 "개선 분석" — 평당매출용 impr을 그대로 재사용하지 않고
+    이익(면적당 이익 기여, 매장 평균 대비 이익율)을 기준으로 새로 계산.
+    (공간효율/1H평당효율이 이익율 탭에서도 평당매출 값을 그대로 보여주던 버그 수정) ── */
+ var _profitEst = null, imprM = null;
+ if (_isMgn && _mGid != null && _mVal != null && m.sales > 0) {
+  _profitEst = Math.round(m.sales * _mVal / 100);
+  var _storeProfit = _getStoreNetProfitTotals();
+  var _profitContrib = _storeProfit.totalProfit > 0 ? (m.sales * _mVal / 100) / _storeProfit.totalProfit : 0;
+  var _profitSpaceEff = m.areaShare > 0 ? _profitContrib / m.areaShare : 0;
+  var _mgnVsAvg = (_storeProfit.avgMarginPct != null && _storeProfit.avgMarginPct !== 0) ? _mVal / _storeProfit.avgMarginPct : 0;
+  var _mActions = [];
+  if (_profitSpaceEff < 0.5) _mActions.push('저마진 상품 비중 축소 또는 매입원가 구조 재검토 필요');
+  else if (_profitSpaceEff < 0.8) _mActions.push('면적 대비 이익 기여가 평균 이하 — 고마진 상품 구성 검토');
+  if (_mgnVsAvg < 0.6 && _mActions.length < 1) _mActions.push('매장 평균 대비 이익율이 낮음 — 원가 구조 점검 권장');
+  var _mSeverity = (_profitSpaceEff < 0.5 || _mgnVsAvg < 0.5) ? 'high' : (_profitSpaceEff < 0.8 || _mgnVsAvg < 0.8) ? 'mid' : 'ok';
+  imprM = { spaceEff: _profitSpaceEff, salesEff: _mgnVsAvg, profitContrib: _profitContrib, actions: _mActions, severity: _mSeverity };
+ }
+ var _cardImpr = _isMgn ? (imprM || { spaceEff:0, salesEff:0, profitContrib:0, actions:[], severity:'ok' }) : impr;
+ const sep = Math.round(_cardImpr.salesEff * 100);
+ const spC = _cardImpr.spaceEff>=1.2?'#005233':_cardImpr.spaceEff>=0.8?'#eab308':'#dc2626';
+ const seC = sep>=80?'#005233':sep>=50?'#eab308':'#dc2626';
 
  card.style.cssText =
  'position:fixed;z-index:9999;pointer-events:none;' +
@@ -14700,6 +14735,16 @@ function showSalesZoneCard(m, zEl) {
     '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _mAchColor + ';color:#fff;">달성 ' + _mAchPct + '%</span>' +
     '</div>';
    card.appendChild(tgtRow);
+  } else if (_mVal != null) {
+   // 목표 이익율 미설정 — fallback 기준(5%/2%)으로 등급만 표시 (구체적 목표 수치는 없음)
+   var _mFbColor = pctColor(_mVal, null, MARGIN_FALLBACK_GREEN, MARGIN_FALLBACK_YELLOW, '#16a34a', '#ca8a04', '#dc2626', '#9ca3af');
+   var _mFbBg = _mVal >= MARGIN_FALLBACK_GREEN ? '#dcfce7' : _mVal >= MARGIN_FALLBACK_YELLOW ? '#fef9c3' : '#fee2e2';
+   var tgtRowFb = document.createElement('div');
+   tgtRowFb.style.cssText = 'padding:6px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;background:' + _mFbBg + ';';
+   tgtRowFb.innerHTML =
+    '<div style="font-size:9px;color:#6b7280;font-weight:600;">목표 이익율 (미설정)</div>' +
+    '<span style="font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:' + _mFbColor + ';color:#fff;">기준치 ' + (_mVal >= MARGIN_FALLBACK_GREEN ? '이상' : _mVal >= MARGIN_FALLBACK_YELLOW ? '보통' : '미달') + '</span>';
+   card.appendChild(tgtRowFb);
   }
  } else {
   var _tgtPS = _getSalesTarget(m.z.id);
@@ -14732,31 +14777,30 @@ function showSalesZoneCard(m, zEl) {
  '<div style="font-size:12px;font-weight:900;color:' + color + ';">' + val + '</div>';
  return d;
  }
- if (_isMgn && _mVal != null) {
-  var _profitEst = Math.round(m.sales * _mVal / 100);
-  grid3.appendChild(mc('이익금(추정)', _profitEst.toLocaleString()+'만', '#10b981', true));
+ if (_isMgn) {
+  grid3.appendChild(mc('이익금(추정)', _profitEst != null ? _profitEst.toLocaleString()+'만' : '-', '#10b981', true));
  } else {
   grid3.appendChild(mc('실매출(하루)', Math.round(m.sales).toLocaleString()+'만', '#111827', true));
  }
- grid3.appendChild(mc('공간효율', fmtEff(impr.spaceEff), spC, true));
- grid3.appendChild(mc('1H 평당효율', sep+'%', seC, false));
+ grid3.appendChild(mc('공간효율', fmtEff(_cardImpr.spaceEff), spC, true));
+ grid3.appendChild(mc(_isMgn ? '평균대비 이익율' : '1H 평당효율', sep+'%', seC, false));
  card.appendChild(grid3);
 
  // ── 기여도 / 점유율 ──
  const row2 = document.createElement('div');
  row2.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #f1f5f9;';
- row2.appendChild(mc('매출 기여도', fmtPct(m.contrib), '#2563eb', true));
+ row2.appendChild(mc(_isMgn ? '이익 기여도' : '매출 기여도', fmtPct(_isMgn ? _cardImpr.profitContrib : m.contrib), '#2563eb', true));
  row2.appendChild(mc('면적 점유율', fmtPct(m.areaShare), '#7c3aed', false));
  card.appendChild(row2);
 
  // ── 개선 방향 (있을 때만) ──
- if (impr.actions.length && impr.severity !== 'ok') {
+ if (_cardImpr.actions.length && _cardImpr.severity !== 'ok') {
  const actDiv = document.createElement('div');
  actDiv.style.cssText =
  'padding:8px 12px;background:#e6f2ed;border-left:3px solid ' + cat.color + ';';
  actDiv.innerHTML =
  '<div style="font-size:9px;color:#9ca3af;margin-bottom:2px;">개선 방향</div>' +
- '<div style="font-size:10px;font-weight:700;color:#14532d;line-height:1.5;">→ ' + impr.actions[0] + '</div>';
+ '<div style="font-size:10px;font-weight:700;color:#14532d;line-height:1.5;">→ ' + _cardImpr.actions[0] + '</div>';
  card.appendChild(actDiv);
  }
 
