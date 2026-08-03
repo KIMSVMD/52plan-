@@ -3290,6 +3290,8 @@ window.onerror = function(msg, src, line, col, err) {
   <span style="font-size:9px;font-weight:800;color:#9ca3af;letter-spacing:.5px;margin-right:2px;">지표</span>
   <button id="salesSubTab_perSales" onclick="_setSalesSubTab('perSales')" style="padding:4px 14px;border:1.5px solid #6366f1;border-radius:6px;background:#6366f1;color:#fff;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:800;cursor:pointer;transition:all .12s;">평당매출</button>
   <button id="salesSubTab_margin"   onclick="_setSalesSubTab('margin')"   style="padding:4px 14px;border:1.5px solid #d1d5db;border-radius:6px;background:#f3f4f6;color:#6b7280;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:600;cursor:pointer;transition:all .12s;">이익율</button>
+  <div style="width:1px;height:16px;background:#d1d5db;margin:0 6px;flex-shrink:0;"></div>
+  <button id="salesHeatmapToggle" onclick="_toggleSalesHeatmap()" title="지표 색상은 그대로 두고, 매출×판매수량 기준 동선 히트맵을 도면 위에 겹쳐 보여줍니다" style="padding:4px 12px;border:1.5px dashed #f97316;border-radius:6px;background:transparent;color:#f97316;font-family:'Pretendard',sans-serif;font-size:10px;font-weight:700;cursor:pointer;transition:all .12s;white-space:nowrap;">🔥 동선 Heat Map</button>
  </div>
  <div style="display:flex;align-items:center;gap:0;padding:0 10px 0 14px;border-bottom:1px solid var(--border);min-height:36px;">
  <span style="font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.5px;margin-right:8px;white-space:nowrap;"> 월별 보기</span>
@@ -12130,6 +12132,24 @@ function _setSalesSubTab(tab) {
  else { if (typeof renderSalesView === 'function') renderSalesView(); }
 }
 
+/* ── 동선 Heat Map 토글: 지표(평당매출/이익율) 선택과 독립적인 오버레이.
+   현재 보이는 지표 색상은 그대로 두고, 매출×판매수량 기준 반투명 히트맵을 위에 겹침 ── */
+window._salesHeatmapOn = false;
+function _toggleSalesHeatmap() {
+ window._salesHeatmapOn = !window._salesHeatmapOn;
+ var btn = document.getElementById('salesHeatmapToggle');
+ if (btn) {
+  var on = window._salesHeatmapOn;
+  btn.style.background = on ? '#f97316' : 'transparent';
+  btn.style.color = on ? '#fff' : '#f97316';
+  btn.style.borderStyle = on ? 'solid' : 'dashed';
+ }
+ var gc = document.getElementById('gc-sales');
+ var panel = document.querySelector('#salesWrap [data-sales-panel]');
+ if (gc && panel) { if (typeof refreshSalesContent === 'function') refreshSalesContent(gc, panel); }
+ else { if (typeof renderSalesView === 'function') renderSalesView(); }
+}
+
 /* ── 평당매출 수동 저장 인프라 ── */
 window._salesDirty = false;
 function _markSalesDirty() {
@@ -14099,6 +14119,28 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  return [pts[0],pts[pts.length-1]];
  }
 
+ // ── 동선 Heat Map: 지표(평당매출/이익율) 색상과 독립적인 반투명 오버레이.
+ // 매출×판매수량 기준 — 판매수량은 일부 주차에만 존재하므로 있으면 절반씩 가중, 없으면 매출만 사용 ──
+ var _heatOn = !!window._salesHeatmapOn;
+ var _heatMaxSales = 0, _heatMaxQty = 0;
+ if (_heatOn) {
+ Object.entries(groups).forEach(function(hEntry) {
+ var hgid = hEntry[0], hg = hEntry[1];
+ var hzids = (hg.zoneIds||[]).filter(zid => metricMap[zid]);
+ if (!hzids.length) return;
+ var hMetrics = hzids.map(zid => metricMap[zid]).filter(Boolean);
+ var hTotals = _getSalesGroupTotals(hgid, hg, hMetrics);
+ if (hTotals.sales > _heatMaxSales) _heatMaxSales = hTotals.sales;
+ var hsgd = window.salesGroupData && window.salesGroupData[hgid];
+ var hqty = (hsgd && hsgd.qty != null) ? hsgd.qty : 0;
+ if (hqty > _heatMaxQty) _heatMaxQty = hqty;
+ });
+ }
+ function _trafficHeatFill(ratio) {
+ var alpha = 0.15 + Math.max(0, Math.min(1, ratio)) * 0.55; // 0.15~0.70 — 높을수록 진하게(뜨겁게)
+ return 'rgba(220,38,38,' + alpha.toFixed(2) + ')';
+ }
+
  Object.entries(groups).forEach(function(entry) {
  var gid = entry[0], g = entry[1];
  var zids = (g.zoneIds||[]).filter(zid => metricMap[zid]);
@@ -14109,6 +14151,14 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  var tSales = gTotals.sales;
  var tArea = gTotals.area;
  var tPS = tArea > 0 ? (gTotals.hasManual ? gTotals.perSales : Math.floor(gTotals.perSales)) : 0;
+ var _heatRatio = 0;
+ if (_heatOn) {
+ var _hSgd = window.salesGroupData && window.salesGroupData[gid];
+ var _hQty = (_hSgd && _hSgd.qty != null) ? _hSgd.qty : 0;
+ var _hSalesRatio = _heatMaxSales > 0 ? tSales / _heatMaxSales : 0;
+ var _hQtyRatio = _heatMaxQty > 0 ? _hQty / _heatMaxQty : 0;
+ _heatRatio = (_heatMaxQty > 0 && _hQty > 0) ? (_hSalesRatio*0.5 + _hQtyRatio*0.5) : _hSalesRatio;
+ }
  var avgGrade =
  gMetrics.filter(m=>m.grade==='A').length > gMetrics.length/2 ? 'A' :
  gMetrics.filter(m=>m.grade==='C').length > gMetrics.length/2 ? 'C' : 'B';
@@ -14247,6 +14297,15 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  sp.style.pointerEvents = 'none';
  grpG.appendChild(sp);
  strokePaths.push(sp);
+
+ if (_heatOn) {
+ var hp = document.createElementNS(ns, 'path');
+ hp.setAttribute('d', pi.d);
+ hp.setAttribute('fill', _trafficHeatFill(_heatRatio));
+ hp.setAttribute('fill-rule', 'nonzero');
+ hp.style.pointerEvents = 'none';
+ grpG.appendChild(hp);
+ }
  });
 
  // ── 분리된 작은 덩어리 배지 ──
@@ -15326,6 +15385,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  {id:'tab-list', label:' 목록'},
  {id:'tab-group', label:' 그룹'},
  {id:'tab-change', label:'▲ 변화'},
+ {id:'tab-deadzone', label:'💀 Dead Zone'},
  ];
 
  function switchTab(tid){
@@ -15342,6 +15402,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  if(tid==='tab-list') renderListTab(tabContents,metrics,maxPerSales);
  if(tid==='tab-group') renderGroupTab(tabContents,metrics);
  if(tid==='tab-change') renderChangeTab(tabContents,metrics,avgPerSales);
+ if(tid==='tab-deadzone') renderDeadZoneTab(tabContents,metrics);
  }
 
  TABS.forEach(t=>{
@@ -15782,6 +15843,97 @@ function buildGroupItems(metrics) {
  const severity = (sales===0||salesEff<0.3||effIdx<0.5)?'high':(salesEff<0.6||effIdx<0.8)?'mid':'ok';
  return { name:g.label, color:g.color, gid, zids, sales, area, perSales, contrib, areaShare, effIdx, grade, salesEff, severity };
  }).filter(Boolean);
+}
+
+/* ══════════ Dead Zone 판정 ══════════
+   판정 기준을 상수로 분리 — 나중에 조정 가능 */
+const DEADZONE_PS_PERCENTILE = 0.10;   // 평당매출 하위 10% 이내면 후보
+const DEADZONE_MIN_SALES = 0;          // 매출 자체가 0인 경우도 포함할지 (0=포함)
+
+/* 그룹의 특정 주차 평당매출 계산 (weeklySalesStore 스냅샷 기반) */
+function _wkGroupPerSales(store, weekId, gid) {
+ var wd = window.weeklySalesStore && window.weeklySalesStore[store] && window.weeklySalesStore[store][weekId];
+ var sgd = wd && wd.salesGroupData && wd.salesGroupData[gid];
+ if (!sgd || sgd.sales == null || !(sgd.area > 0)) return null;
+ return sgd.sales / sgd.area;
+}
+
+/* Dead Zone 목록 계산: 평당매출 하위 DEADZONE_PS_PERCENTILE 구역을 찾고,
+   "방치 기간"은 평당매출 기준으로 이 임계값을 마지막으로 넘었던 주차까지 거슬러 계산
+   (판매수량은 일부 주차에만 존재해 안정적인 기준이 못 됨 — 확인 후 평당매출 기준으로 결정) */
+function _computeDeadZones(metrics) {
+ var groupItems = buildGroupItems(metrics);
+ if (!groupItems || !groupItems.length) return [];
+ var candidates = groupItems.filter(function(g) { return g.sales >= DEADZONE_MIN_SALES; });
+ if (!candidates.length) return [];
+ var sorted = candidates.slice().sort(function(a,b){ return a.perSales - b.perSales; });
+ var cutoffIdx = Math.max(0, Math.ceil(sorted.length * DEADZONE_PS_PERCENTILE) - 1);
+ var psThreshold = sorted[cutoffIdx] ? sorted[cutoffIdx].perSales : 0;
+
+ var store = window.currentStore || 'gs';
+ var curWid = window.currentSalesWeek;
+ var curIdx = (curWid && typeof WEEKS !== 'undefined') ? WEEKS.findIndex(function(w){ return w.id === curWid; }) : -1;
+
+ return candidates.filter(function(g) { return g.perSales <= psThreshold; }).map(function(g) {
+  var stagnantWeeks = null;
+  if (curIdx >= 0) {
+   var cnt = 0;
+   for (var i = curIdx; i >= 0; i--) {
+    var ps = _wkGroupPerSales(store, WEEKS[i].id, g.gid);
+    if (ps != null && ps > psThreshold) break;
+    cnt++;
+   }
+   stagnantWeeks = cnt;
+  }
+  var sgd = window.salesGroupData && window.salesGroupData[g.gid];
+  var qty = sgd && sgd.qty != null ? sgd.qty : null;
+  return Object.assign({}, g, { psThreshold: psThreshold, stagnantWeeks: stagnantWeeks, qty: qty });
+ });
+}
+
+function renderDeadZoneTab(container, metrics) {
+ var hint = document.createElement('div');
+ hint.style.cssText = 'padding:8px 14px 4px;';
+ hint.innerHTML = '<span style="font-size:9px;color:#94a3b8;display:flex;align-items:center;gap:3px;"><span></span><span>구역 클릭 시 도면에서 위치 이동 · 평당매출 하위 ' + Math.round(DEADZONE_PS_PERCENTILE*100) + '% 기준</span></span>';
+ container.appendChild(hint);
+
+ var deadZones = _computeDeadZones(metrics);
+ if (!deadZones.length) {
+  var empty = document.createElement('div');
+  empty.style.cssText = 'padding:32px 14px;text-align:center;color:#9ca3af;font-size:11px;';
+  empty.textContent = 'Dead Zone으로 분류된 구역이 없습니다';
+  container.appendChild(empty);
+  return;
+ }
+ deadZones.sort(function(a,b){ return a.perSales - b.perSales; });
+
+ var hd = document.createElement('div');
+ hd.style.cssText = 'position:sticky;top:0;z-index:5;background:#fef2f2;border-bottom:2px solid #fecaca;display:grid;grid-template-columns:1fr 64px 56px 48px;align-items:center;padding:6px 12px;gap:4px;';
+ hd.innerHTML =
+  '<span style="font-size:9px;font-weight:700;color:#6b7280;">구역(그룹)</span>' +
+  '<span style="font-size:9px;font-weight:700;color:#dc2626;text-align:right;">평당매출</span>' +
+  '<span style="font-size:9px;font-weight:700;color:#6b7280;text-align:right;">판매수량</span>' +
+  '<span style="font-size:9px;font-weight:700;color:#dc2626;text-align:right;">방치</span>';
+ container.appendChild(hd);
+
+ deadZones.forEach(function(r, i) {
+  var row = document.createElement('div');
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 64px 56px 48px;align-items:center;padding:7px 12px;gap:4px;border-bottom:1px solid #f1f5f9;background:' + (i%2===0?'#fff':'#fef2f2') + ';cursor:pointer;transition:background .08s;';
+  row.onmouseover = function(){ row.style.background='#fee2e2'; r.zids.forEach(function(id){ highlightSalesMapZone(id,true); }); };
+  row.onmouseout  = function(){ row.style.background=(i%2===0?'#fff':'#fef2f2'); r.zids.forEach(function(id){ highlightSalesMapZone(id,false); }); };
+  row.onclick = function(){ focusSalesMapZone(r.zids[0]); };
+  row.innerHTML =
+   '<span style="font-size:11px;font-weight:700;color:#111827;">' + r.name + '</span>' +
+   '<span style="font-size:11px;font-weight:800;color:#dc2626;text-align:right;">' + Math.floor(r.perSales).toLocaleString() + '</span>' +
+   '<span style="font-size:11px;font-weight:600;color:#6b7280;text-align:right;">' + (r.qty != null ? r.qty.toLocaleString() : '-') + '</span>' +
+   '<span style="font-size:11px;font-weight:700;color:#dc2626;text-align:right;">' + (r.stagnantWeeks != null ? r.stagnantWeeks + '주' : '-') + '</span>';
+  container.appendChild(row);
+ });
+
+ var foot = document.createElement('div');
+ foot.style.cssText = 'padding:10px 14px;background:#fffbeb;border-top:1px solid #fde68a;font-size:10px;color:#92400e;font-weight:600;';
+ foot.textContent = '⚠️ 이 구역들은 재배치를 검토하세요.';
+ container.appendChild(foot);
 }
 
 function renderImproveTab(container, metrics, avgPerSales) {
