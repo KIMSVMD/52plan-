@@ -14136,9 +14136,29 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  if (hqty > _heatMaxQty) _heatMaxQty = hqty;
  });
  }
- function _trafficHeatFill(ratio) {
- var alpha = 0.15 + Math.max(0, Math.min(1, ratio)) * 0.55; // 0.15~0.70 — 높을수록 진하게(뜨겁게)
- return 'rgba(220,38,38,' + alpha.toFixed(2) + ')';
+ var _heatPoints = []; // {cx, cy, radius, ratio} — 루프 안에서 채우고, 루프 후 한꺼번에 블롭 레이어로 그림
+ /* 온도 색상 스케일: 파랑(차가움/0) → 초록 → 노랑 → 주황 → 빨강(뜨거움/1) */
+ function _heatTempColor(ratio) {
+ var r = Math.max(0, Math.min(1, ratio));
+ var stops = [
+ { t: 0.00, c: [37, 99, 235] },   // blue
+ { t: 0.25, c: [16, 185, 129] },  // green
+ { t: 0.50, c: [234, 179, 8] },   // yellow
+ { t: 0.75, c: [249, 115, 22] },  // orange
+ { t: 1.00, c: [220, 38, 38] },   // red
+ ];
+ for (var i = 0; i < stops.length - 1; i++) {
+ var a = stops[i], b = stops[i+1];
+ if (r >= a.t && r <= b.t) {
+ var f = (b.t === a.t) ? 0 : (r - a.t) / (b.t - a.t);
+ return [
+ Math.round(a.c[0] + (b.c[0]-a.c[0])*f),
+ Math.round(a.c[1] + (b.c[1]-a.c[1])*f),
+ Math.round(a.c[2] + (b.c[2]-a.c[2])*f)
+ ];
+ }
+ }
+ return stops[stops.length-1].c;
  }
 
  Object.entries(groups).forEach(function(entry) {
@@ -14297,16 +14317,18 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  sp.style.pointerEvents = 'none';
  grpG.appendChild(sp);
  strokePaths.push(sp);
+ });
 
  if (_heatOn) {
- var hp = document.createElementNS(ns, 'path');
- hp.setAttribute('d', pi.d);
- hp.setAttribute('fill', _trafficHeatFill(_heatRatio));
- hp.setAttribute('fill-rule', 'nonzero');
- hp.style.pointerEvents = 'none';
- grpG.appendChild(hp);
- }
+ // 열지도는 구역 모양을 따라가지 않고, 그룹 중심점을 기준으로 별도 블롭 레이어에서
+ // 한꺼번에 블러 처리 — 인접한 고값 구역끼리 자연스럽게 번져 이어지게 함
+ _heatPoints.push({
+ cx: polyInfos[0].bb.cx + _boxOff.dx,
+ cy: polyInfos[0].bb.cy + _boxOff.dy,
+ radius: Math.sqrt(Math.max(polyInfos[0].bb.w, polyInfos[0].bb.h) * Math.min(polyInfos[0].bb.w, polyInfos[0].bb.h)) / 2,
+ ratio: _heatRatio
  });
+ }
 
  // ── 분리된 작은 덩어리 배지 ──
  polyInfos.slice(1).forEach(function(pi) {
@@ -14496,6 +14518,52 @@ function renderSalesGroupBlocks(gcEl, groups, zoneGroupMap, metricMap, maxPerSal
  }
  gcEl.appendChild(glDiv);
  });
+
+ // ── 동선 Heat Map: 그룹 중심점 기준 radialGradient 블롭 + 공유 blur로
+ // 인접한 고값 구역끼리 경계 없이 매끄럽게 번져 이어지도록 렌더 ──
+ if (_heatOn && _heatPoints.length) {
+ var _heatFilter = document.createElementNS(ns, 'filter');
+ var _heatFilterId = 'heatBlurFilter';
+ _heatFilter.setAttribute('id', _heatFilterId);
+ _heatFilter.setAttribute('x', '-50%'); _heatFilter.setAttribute('y', '-50%');
+ _heatFilter.setAttribute('width', '200%'); _heatFilter.setAttribute('height', '200%');
+ var _heatBlur = document.createElementNS(ns, 'feGaussianBlur');
+ _heatBlur.setAttribute('stdDeviation', '22');
+ _heatFilter.appendChild(_heatBlur);
+ defs.appendChild(_heatFilter);
+
+ var _heatLayer = document.createElementNS(ns, 'g');
+ _heatLayer.setAttribute('filter', 'url(#' + _heatFilterId + ')');
+ _heatLayer.style.pointerEvents = 'none';
+ _heatLayer.style.mixBlendMode = 'multiply';
+ _heatLayer.style.opacity = '0.6';
+
+ _heatPoints.forEach(function(hp, hIdx) {
+ var _rgb = _heatTempColor(hp.ratio);
+ var _rgbStr = _rgb[0] + ',' + _rgb[1] + ',' + _rgb[2];
+ var _gradId = 'heatBlobGrad_' + hIdx;
+ var _grad = document.createElementNS(ns, 'radialGradient');
+ _grad.setAttribute('id', _gradId);
+ _grad.setAttribute('cx', '50%'); _grad.setAttribute('cy', '50%'); _grad.setAttribute('r', '50%');
+ var _s1 = document.createElementNS(ns, 'stop');
+ _s1.setAttribute('offset', '0%'); _s1.setAttribute('stop-color', 'rgb(' + _rgbStr + ')'); _s1.setAttribute('stop-opacity', '0.9');
+ var _s2 = document.createElementNS(ns, 'stop');
+ _s2.setAttribute('offset', '60%'); _s2.setAttribute('stop-color', 'rgb(' + _rgbStr + ')'); _s2.setAttribute('stop-opacity', '0.45');
+ var _s3 = document.createElementNS(ns, 'stop');
+ _s3.setAttribute('offset', '100%'); _s3.setAttribute('stop-color', 'rgb(' + _rgbStr + ')'); _s3.setAttribute('stop-opacity', '0');
+ _grad.appendChild(_s1); _grad.appendChild(_s2); _grad.appendChild(_s3);
+ defs.appendChild(_grad);
+
+ var _blob = document.createElementNS(ns, 'circle');
+ _blob.setAttribute('cx', hp.cx);
+ _blob.setAttribute('cy', hp.cy);
+ _blob.setAttribute('r', hp.radius * (1.6 + hp.ratio * 1.4));
+ _blob.setAttribute('fill', 'url(#' + _gradId + ')');
+ _heatLayer.appendChild(_blob);
+ });
+
+ svg.appendChild(_heatLayer);
+ }
 
  gcEl.appendChild(svg);
 }
@@ -15385,7 +15453,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  {id:'tab-list', label:' 목록'},
  {id:'tab-group', label:' 그룹'},
  {id:'tab-change', label:'▲ 변화'},
- {id:'tab-deadzone', label:'💀 Dead Zone'},
+ {id:'tab-deadzone', label:'Dead Zone'},
  ];
 
  function switchTab(tid){
