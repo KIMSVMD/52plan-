@@ -15610,7 +15610,27 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  + '<span style="font-size:9px;font-weight:700;color:#374151;"> 주차별 추이 (' + metricLabel + ')</span>'
  + '<span style="font-size:8px;color:#9ca3af;">클릭으로 주차 이동</span></div>';
 
- var chartH = 60, padTop = 14, padBottom = 16, padL = 6, padR = 16;
+ var METRIC_COLOR = '#2563eb';
+ var SALES_COLOR = '#d7dbe1';
+
+ // ── 범례(상단: 총매출=막대, 선택 지표=꺾은선, 클릭 토글) ──
+ var legendRow = document.createElement('div');
+ legendRow.style.cssText = 'display:flex;justify-content:center;gap:14px;margin-bottom:4px;';
+ function legendItem(colorCss, shape, text) {
+ var it = document.createElement('span');
+ it.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:8px;font-weight:700;color:#6b7280;cursor:pointer;user-select:none;';
+ var marker = shape === 'bar'
+ ? '<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' + colorCss + ';"></span>'
+ : '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + colorCss + ';"></span>';
+ it.innerHTML = marker + text;
+ return it;
+ }
+ var legend1 = legendItem(SALES_COLOR, 'bar', '총매출');
+ var legend2 = legendItem(METRIC_COLOR, 'line', metricLabel);
+ legendRow.appendChild(legend1); legendRow.appendChild(legend2);
+ trendWrap.appendChild(legendRow);
+
+ var chartH = 93, padTop = 18, padBottom = 16, padL = 6, padR = 16;
  var stepX = 15;
  var totalW = pts.length * stepX + padL + padR;
  var svgH = chartH + padTop + padBottom;
@@ -15622,25 +15642,20 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  svg.setAttribute('height', svgH);
  svg.style.cssText = 'overflow:visible;display:block;';
 
- // ── Y축 자동 스케일: 0 고정이 아니라 실제 데이터 min~max에 여유폭(12~15%)을 두고 계산.
- //    지표(metricVal)와 총매출(totalSales)은 스케일이 다르므로 각각 독립적으로 계산 ──
- function paddedScale(vals) {
- var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
- var range = max - min;
- if (range === 0) { var half = (Math.abs(max) || 1) * 0.1; min -= half; max += half; range = max - min; }
- return { min: min - range * 0.12, max: max + range * 0.15 };
+ // ── Y축: 막대(총매출)/선(선택 지표) 모두 0부터 시작 — 최대값만 데이터에 맞춰 자동으로 여유(15%)를 두고 확대.
+ //    지표와 총매출은 스케일이 다르므로 각각 독립적으로 계산 ──
+ function zeroMaxScale(vals) {
+ var max = vals.length ? Math.max.apply(null, vals) : 0;
+ if (max <= 0) max = 1;
+ return { min: 0, max: max * 1.15 };
  }
-
  var validVals = pts.filter(function(p){return p.hasData;}).map(function(p){return p.metricVal;});
- var vScale = paddedScale(validVals);
- function yOf(v) { return padTop + chartH - ((v - vScale.min) / (vScale.max - vScale.min)) * chartH; }
+ var vScale = zeroMaxScale(validVals);
+ function yOf(v) { return padTop + chartH - (Math.max(0, v) / vScale.max) * chartH; }
 
  var validSales = pts.filter(function(p){return p.totalSales != null;}).map(function(p){return p.totalSales;});
- var sScale = validSales.length ? paddedScale(validSales) : { min: 0, max: 1 };
- function ySalesOf(v) { return padTop + chartH - ((v - sScale.min) / (sScale.max - sScale.min)) * chartH; }
-
- var maxGradeA = Math.max.apply(null, pts.map(function(p){return p.gradeACount||0;})) || 1;
- function radiusOf(cnt) { return 2 + (cnt / maxGradeA) * 2.5; }
+ var sScale = zeroMaxScale(validSales);
+ function ySalesOf(v) { return padTop + chartH - (Math.max(0, v) / sScale.max) * chartH; }
 
  function xOf(i) { return padL + i * stepX + stepX/2; }
 
@@ -15677,6 +15692,29 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  svg.appendChild(lbl);
  });
 
+ // ── 총매출 막대(은은한 회색 — 배경처럼, 선이 주인공이 되도록 대비) ──
+ var barsGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+ var barW = Math.max(2, stepX * 0.55);
+ pts.forEach(function(p, i) {
+ if (p.totalSales == null) return;
+ var by = ySalesOf(p.totalSales);
+ var bar = document.createElementNS('http://www.w3.org/2000/svg','rect');
+ bar.setAttribute('x', xOf(i) - barW/2);
+ bar.setAttribute('y', by);
+ bar.setAttribute('width', barW);
+ bar.setAttribute('height', Math.max(0, (padTop + chartH) - by));
+ bar.setAttribute('rx', 1);
+ bar.setAttribute('fill', SALES_COLOR);
+ bar.style.cursor = 'pointer';
+ bar.setAttribute('title', p.label + ' · 총매출 ' + fmtM(p.totalSales));
+ bar.addEventListener('click', (function(week){ return function(){
+ if (typeof switchSalesMonth === 'function') switchSalesMonth(week.mo);
+ if (typeof switchSalesWeek === 'function') switchSalesWeek(week.weekId);
+ }; })(p));
+ barsGroup.appendChild(bar);
+ });
+ svg.appendChild(barsGroup);
+
  // ── 완만한 곡선 경로 (Catmull-Rom → Bezier). 데이터 끊긴 구간은 분리해서 그림 ──
  function smoothSegment(seg) {
  if (seg.length < 2) return '';
@@ -15700,29 +15738,18 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  return d.trim();
  }
 
- var salesXY = pts.map(function(p, i) { return p.totalSales != null ? { x: xOf(i), y: ySalesOf(p.totalSales) } : null; });
+ var metricGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
  var metricXY = pts.map(function(p, i) { return p.hasData ? { x: xOf(i), y: yOf(p.metricVal) } : null; });
 
- // ── 총매출 선(점선, 보조축) ──
- var salesPath = document.createElementNS('http://www.w3.org/2000/svg','path');
- salesPath.setAttribute('d', buildSmoothD(salesXY));
- salesPath.setAttribute('fill', 'none');
- salesPath.setAttribute('stroke', '#8b5cf6');
- salesPath.setAttribute('stroke-width', '1.3');
- salesPath.setAttribute('stroke-linecap', 'round');
- salesPath.setAttribute('stroke-dasharray', '3,2');
- salesPath.setAttribute('opacity', '0.75');
- svg.appendChild(salesPath);
-
- // ── 지표 선(실선) ──
+ // ── 지표 선(실선, 막대 위에 그려서 대비) ──
  var metricPath = document.createElementNS('http://www.w3.org/2000/svg','path');
  metricPath.setAttribute('d', buildSmoothD(metricXY));
  metricPath.setAttribute('fill', 'none');
- metricPath.setAttribute('stroke', '#f97316');
- metricPath.setAttribute('stroke-width', '1.8');
+ metricPath.setAttribute('stroke', METRIC_COLOR);
+ metricPath.setAttribute('stroke-width', '2');
  metricPath.setAttribute('stroke-linecap', 'round');
  metricPath.setAttribute('stroke-linejoin', 'round');
- svg.appendChild(metricPath);
+ metricGroup.appendChild(metricPath);
 
  // ── 라벨 표시 대상 선정: 주차가 많으면(1년치) 일정 간격 + 극값(오르내림 꺾이는 지점) + 현재 주차만 표시해서 안 빽빽하게 ──
  var labelInterval = pts.length > 20 ? Math.ceil(pts.length / 16) : 1;
@@ -15734,90 +15761,118 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  }
  function shouldLabel(i) { return i % labelInterval === 0 || i === curWeekIdx || isExtremum(i); }
 
- // ── 점(채워진 원) + 값 라벨: 그 지점에서 더 높게 그려진 선의 라벨은 점 위, 낮은 선은 점 아래로 둬서 겹침을 피함 ──
+ // ── 점 + 값 라벨. 현재 주차는 파란 배지(사각형 박스)로 강조.
+ //    막대(총매출) 라벨과 지표 라벨(또는 배지)이 세로로 가까우면 최소 16px 간격을 두고 서로 밀어냄 ──
+ var MIN_LABEL_GAP = 16;
  pts.forEach(function(p, i) {
- var isCur = i === curWeekIdx;
- var yM = p.hasData ? yOf(p.metricVal) : null;
- var yS = p.totalSales != null ? ySalesOf(p.totalSales) : null;
- var metricAbove = yM != null && (yS == null || yM <= yS);
-
- if (yM != null) {
- var dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
- dot.setAttribute('cx', xOf(i)); dot.setAttribute('cy', yM);
- dot.setAttribute('r', isCur ? radiusOf(p.gradeACount) + 1.5 : radiusOf(p.gradeACount));
- dot.setAttribute('fill', isCur ? '#dc2626' : '#f97316');
- dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1');
- dot.style.cursor = 'pointer';
- var tipVal = (Math.round(p.metricVal*10)/10) + metricUnit;
- dot.setAttribute('title', p.label + ': ' + tipVal + (p.totalSales!=null ? ' · 총매출 ' + fmtM(p.totalSales) : '') + ' · A등급 ' + (p.gradeACount||0) + '개');
- dot.addEventListener('click', (function(week){ return function(){
- if (typeof switchSalesMonth === 'function') switchSalesMonth(week.mo);
- if (typeof switchSalesWeek === 'function') switchSalesWeek(week.weekId);
- }; })(p));
- svg.appendChild(dot);
-
- if (shouldLabel(i)) {
- var lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
- lbl.setAttribute('x', xOf(i));
- lbl.setAttribute('y', metricAbove ? yM - 5 : yM + 9);
- lbl.setAttribute('text-anchor', 'middle');
- lbl.setAttribute('font-size', '7'); lbl.setAttribute('font-weight', '700');
- lbl.setAttribute('fill', isCur ? '#dc2626' : '#f97316');
- lbl.textContent = (Math.round(p.metricVal*10)/10) + metricUnit;
- svg.appendChild(lbl);
- }
- } else {
+ if (!p.hasData) {
  var gdot = document.createElementNS('http://www.w3.org/2000/svg','circle');
  gdot.setAttribute('cx', xOf(i)); gdot.setAttribute('cy', padTop + chartH);
  gdot.setAttribute('r', 1.2); gdot.setAttribute('fill', '#d1d5db'); gdot.setAttribute('opacity', '0.4');
  gdot.setAttribute('title', p.label + ': 데이터 없음');
- svg.appendChild(gdot);
+ metricGroup.appendChild(gdot);
+ return;
+ }
+ var isCur = i === curWeekIdx;
+ var y = yOf(p.metricVal);
+ var valTxt = (Math.round(p.metricVal*10)/10) + ' ' + metricUnit;
+
+ // 막대(총매출) 라벨 후보 위치 — 막대 위쪽
+ var showBarLabel = shouldLabel(i) && p.totalSales != null;
+ var barLabelY = showBarLabel ? (ySalesOf(p.totalSales) - 4) : null;
+ var barLabelTxt = showBarLabel ? (fmtM(p.totalSales) + ' 원') : null;
+
+ if (isCur) {
+ var badgeW = Math.max(24, valTxt.length * 5.2 + 8);
+ var badgeH = 13;
+ var bx = xOf(i) - badgeW/2;
+ var by2 = Math.max(padTop - 3, y - badgeH - 8);
+ // 막대 라벨이 배지와 겹치면 배지 위쪽으로 밀어냄
+ if (showBarLabel && (by2 - barLabelY) < MIN_LABEL_GAP) {
+ barLabelY = by2 - MIN_LABEL_GAP;
+ }
+ var connector = document.createElementNS('http://www.w3.org/2000/svg','line');
+ connector.setAttribute('x1', xOf(i)); connector.setAttribute('y1', by2 + badgeH);
+ connector.setAttribute('x2', xOf(i)); connector.setAttribute('y2', y);
+ connector.setAttribute('stroke', METRIC_COLOR); connector.setAttribute('stroke-width', '1'); connector.setAttribute('opacity', '0.5');
+ metricGroup.appendChild(connector);
+ var badgeRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+ badgeRect.setAttribute('x', bx); badgeRect.setAttribute('y', by2);
+ badgeRect.setAttribute('width', badgeW); badgeRect.setAttribute('height', badgeH);
+ badgeRect.setAttribute('rx', 3);
+ badgeRect.setAttribute('fill', METRIC_COLOR);
+ metricGroup.appendChild(badgeRect);
+ var badgeTxt = document.createElementNS('http://www.w3.org/2000/svg','text');
+ badgeTxt.setAttribute('x', xOf(i)); badgeTxt.setAttribute('y', by2 + badgeH/2 + 3);
+ badgeTxt.setAttribute('text-anchor', 'middle'); badgeTxt.setAttribute('font-size', '7.5'); badgeTxt.setAttribute('font-weight', '800');
+ badgeTxt.setAttribute('fill', '#fff');
+ badgeTxt.textContent = valTxt;
+ metricGroup.appendChild(badgeTxt);
  }
 
- if (yS != null && shouldLabel(i)) {
- var sdot = document.createElementNS('http://www.w3.org/2000/svg','circle');
- sdot.setAttribute('cx', xOf(i)); sdot.setAttribute('cy', yS);
- sdot.setAttribute('r', '2'); sdot.setAttribute('fill', '#8b5cf6');
- sdot.setAttribute('stroke', '#fff'); sdot.setAttribute('stroke-width', '0.8');
- svg.appendChild(sdot);
+ var dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+ dot.setAttribute('cx', xOf(i)); dot.setAttribute('cy', y);
+ dot.setAttribute('r', isCur ? 3.2 : 2.4);
+ dot.setAttribute('fill', METRIC_COLOR);
+ dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1');
+ dot.style.cursor = 'pointer';
+ dot.setAttribute('title', p.label + ': ' + valTxt + (p.totalSales!=null ? ' · 총매출 ' + fmtM(p.totalSales) : ''));
+ dot.addEventListener('click', (function(week){ return function(){
+ if (typeof switchSalesMonth === 'function') switchSalesMonth(week.mo);
+ if (typeof switchSalesWeek === 'function') switchSalesWeek(week.weekId);
+ }; })(p));
+ metricGroup.appendChild(dot);
 
- var slbl = document.createElementNS('http://www.w3.org/2000/svg','text');
- slbl.setAttribute('x', xOf(i));
- slbl.setAttribute('y', metricAbove ? yS + 9 : yS - 5);
- slbl.setAttribute('text-anchor', 'middle');
- slbl.setAttribute('font-size', '6.5'); slbl.setAttribute('font-weight', '700');
- slbl.setAttribute('fill', '#8b5cf6');
- slbl.textContent = fmtM(p.totalSales);
- svg.appendChild(slbl);
+ // 지표 라벨 후보 위치(점 위쪽) — 배지가 있는 현재 주차는 배지가 값을 대신 보여주므로 별도 라벨 생략
+ var showLineLabel = !isCur && shouldLabel(i);
+ var lineLabelY = showLineLabel ? Math.max(padTop + 6, y - 5) : null;
+
+ // 막대 라벨과 지표 라벨이 겹치면(간격 < 16px) 서로 반대 방향으로 밀어내 최소 간격 확보
+ if (showLineLabel && showBarLabel) {
+ var gap = Math.abs(barLabelY - lineLabelY);
+ if (gap < MIN_LABEL_GAP) {
+ var mid = (barLabelY + lineLabelY) / 2;
+ if (barLabelY <= lineLabelY) { barLabelY = mid - MIN_LABEL_GAP/2; lineLabelY = mid + MIN_LABEL_GAP/2; }
+ else { lineLabelY = mid - MIN_LABEL_GAP/2; barLabelY = mid + MIN_LABEL_GAP/2; }
+ }
+ }
+
+ if (showLineLabel) {
+ var lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+ lbl.setAttribute('x', xOf(i));
+ lbl.setAttribute('y', lineLabelY);
+ lbl.setAttribute('text-anchor', 'middle');
+ lbl.setAttribute('font-size', '7'); lbl.setAttribute('font-weight', '700');
+ lbl.setAttribute('fill', METRIC_COLOR);
+ lbl.textContent = valTxt;
+ metricGroup.appendChild(lbl);
+ }
+ if (showBarLabel) {
+ var blbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+ blbl.setAttribute('x', xOf(i));
+ blbl.setAttribute('y', barLabelY);
+ blbl.setAttribute('text-anchor', 'middle');
+ blbl.setAttribute('font-size', '6.5'); blbl.setAttribute('font-weight', '700');
+ blbl.setAttribute('fill', '#8b93a1');
+ blbl.textContent = barLabelTxt;
+ barsGroup.appendChild(blbl);
  }
  });
+ svg.appendChild(metricGroup);
 
- svgWrapOuter.appendChild(svg);
- trendWrap.appendChild(svgWrapOuter);
-
- // ── 범례(하단, 원형 마커 + 텍스트, 클릭 토글) ──
- var legendRow = document.createElement('div');
- legendRow.style.cssText = 'display:flex;justify-content:center;gap:14px;margin-top:4px;';
- function legendItem(colorCss, text) {
- var it = document.createElement('span');
- it.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:8px;font-weight:700;color:#6b7280;cursor:pointer;user-select:none;';
- it.innerHTML = '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + colorCss + ';"></span>' + text;
- return it;
- }
- var legend1 = legendItem('#f97316', metricLabel);
- var legend2 = legendItem('#8b5cf6', '총매출');
  legend1.onclick = function() {
- var on = metricPath.style.display !== 'none';
- metricPath.style.display = on ? 'none' : '';
+ var on = barsGroup.style.display !== 'none';
+ barsGroup.style.display = on ? 'none' : '';
  legend1.style.opacity = on ? '0.4' : '1';
  };
  legend2.onclick = function() {
- var on = salesPath.style.display !== 'none';
- salesPath.style.display = on ? 'none' : '';
+ var on = metricGroup.style.display !== 'none';
+ metricGroup.style.display = on ? 'none' : '';
  legend2.style.opacity = on ? '0.4' : '1';
  };
- legendRow.appendChild(legend1); legendRow.appendChild(legend2);
- trendWrap.appendChild(legendRow);
+
+ svgWrapOuter.appendChild(svg);
+ trendWrap.appendChild(svgWrapOuter);
 
  // 현재 주차로 자동 스크롤
  if (curWeekIdx >= 0) {
@@ -15830,7 +15885,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  var curWLabel = window.currentSalesWeek ? (weeksArr[curWeekIdx] ? weeksArr[curWeekIdx].label : window.currentSalesWeek) : '월 전체';
  var info = document.createElement('div');
  info.style.cssText = 'font-size:8px;color:#64748b;text-align:center;margin-top:3px;';
- info.textContent = '현재: ' + curWLabel + ' · 점 크기=A등급 구역수 · 빨간점=현재 주차 · 끊김=데이터 없음';
+ info.textContent = '현재: ' + curWLabel + ' · 파란 배지=현재 주차 값 · 회색 막대=총매출 · 끊김=데이터 없음';
  trendWrap.appendChild(info);
 
  sumWrap.appendChild(trendWrap);
