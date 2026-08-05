@@ -2029,6 +2029,18 @@ body.viewer-mode #salesMonthNav > div > button:not(#salesSubTab_perSales):not(#s
    window.sgaRateData[store] = JSON.parse(JSON.stringify(data.sgaRateData));
    window.storeSgaRateDataMap[store] = JSON.parse(JSON.stringify(data.sgaRateData));
  }
+ if (!window.sgaAreaRateData) window.sgaAreaRateData = {};
+ if (!window.storeSgaAreaRateDataMap) window.storeSgaAreaRateDataMap = {};
+ if (data.sgaAreaRateData) {
+   window.sgaAreaRateData[store] = JSON.parse(JSON.stringify(data.sgaAreaRateData));
+   window.storeSgaAreaRateDataMap[store] = JSON.parse(JSON.stringify(data.sgaAreaRateData));
+ }
+ if (!window.groupAreaMap) window.groupAreaMap = {};
+ if (!window.storeGroupAreaMapMap) window.storeGroupAreaMapMap = {};
+ if (data.groupAreaMap) {
+   window.groupAreaMap[store] = JSON.parse(JSON.stringify(data.groupAreaMap));
+   window.storeGroupAreaMapMap[store] = JSON.parse(JSON.stringify(data.groupAreaMap));
+ }
  // 현재 지점이면 활성 변수에도 즉시 적용
  if (store === (window.currentStore || 'gs')) {
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
@@ -2267,6 +2279,18 @@ body.viewer-mode #salesMonthNav > div > button:not(#salesSubTab_perSales):not(#s
  if (data.sgaRateData) {
    window.sgaRateData[store] = JSON.parse(JSON.stringify(data.sgaRateData));
    window.storeSgaRateDataMap[store] = JSON.parse(JSON.stringify(data.sgaRateData));
+ }
+ if (!window.sgaAreaRateData) window.sgaAreaRateData = {};
+ if (!window.storeSgaAreaRateDataMap) window.storeSgaAreaRateDataMap = {};
+ if (data.sgaAreaRateData) {
+   window.sgaAreaRateData[store] = JSON.parse(JSON.stringify(data.sgaAreaRateData));
+   window.storeSgaAreaRateDataMap[store] = JSON.parse(JSON.stringify(data.sgaAreaRateData));
+ }
+ if (!window.groupAreaMap) window.groupAreaMap = {};
+ if (!window.storeGroupAreaMapMap) window.storeGroupAreaMapMap = {};
+ if (data.groupAreaMap) {
+   window.groupAreaMap[store] = JSON.parse(JSON.stringify(data.groupAreaMap));
+   window.storeGroupAreaMapMap[store] = JSON.parse(JSON.stringify(data.groupAreaMap));
  }
  // ── window.salesData/areaData/salesGroups/salesGroupData는 stale top-level(data.salesData)로
  //    덮어쓰지 않는다. monthlySalesStore/weeklySalesStore(위에서 Firebase 최신값으로 갱신됨)
@@ -9256,6 +9280,10 @@ function applyPendingJson() {
   if (!window.storeMarginGroupDataMap) window.storeMarginGroupDataMap = {};
   if (!window.sgaRateData) window.sgaRateData = {};
   if (!window.storeSgaRateDataMap) window.storeSgaRateDataMap = {};
+  if (!window.sgaAreaRateData) window.sgaAreaRateData = {};
+  if (!window.storeSgaAreaRateDataMap) window.storeSgaAreaRateDataMap = {};
+  if (!window.groupAreaMap) window.groupAreaMap = {};
+  if (!window.storeGroupAreaMapMap) window.storeGroupAreaMapMap = {};
   if (!window._issueSelectionsStore) window._issueSelectionsStore = {};
   if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
   if (!window.storeSeasonOverrides) window.storeSeasonOverrides = {};
@@ -9284,6 +9312,14 @@ function applyPendingJson() {
   if (sd.sgaRateData) {
    window.storeSgaRateDataMap[code] = JSON.parse(JSON.stringify(sd.sgaRateData));
    window.sgaRateData[code] = JSON.parse(JSON.stringify(sd.sgaRateData));
+  }
+  if (sd.sgaAreaRateData) {
+   window.storeSgaAreaRateDataMap[code] = JSON.parse(JSON.stringify(sd.sgaAreaRateData));
+   window.sgaAreaRateData[code] = JSON.parse(JSON.stringify(sd.sgaAreaRateData));
+  }
+  if (sd.groupAreaMap) {
+   window.storeGroupAreaMapMap[code] = JSON.parse(JSON.stringify(sd.groupAreaMap));
+   window.groupAreaMap[code] = JSON.parse(JSON.stringify(sd.groupAreaMap));
   }
   if (sd.issueSelections) window._issueSelectionsStore[code] = JSON.parse(JSON.stringify(sd.issueSelections));
   if (sd.monthZoneOverrides) {
@@ -12049,14 +12085,17 @@ function _getGroupForZone(zoneId) {
  return null;
 }
 
-/* ── 판관비율(SGA) 조회 — 구역(그룹)×월 단위로 저장된 값, 없으면 기본 22%로 fallback.
-   "판관비율 관리표"(openSgaRateModal)에서 관리. monthIdx 생략 시 현재 보고 있는 월(curMonthIdx) 기준. ── */
+/* ── 판관비율(SGA) 조회 — 구역(그룹)이 배정된 영역(카테고리)의 월별 판관비율을 조회, 없으면 기본 22%로 fallback.
+   구역-영역 배정은 groupAreaMap[store][gid], 영역별 비율은 sgaAreaRateData[store][areaCode][monthIdx]
+   ("판관비율 관리표" openSgaRateModal / "구역-영역 배정" openGroupAreaMapModal 에서 관리).
+   monthIdx 생략 시 현재 보고 있는 월(curMonthIdx) 기준. ── */
 var SGA_RATE_FALLBACK = 22;
 function _getSgaRate(gid, monthIdx) {
  var store = window.currentStore || 'gs';
  var mi = (monthIdx != null) ? monthIdx : (typeof curMonthIdx !== 'undefined' ? curMonthIdx : null);
- var byGid = gid && window.sgaRateData && window.sgaRateData[store] && window.sgaRateData[store][gid];
- if (byGid && mi != null && byGid[mi] != null && byGid[mi] !== '') return Number(byGid[mi]);
+ var areaCode = gid && window.groupAreaMap && window.groupAreaMap[store] && window.groupAreaMap[store][gid];
+ var byArea = areaCode && window.sgaAreaRateData && window.sgaAreaRateData[store] && window.sgaAreaRateData[store][areaCode];
+ if (byArea && mi != null && byArea[mi] != null && byArea[mi] !== '') return Number(byArea[mi]);
  return SGA_RATE_FALLBACK;
 }
 
@@ -12242,6 +12281,10 @@ if (!window.marginGroupData) window.marginGroupData = {};
 if (!window.storeMarginGroupDataMap) window.storeMarginGroupDataMap = {};
 if (!window.sgaRateData) window.sgaRateData = {};
 if (!window.storeSgaRateDataMap) window.storeSgaRateDataMap = {};
+if (!window.sgaAreaRateData) window.sgaAreaRateData = {};
+if (!window.storeSgaAreaRateDataMap) window.storeSgaAreaRateDataMap = {};
+if (!window.groupAreaMap) window.groupAreaMap = {};
+if (!window.storeGroupAreaMapMap) window.storeGroupAreaMapMap = {};
 window._salesSubTab = window._salesSubTab || 'perSales';
 
 /* ── 숫자 탭 서브탭 전환 ── */
@@ -12391,6 +12434,8 @@ function _salesSaveAllToFirebase() {
   _salesUpd.marginTargets    = JSON.parse(JSON.stringify((window.marginTargets && window.marginTargets[store]) || {}));
   _salesUpd.marginGroupData  = JSON.parse(JSON.stringify(window.marginGroupData || {}));
   _salesUpd.sgaRateData      = JSON.parse(JSON.stringify((window.sgaRateData && window.sgaRateData[store]) || {}));
+  _salesUpd.sgaAreaRateData  = JSON.parse(JSON.stringify((window.sgaAreaRateData && window.sgaAreaRateData[store]) || {}));
+  _salesUpd.groupAreaMap     = JSON.parse(JSON.stringify((window.groupAreaMap && window.groupAreaMap[store]) || {}));
   window._firebaseSavePartial(store, _salesUpd);
  }
  setTimeout(function() {
@@ -22576,9 +22621,43 @@ function openZoneSalesUploadModal() {
 }
 
 /* ═══════════════════════════════════════════════
-   판관비율(SGA) 관리표 — 구역(그룹) × 월별 판관비율(%) 관리.
-   이익율 = 매총율 − 해당 그룹·해당 월의 판관비율(값 없으면 SGA_RATE_FALLBACK).
-   조회 시점 계산은 _getSgaRate/_computeMarginFromSgdEntry(코드 앞부분)에서 수행 ── */
+   판관비율(SGA) 관리표 — 영역(카테고리) × 월별 판관비율(%)을 관리하고,
+   각 구역(그룹)을 영역에 배정해 일괄 적용.
+   이익율 = 매총율 − 해당 구역이 속한 영역·해당 월의 판관비율(값 없으면 SGA_RATE_FALLBACK).
+   조회 시점 계산은 _getSgaRate/_computeMarginFromSgdEntry(코드 앞부분)에서 수행.
+   구역별 개별 예외 입력은 없음 — 영역 단위 배정으로만 일괄 적용 ── */
+const SGA_AREAS = [
+ { code: 'DAA', name: '하이퍼공통' },
+ { code: 'DBA', name: '채소' },
+ { code: 'DCA', name: '청과' },
+ { code: 'DDA', name: '수산' },
+ { code: 'DEA', name: '축산' },
+ { code: 'DFA', name: '건식' },
+ { code: 'DGA', name: '공산식품' },
+ { code: 'DHA', name: '공산비식품' },
+ { code: 'DIA', name: '양곡' },
+ { code: 'DWA', name: '리빙패브릭' },
+ { code: 'DYB', name: 'TO-GO' },
+ { code: 'EJA', name: '에코마트' },
+ { code: 'ELA', name: '킴스베이커리' },
+];
+
+/* 기본 13개 영역 + 업로드로 새로 들어온 코드(기본 목록에 없는 경우)까지 합친 전체 영역 목록 */
+function _sgaAllAreas() {
+  var store = window.currentStore || 'gs';
+  var known = {};
+  SGA_AREAS.forEach(function(a){ known[a.code] = a.name; });
+  var byStore = (window.sgaAreaRateData && window.sgaAreaRateData[store]) || {};
+  Object.keys(byStore).forEach(function(code){ if (!(code in known)) known[code] = code; });
+  return Object.keys(known).map(function(code){ return { code: code, name: known[code] }; });
+}
+
+function _sgaAreaLabel(code) {
+  if (!code) return '';
+  var found = SGA_AREAS.find(function(a){ return a.code === code; });
+  return found ? (found.code + ' ' + found.name) : code;
+}
+
 function openSgaRateModal() {
   if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
   var ex = document.getElementById('sgaRateModal');
@@ -22594,31 +22673,32 @@ function openSgaRateModal() {
   modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:820px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
     + '<div style="background:linear-gradient(135deg,#0f766e,#0d9488);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
     + '<div><div style="font-size:15px;font-weight:900;color:#fff;">판관비율 관리표</div>'
-    + '<div style="font-size:10px;color:#ccfbf1;margin-top:2px;">' + storeName + ' · 구역(그룹) × 월별 판관비율(%) — 값 없으면 기본 ' + SGA_RATE_FALLBACK + '% 적용</div></div>'
+    + '<div style="font-size:10px;color:#ccfbf1;margin-top:2px;">' + storeName + ' · 구역은 배정된 영역(카테고리)의 월별 판관비율을 따릅니다 — 값 없으면 기본 ' + SGA_RATE_FALLBACK + '% 적용</div></div>'
     + '<button onclick="document.getElementById(\'sgaRateModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
     + '</div>'
     + '<div style="padding:10px 16px;background:#f0fdfa;border-bottom:1px solid #99f6e4;flex-shrink:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
     + '<button onclick="syncSgaRateData();showToast(\'☁️ Firebase 저장 완료\');" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0d9488;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">☁️ Firebase 저장</button>'
-    + '<button onclick="_sgaOpenUploadModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0369a1;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📥 엑셀 업로드</button>'
-    + '<button onclick="_sgaDownloadXlsx()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📤 엑셀 다운로드</button>'
-    + '<span style="font-size:9px;color:#0f766e;margin-left:auto;">셀을 비워두면 기본값 ' + SGA_RATE_FALLBACK + '%가 자동 적용됩니다</span>'
+    + '<button onclick="openGroupAreaMapModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#7c3aed;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">🗂️ 구역-영역 배정</button>'
+    + '<button onclick="_sgaOpenUploadModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0369a1;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📥 영역별 업로드</button>'
+    + '<button onclick="_sgaDownloadXlsx()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📤 영역별 다운로드</button>'
+    + '<span style="font-size:9px;color:#0f766e;margin-left:auto;">영역 값이 없으면 기본값 ' + SGA_RATE_FALLBACK + '%가 자동 적용됩니다</span>'
     + '</div>'
     + '<div id="sgaTableWrap" style="flex:1;overflow:auto;padding:0 4px 8px;"></div>'
-    + '<div style="padding:8px 16px;border-top:1px solid #f1f5f9;background:#f0fdfa;font-size:10px;color:#9ca3af;flex-shrink:0;">수정 후 반드시 ☁️ Firebase 저장을 눌러주세요</div>'
+    + '<div style="padding:8px 16px;border-top:1px solid #f1f5f9;background:#f0fdfa;font-size:10px;color:#9ca3af;flex-shrink:0;">이 표는 조회 전용입니다 — 값 수정은 "🗂️ 구역-영역 배정"과 "📥 영역별 업로드"에서 하세요</div>'
     + '</div>';
 
   document.body.appendChild(modal);
   _renderSgaRateTable();
 }
 
+/* 조회 전용 표 — 구역별 실제 적용값(영역값 또는 기본 22%)을 그대로 보여줌. 직접 입력 셀 없음 ── */
 function _renderSgaRateTable() {
   var wrap = document.getElementById('sgaTableWrap');
   if (!wrap) return;
   var store = window.currentStore || 'gs';
-  if (!window.sgaRateData) window.sgaRateData = {};
-  if (!window.sgaRateData[store]) window.sgaRateData[store] = {};
   var groups = window.salesGroups || {};
   var gids = Object.keys(groups);
+  var gam = (window.groupAreaMap && window.groupAreaMap[store]) || {};
 
   if (!gids.length) {
     wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;font-size:12px;color:#9ca3af;">구역 그룹이 없습니다. 먼저 "구역 그룹"에서 그룹을 만들어주세요.</div>';
@@ -22627,54 +22707,37 @@ function _renderSgaRateTable() {
 
   var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
   html += '<thead><tr style="position:sticky;top:0;background:#fff;z-index:1;">';
-  html += '<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;min-width:110px;">그룹명</th>';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;min-width:150px;">그룹명 (배정 영역)</th>';
   MONTHS.forEach(function(m) {
-    html += '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;min-width:52px;">' + m.label + '</th>';
+    html += '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;min-width:44px;">' + m.label + '</th>';
   });
   html += '</tr></thead><tbody>';
 
   gids.forEach(function(gid) {
     var g = groups[gid];
+    var areaCode = gam[gid];
     html += '<tr style="border-bottom:1px solid #f1f5f9;">';
-    html += '<td style="padding:5px 10px;font-weight:700;color:#111827;white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (g.color || '#9ca3af') + ';margin-right:5px;"></span>' + (g.label || gid) + '</td>';
+    html += '<td style="padding:5px 10px;font-weight:700;color:#111827;white-space:nowrap;">'
+      + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (g.color || '#9ca3af') + ';margin-right:5px;"></span>' + (g.label || gid)
+      + (areaCode ? '<div style="font-size:9px;font-weight:600;color:#0d9488;margin-top:1px;">' + _sgaAreaLabel(areaCode) + '</div>' : '<div style="font-size:9px;font-weight:600;color:#d97706;margin-top:1px;">미배정 → 기본 ' + SGA_RATE_FALLBACK + '%</div>')
+      + '</td>';
     MONTHS.forEach(function(m) {
-      var val = (window.sgaRateData[store][gid] && window.sgaRateData[store][gid][m.idx] != null) ? window.sgaRateData[store][gid][m.idx] : '';
-      html += '<td style="padding:3px 2px;text-align:center;">'
-        + '<input type="number" step="0.1" value="' + val + '" placeholder="' + SGA_RATE_FALLBACK + '" '
-        + 'onchange="_sgaSetRate(\'' + gid + '\',' + m.idx + ',this.value)" '
-        + 'style="width:44px;text-align:center;font-family:inherit;font-size:10.5px;padding:4px 2px;border:1.5px solid #d1d5db;border-radius:5px;color:#111827;"/>'
-        + '</td>';
+      var effective = _getSgaRate(gid, m.idx);
+      var hasAreaVal = areaCode && window.sgaAreaRateData && window.sgaAreaRateData[store] && window.sgaAreaRateData[store][areaCode] && window.sgaAreaRateData[store][areaCode][m.idx] != null;
+      html += '<td style="padding:5px 2px;text-align:center;' + (hasAreaVal ? 'color:#111827;font-weight:800;' : 'color:#9ca3af;') + '">' + effective + (hasAreaVal ? '' : '<span style="font-size:8px;">*</span>') + '</td>';
     });
     html += '</tr>';
   });
   html += '</tbody></table>';
+  html += '<div style="padding:8px 10px;font-size:9px;color:#9ca3af;">* = 영역 값 없음 → 기본 ' + SGA_RATE_FALLBACK + '%가 적용 중입니다.</div>';
   wrap.innerHTML = html;
-}
-
-function _sgaSetRate(gid, monthIdx, val) {
-  var store = window.currentStore || 'gs';
-  if (!window.sgaRateData) window.sgaRateData = {};
-  if (!window.sgaRateData[store]) window.sgaRateData[store] = {};
-  if (!window.sgaRateData[store][gid]) window.sgaRateData[store][gid] = {};
-  var num = parseFloat(val);
-  if (val === '' || isNaN(num)) {
-    delete window.sgaRateData[store][gid][monthIdx];
-  } else {
-    window.sgaRateData[store][gid][monthIdx] = num;
-  }
-  _markSalesDirty();
-  if (typeof renderSalesView === 'function') {
-    var gc = document.getElementById('gc-sales');
-    var panel = document.querySelector('#salesWrap [data-sales-panel]');
-    if (gc && panel && typeof refreshSalesContent === 'function') refreshSalesContent(gc, panel);
-    else renderSalesView();
-  }
 }
 
 function syncSgaRateData() {
   var store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
   if (typeof window._firebaseSaveStoreField === 'function') {
-    window._firebaseSaveStoreField(store, 'sgaRateData', JSON.parse(JSON.stringify((window.sgaRateData && window.sgaRateData[store]) || {})));
+    window._firebaseSaveStoreField(store, 'sgaAreaRateData', JSON.parse(JSON.stringify((window.sgaAreaRateData && window.sgaAreaRateData[store]) || {})));
+    window._firebaseSaveStoreField(store, 'groupAreaMap', JSON.parse(JSON.stringify((window.groupAreaMap && window.groupAreaMap[store]) || {})));
   } else {
     console.warn('[판관비율] _firebaseSaveStoreField 미정의 — 저장 불가');
   }
@@ -22684,31 +22747,30 @@ function syncSgaRateData() {
 function _sgaDownloadXlsx() {
   if (typeof XLSX === 'undefined') { showToast('XLSX 라이브러리가 로드되지 않았습니다'); return; }
   var store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
-  var groups = window.salesGroups || {};
-  var gids = Object.keys(groups);
-  if (!gids.length) { showToast('다운로드할 그룹이 없습니다'); return; }
+  var areas = _sgaAllAreas();
+  if (!areas.length) { showToast('다운로드할 영역이 없습니다'); return; }
 
-  var rows = [['그룹명'].concat(MONTHS.map(function(m){ return m.label; }))];
-  gids.forEach(function(gid) {
-    var g = groups[gid];
-    var byGid = (window.sgaRateData && window.sgaRateData[store] && window.sgaRateData[store][gid]) || {};
-    var row = [g.label || gid];
-    MONTHS.forEach(function(m) { row.push(byGid[m.idx] != null ? byGid[m.idx] : ''); });
+  var rows = [['영역코드'].concat(MONTHS.map(function(m){ return m.label; }))];
+  areas.forEach(function(a) {
+    var byArea = (window.sgaAreaRateData && window.sgaAreaRateData[store] && window.sgaAreaRateData[store][a.code]) || {};
+    var row = [a.code];
+    MONTHS.forEach(function(m) { row.push(byArea[m.idx] != null ? byArea[m.idx] : ''); });
     rows.push(row);
   });
 
   var wb = XLSX.utils.book_new();
   var sheet = XLSX.utils.aoa_to_sheet(rows);
-  sheet['!cols'] = [{ wch: 16 }].concat(MONTHS.map(function(){ return { wch: 7 }; }));
-  XLSX.utils.book_append_sheet(wb, sheet, '판관비율표');
+  sheet['!cols'] = [{ wch: 10 }].concat(MONTHS.map(function(){ return { wch: 7 }; }));
+  XLSX.utils.book_append_sheet(wb, sheet, '영역별판관비율표');
 
   var storeName = ((window.storeNames || {})[store]) || store;
   var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  XLSX.writeFile(wb, storeName + '_판관비율표_' + dateStr + '.xlsx');
+  XLSX.writeFile(wb, storeName + '_영역별판관비율표_' + dateStr + '.xlsx');
 }
 
-/* ── 판관비율 엑셀/CSV 업로드 — A열=그룹명(또는 조닝번호), B열~=1월~12월 판관비율.
-   그룹 매칭: ①조닝번호(그룹 number) 정확 ②그룹명 정확 ③그룹명 fuzzy — 구역 매출 업로드와 동일한 우선순위 ── */
+/* ── 영역별 판관비율 엑셀/CSV 업로드 — A열=영역 코드(DAA 등) 또는 영역명, B열~=1월~12월 판관비율.
+   영역 매칭: ①코드 정확 ②영역명 정확 ③영역명 fuzzy.
+   #DIV/0!, #N/A, #VALUE!, #REF! 등 엑셀 오류 셀은 "데이터 없음"으로 조용히 스킵(_sgaIsErrorCell) ── */
 function _sgaOpenUploadModal() {
   if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
   var ex = document.getElementById('sgaUploadModal');
@@ -22721,7 +22783,7 @@ function _sgaOpenUploadModal() {
   var storeName = ((window.storeNames||{})[typeof currentStore!=='undefined'?currentStore:'gs'] || '현재 지점');
   modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:640px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
     + '<div style="background:linear-gradient(135deg,#0369a1,#0284c7);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
-    + '<div><div style="font-size:14px;font-weight:900;color:#fff;">📥 판관비율 엑셀 업로드</div>'
+    + '<div><div style="font-size:14px;font-weight:900;color:#fff;">📥 영역별 판관비율 엑셀 업로드</div>'
     + '<div style="font-size:10px;color:#bae6fd;margin-top:2px;">' + storeName + ' 전용 경로에만 저장됩니다</div></div>'
     + '<button onclick="document.getElementById(\'sgaUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
     + '</div>'
@@ -22729,18 +22791,23 @@ function _sgaOpenUploadModal() {
     + '<label id="sgaDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #38bdf8;border-radius:12px;padding:20px;cursor:pointer;background:#f0f9ff;" ondragover="event.preventDefault();this.style.borderColor=\'#0284c7\'" ondragleave="this.style.borderColor=\'#38bdf8\'" ondrop="event.preventDefault();this.style.borderColor=\'#38bdf8\';_sgaHandleUploadFile(event.dataTransfer.files[0]);">'
     + '<span style="font-size:28px;">📂</span>'
     + '<span style="font-size:12px;font-weight:700;color:#0369a1;">xlsx / csv 파일을 드롭하거나 클릭해서 선택</span>'
-    + '<span style="font-size:10px;color:#64748b;">A열=그룹명 또는 조닝번호, B열~=1월~12월 판관비율(%) (헤더 있어도 없어도 OK)</span>'
+    + '<span style="font-size:10px;color:#64748b;">A열=영역코드(DAA 등) 또는 영역명, B열~=1월~12월 판관비율(%) (헤더 있어도 없어도 OK, 오류 셀은 자동 스킵)</span>'
     + '<input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="_sgaHandleUploadFile(this.files[0])">'
     + '</label>'
     + '</div>'
     + '<div id="sgaUploadPreview" style="flex:1;overflow-y:auto;padding:0 20px 8px;display:none;"></div>'
     + '<div id="sgaUploadActions" style="padding:12px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:none;flex-shrink:0;">'
     + '<div style="display:flex;gap:16px;align-items:center;">'
-    + '<span style="font-size:10px;color:#6b7280;">매칭된 그룹만 반영되고, 매칭 실패 행은 무시됩니다.</span>'
+    + '<span style="font-size:10px;color:#6b7280;">매칭된 영역만 반영되고, 매칭 실패 행은 무시됩니다.</span>'
     + '<button id="sgaApplyBtn" onclick="_sgaApplyUpload()" style="margin-left:auto;font-family:inherit;font-size:12px;font-weight:800;padding:8px 20px;background:#0369a1;border:none;color:#fff;border-radius:8px;cursor:pointer;">등록하기</button>'
     + '</div></div>'
     + '</div>';
   document.body.appendChild(modal);
+}
+
+/* #DIV/0!, #N/A, #VALUE!, #REF!, #NAME?, #NULL!, #NUM! 등 엑셀 오류 셀 판별 — true면 "데이터 없음"으로 스킵 */
+function _sgaIsErrorCell(v) {
+  return typeof v === 'string' && v.trim().charAt(0) === '#';
 }
 
 function _sgaHandleUploadFile(file) {
@@ -22761,20 +22828,20 @@ function _sgaHandleUploadFile(file) {
       rows = rows.filter(function(r){ return r.some(function(c){ return String(c||'').trim(); }); });
       if (!rows.length) { showToast('데이터가 없습니다'); return; }
 
-      // 첫 행이 헤더인지 판단: B~M열이 전부 숫자로 안 읽히면 헤더로 간주하고 스킵
+      // 첫 행이 헤더인지 판단: B~M열이 전부 숫자/오류값/빈값이 아니면 헤더로 간주하고 스킵
       var startRow = 0;
       var firstDataCols = rows[0].slice(1, 13);
-      var looksNumeric = firstDataCols.length > 0 && firstDataCols.every(function(c){ return c === '' || !isNaN(parseFloat(c)); });
+      var looksNumeric = firstDataCols.length > 0 && firstDataCols.every(function(c){ return c === '' || _sgaIsErrorCell(c) || !isNaN(parseFloat(c)); });
       if (!looksNumeric) startRow = 1;
 
       var norm = typeof _zsuNormText === 'function' ? _zsuNormText : function(s){ return String(s||'').trim(); };
-      var groupNameMap = {}, groupNumberMap = {};
-      Object.entries(window.salesGroups || {}).forEach(function(entry) {
-        var gid = entry[0], g = entry[1];
-        var key = norm(String(g.label||'')).toLowerCase();
-        if (key) groupNameMap[key] = { gid: gid, label: g.label };
-        var numKey = norm(String(g.number||'')).toLowerCase();
-        if (numKey) groupNumberMap[numKey] = { gid: gid, label: g.label };
+      var areas = _sgaAllAreas();
+      var areaCodeMap = {}, areaNameMap = {};
+      areas.forEach(function(a) {
+        var codeKey = norm(String(a.code||'')).toLowerCase();
+        if (codeKey) areaCodeMap[codeKey] = a;
+        var nameKey = norm(String(a.name||'')).toLowerCase();
+        if (nameKey) areaNameMap[nameKey] = a;
       });
 
       var parsed = [];
@@ -22782,22 +22849,23 @@ function _sgaHandleUploadFile(file) {
         var nameRaw = norm(String(rows[i][0]||''));
         if (!nameRaw) continue;
         var key = nameRaw.toLowerCase();
-        var matchedGroup = groupNumberMap[key] || groupNameMap[key] || null;
-        if (!matchedGroup) {
+        var matchedArea = areaCodeMap[key] || areaNameMap[key] || null;
+        if (!matchedArea) {
           var bestScore = 0;
-          Object.values(groupNameMap).forEach(function(g) {
-            var gk = g.label.toLowerCase();
-            var score = (gk.includes(key)||key.includes(gk)) ? Math.min(gk.length,key.length)/Math.max(gk.length,key.length) : 0;
-            if (score > bestScore && score > 0.7) { bestScore = score; matchedGroup = g; }
+          areas.forEach(function(a) {
+            var ak = a.name.toLowerCase();
+            var score = (ak.includes(key)||key.includes(ak)) ? Math.min(ak.length,key.length)/Math.max(ak.length,key.length) : 0;
+            if (score > bestScore && score > 0.7) { bestScore = score; matchedArea = a; }
           });
         }
         var rates = [];
         for (var m = 0; m < 12; m++) {
           var raw = rows[i][m+1];
+          if (raw === '' || raw == null || _sgaIsErrorCell(raw)) { rates.push(null); continue; }
           var num = parseFloat(raw);
-          rates.push((raw === '' || raw == null || isNaN(num)) ? null : num);
+          rates.push(isNaN(num) ? null : num);
         }
-        parsed.push({ nameRaw: nameRaw, matchedGroup: matchedGroup, rates: rates });
+        parsed.push({ nameRaw: nameRaw, matchedArea: matchedArea, rates: rates });
       }
       if (!parsed.length) { showToast('인식된 항목이 없습니다.'); return; }
 
@@ -22815,21 +22883,21 @@ function _sgaRenderUploadPreview(parsed) {
   var preview = document.getElementById('sgaUploadPreview');
   var actions = document.getElementById('sgaUploadActions');
   if (!preview) return;
-  var matched = parsed.filter(function(p){ return p.matchedGroup; });
-  var unmatched = parsed.filter(function(p){ return !p.matchedGroup; });
+  var matched = parsed.filter(function(p){ return p.matchedArea; });
+  var unmatched = parsed.filter(function(p){ return !p.matchedArea; });
   var html = '<div style="margin-bottom:10px;padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:11px;line-height:1.8;">'
     + '<b style="font-size:12px;color:#1e40af;">📊 파싱 결과: 총 ' + parsed.length + '행</b><br>'
     + '<span style="color:#059669;">✅ 매칭: ' + matched.length + '개</span> &nbsp;'
     + '<span style="color:#dc2626;">❌ 매칭 실패: ' + unmatched.length + '개</span>'
     + '</div>';
   html += '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:6px;">'
-    + '<thead><tr style="background:#e0f2fe;"><th style="padding:5px 6px;text-align:left;color:#0369a1;">입력값</th><th style="padding:5px 6px;text-align:left;color:#0369a1;">매칭 그룹</th>'
+    + '<thead><tr style="background:#e0f2fe;"><th style="padding:5px 6px;text-align:left;color:#0369a1;">입력값</th><th style="padding:5px 6px;text-align:left;color:#0369a1;">매칭 영역</th>'
     + MONTHS.map(function(m){ return '<th style="padding:5px 4px;color:#0369a1;">' + m.label.replace('월','') + '</th>'; }).join('')
     + '</tr></thead><tbody>';
   parsed.slice(0,30).forEach(function(p) {
     html += '<tr style="border-bottom:1px solid #f1f5f9;">'
       + '<td style="padding:3px 6px;">' + p.nameRaw + '</td>'
-      + '<td style="padding:3px 6px;">' + (p.matchedGroup ? '<span style="color:#059669;font-weight:700;">' + p.matchedGroup.label + '</span>' : '<span style="color:#dc2626;">매칭 실패</span>') + '</td>'
+      + '<td style="padding:3px 6px;">' + (p.matchedArea ? '<span style="color:#059669;font-weight:700;">' + p.matchedArea.code + ' ' + p.matchedArea.name + '</span>' : '<span style="color:#dc2626;">매칭 실패</span>') + '</td>'
       + p.rates.map(function(r){ return '<td style="padding:3px 2px;text-align:center;color:#374151;">' + (r==null?'—':r) + '</td>'; }).join('')
       + '</tr>';
   });
@@ -22844,16 +22912,16 @@ function _sgaApplyUpload() {
   var parsed = window._sgaParsed;
   if (!parsed || !parsed.length) { showToast('업로드할 데이터가 없습니다'); return; }
   var store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
-  if (!window.sgaRateData) window.sgaRateData = {};
-  if (!window.sgaRateData[store]) window.sgaRateData[store] = {};
+  if (!window.sgaAreaRateData) window.sgaAreaRateData = {};
+  if (!window.sgaAreaRateData[store]) window.sgaAreaRateData[store] = {};
   var applied = 0;
   parsed.forEach(function(p) {
-    if (!p.matchedGroup) return;
-    var gid = p.matchedGroup.gid;
-    if (!window.sgaRateData[store][gid]) window.sgaRateData[store][gid] = {};
+    if (!p.matchedArea) return;
+    var code = p.matchedArea.code;
+    if (!window.sgaAreaRateData[store][code]) window.sgaAreaRateData[store][code] = {};
     p.rates.forEach(function(r, monthIdx) {
       if (r == null) return;
-      window.sgaRateData[store][gid][monthIdx] = r;
+      window.sgaAreaRateData[store][code][monthIdx] = r;
       applied++;
     });
   });
@@ -22862,6 +22930,91 @@ function _sgaApplyUpload() {
   if (m) m.remove();
   _renderSgaRateTable();
   showToast('✅ ' + applied + '개 셀 반영 완료 · Firebase 저장을 눌러주세요');
+}
+
+/* ═══════════════════════════════════════════════
+   구역-영역 배정 — 각 구역(그룹)이 어느 영역(카테고리)에 속하는지 지정.
+   판관비율은 이 배정을 통해 영역별 판관비율표(sgaAreaRateData)에서 조회됨.
+   구역별 개별 예외는 없음 — 영역 배정으로만 일괄 적용 ── */
+function openGroupAreaMapModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  var ex = document.getElementById('groupAreaMapModal');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'groupAreaMapModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9800;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+  var store = window.currentStore || 'gs';
+  var storeName = ((window.storeNames || {})[store]) || store;
+
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:520px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#4c1d95,#7c3aed);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:15px;font-weight:900;color:#fff;">🗂️ 구역-영역 배정</div>'
+    + '<div style="font-size:10px;color:#ddd6fe;margin-top:2px;">' + storeName + ' · 구역이 속한 영역을 지정하면 그 영역의 판관비율을 그대로 따릅니다</div></div>'
+    + '<button onclick="document.getElementById(\'groupAreaMapModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="padding:10px 16px;background:#faf5ff;border-bottom:1px solid #e9d5ff;flex-shrink:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<input id="gamSearch" type="text" placeholder="그룹명 검색..." oninput="_renderGroupAreaMapTable()" style="font-family:inherit;font-size:12px;padding:6px 10px;border:1.5px solid #c4b5fd;border-radius:7px;outline:none;flex:1;min-width:120px;"/>'
+    + '<button onclick="syncSgaRateData();showToast(\'☁️ Firebase 저장 완료\');" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#7c3aed;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">☁️ Firebase 저장</button>'
+    + '</div>'
+    + '<div id="gamTableWrap" style="flex:1;overflow:auto;padding:0 4px 8px;"></div>'
+    + '<div style="padding:8px 16px;border-top:1px solid #f1f5f9;background:#faf5ff;font-size:10px;color:#9ca3af;flex-shrink:0;">선택 즉시 반영되며, 수정 후 반드시 ☁️ Firebase 저장을 눌러주세요</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+  _renderGroupAreaMapTable();
+}
+
+function _renderGroupAreaMapTable() {
+  var wrap = document.getElementById('gamTableWrap');
+  if (!wrap) return;
+  var store = window.currentStore || 'gs';
+  if (!window.groupAreaMap) window.groupAreaMap = {};
+  if (!window.groupAreaMap[store]) window.groupAreaMap[store] = {};
+  var groups = window.salesGroups || {};
+  var gids = Object.keys(groups);
+  var q = ((document.getElementById('gamSearch') || {}).value || '').trim().toLowerCase();
+  if (q) gids = gids.filter(function(gid){ return (groups[gid].label||gid).toLowerCase().indexOf(q) !== -1; });
+
+  if (!gids.length) {
+    wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;font-size:12px;color:#9ca3af;">' + (q ? '검색 결과가 없습니다.' : '구역 그룹이 없습니다. 먼저 "구역 그룹"에서 그룹을 만들어주세요.') + '</div>';
+    return;
+  }
+
+  var areas = _sgaAllAreas();
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:11.5px;">';
+  html += '<thead><tr style="position:sticky;top:0;background:#fff;z-index:1;"><th style="text-align:left;padding:6px 10px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;">그룹명</th><th style="text-align:left;padding:6px 10px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;">배정 영역</th></tr></thead><tbody>';
+  gids.forEach(function(gid) {
+    var g = groups[gid];
+    var cur = window.groupAreaMap[store][gid] || '';
+    html += '<tr style="border-bottom:1px solid #f1f5f9;">';
+    html += '<td style="padding:6px 10px;font-weight:700;color:#111827;white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (g.color || '#9ca3af') + ';margin-right:5px;"></span>' + (g.label || gid) + '</td>';
+    html += '<td style="padding:4px 10px;">'
+      + '<select onchange="_gamSetArea(\'' + gid + '\',this.value)" style="font-family:inherit;font-size:11px;padding:5px 8px;border:1.5px solid #d1d5db;border-radius:6px;color:#111827;min-width:170px;">'
+      + '<option value="">— 미배정 (기본 ' + SGA_RATE_FALLBACK + '%) —</option>'
+      + areas.map(function(a){ return '<option value="' + a.code + '"' + (a.code === cur ? ' selected' : '') + '>' + a.code + ' ' + a.name + '</option>'; }).join('')
+      + '</select>'
+      + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function _gamSetArea(gid, areaCode) {
+  var store = window.currentStore || 'gs';
+  if (!window.groupAreaMap) window.groupAreaMap = {};
+  if (!window.groupAreaMap[store]) window.groupAreaMap[store] = {};
+  if (areaCode) window.groupAreaMap[store][gid] = areaCode;
+  else delete window.groupAreaMap[store][gid];
+  _markSalesDirty();
+  if (typeof renderSalesView === 'function') {
+    var gc = document.getElementById('gc-sales');
+    var panel = document.querySelector('#salesWrap [data-sales-panel]');
+    if (gc && panel && typeof refreshSalesContent === 'function') refreshSalesContent(gc, panel);
+    else renderSalesView();
+  }
 }
 
 /* ═══════════════════════════════════════════════
