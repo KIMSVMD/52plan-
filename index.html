@@ -625,7 +625,7 @@ body.sales-view-active #salesMonthNav { display: block; }
 .ai-chip:hover{border-color:var(--gmid);color:#4ade80;}
 
 /* TOAST */
-.toast{position:fixed;bottom:54px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--dark);color:white;padding:7px 14px;border-radius:6px;font-size:11px;font-weight:600;z-index:999;transition:transform .25s ease;border-left:4px solid var(--gmid);white-space:nowrap;}
+.toast{position:fixed;bottom:54px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--dark);color:white;padding:7px 14px;border-radius:6px;font-size:11px;font-weight:600;z-index:100000;transition:transform .25s ease;border-left:4px solid var(--gmid);white-space:nowrap;}
 .toast.show{transform:translateX(-50%) translateY(0);}
 
 /* ── 동기화 확인 모달 ── */
@@ -22768,7 +22768,9 @@ function _sgaDownloadXlsx() {
   XLSX.writeFile(wb, storeName + '_영역별판관비율표_' + dateStr + '.xlsx');
 }
 
-/* ── 영역별 판관비율 엑셀/CSV 업로드 — A열=영역 코드(DAA 등) 또는 영역명, B열~=1월~12월 판관비율.
+/* ── 영역별 판관비율 엑셀/CSV 업로드 — A열=영역 코드(DAA 등), B열=영역명(선택, 있어도 없어도 됨),
+   그 다음부터 월 컬럼(헤더가 "1월"~"12월" / 순수 숫자 1~12 / "26.01"~"26.12"(YY.MM, YYYY.MM도 가능) 모두 인식).
+   헤더 행에서 처음 인식된 월 컬럼 앞까지는 전부 식별자 칸(코드/영역명 등)으로 간주 — 위치 무관하게 코드·이름 둘 다로 매칭 시도.
    영역 매칭: ①코드 정확 ②영역명 정확 ③영역명 fuzzy.
    #DIV/0!, #N/A, #VALUE!, #REF! 등 엑셀 오류 셀은 "데이터 없음"으로 조용히 스킵(_sgaIsErrorCell) ── */
 function _sgaOpenUploadModal() {
@@ -22791,7 +22793,7 @@ function _sgaOpenUploadModal() {
     + '<label id="sgaDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #38bdf8;border-radius:12px;padding:20px;cursor:pointer;background:#f0f9ff;" ondragover="event.preventDefault();this.style.borderColor=\'#0284c7\'" ondragleave="this.style.borderColor=\'#38bdf8\'" ondrop="event.preventDefault();this.style.borderColor=\'#38bdf8\';_sgaHandleUploadFile(event.dataTransfer.files[0]);">'
     + '<span style="font-size:28px;">📂</span>'
     + '<span style="font-size:12px;font-weight:700;color:#0369a1;">xlsx / csv 파일을 드롭하거나 클릭해서 선택</span>'
-    + '<span style="font-size:10px;color:#64748b;">A열=영역코드(DAA 등) 또는 영역명, B열~=1월~12월 판관비율(%) (헤더 있어도 없어도 OK, 오류 셀은 자동 스킵)</span>'
+    + '<span style="font-size:10px;color:#64748b;">A열=영역코드(DAA 등), B열=영역명(선택), 그 다음~=월별 판관비율(%) — 월 헤더는 "1월"·"26.01"(YY.MM) 모두 인식, 오류 셀은 자동 스킵</span>'
     + '<input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="_sgaHandleUploadFile(this.files[0])">'
     + '</label>'
     + '</div>'
@@ -22808,6 +22810,31 @@ function _sgaOpenUploadModal() {
 /* #DIV/0!, #N/A, #VALUE!, #REF!, #NAME?, #NULL!, #NUM! 등 엑셀 오류 셀 판별 — true면 "데이터 없음"으로 스킵 */
 function _sgaIsErrorCell(v) {
   return typeof v === 'string' && v.trim().charAt(0) === '#';
+}
+
+/* 헤더 셀 하나를 월(0~11)로 해석 — "1월"~"12월" / 순수 숫자 "1"~"12" / "26.01"·"2026.01"·"26-01"·"26/01"(YY.MM, 연도부는 무시하고 월만 사용).
+   해석 불가면 null ── */
+function _sgaParseMonthHeader(cell) {
+  var s = String(cell == null ? '' : cell).trim();
+  if (!s) return null;
+  var mKr = s.match(/^(\d{1,2})\s*월$/);
+  if (mKr) { var n1 = parseInt(mKr[1], 10); if (n1 >= 1 && n1 <= 12) return n1 - 1; }
+  var mYm = s.match(/^\d{2,4}[.\-\/](\d{1,2})$/); // YY.MM / YYYY.MM / YY-MM / YY/MM
+  if (mYm) { var n2 = parseInt(mYm[1], 10); if (n2 >= 1 && n2 <= 12) return n2 - 1; }
+  var mBare = s.match(/^(\d{1,2})$/);
+  if (mBare) { var n3 = parseInt(mBare[1], 10); if (n3 >= 1 && n3 <= 12) return n3 - 1; }
+  return null;
+}
+
+/* 헤더 행에서 월 컬럼들을 탐지 — 오탐 방지를 위해 최소 3개 이상 인식돼야 헤더로 인정 */
+function _sgaDetectMonthCols(headerRow) {
+  var cols = [];
+  if (!headerRow) return cols;
+  for (var c = 0; c < headerRow.length; c++) {
+    var mi = _sgaParseMonthHeader(headerRow[c]);
+    if (mi != null) cols.push({ col: c, monthIdx: mi });
+  }
+  return cols.length >= 3 ? cols : [];
 }
 
 function _sgaHandleUploadFile(file) {
@@ -22828,11 +22855,20 @@ function _sgaHandleUploadFile(file) {
       rows = rows.filter(function(r){ return r.some(function(c){ return String(c||'').trim(); }); });
       if (!rows.length) { showToast('데이터가 없습니다'); return; }
 
-      // 첫 행이 헤더인지 판단: B~M열이 전부 숫자/오류값/빈값이 아니면 헤더로 간주하고 스킵
-      var startRow = 0;
-      var firstDataCols = rows[0].slice(1, 13);
-      var looksNumeric = firstDataCols.length > 0 && firstDataCols.every(function(c){ return c === '' || _sgaIsErrorCell(c) || !isNaN(parseFloat(c)); });
-      if (!looksNumeric) startRow = 1;
+      // 헤더 행에서 월 컬럼 탐지("1월"/숫자/"26.01" 등 모두 인식). 첫 월 컬럼 앞까지는 식별자 칸(코드/영역명).
+      // 헤더에서 못 찾으면(파일에 헤더가 아예 없는 레거시 케이스) A열=식별자 1칸 + B열부터 월 12개로 간주.
+      var monthCols = _sgaDetectMonthCols(rows[0]);
+      var startRow, idColCount;
+      if (monthCols.length) {
+        startRow = 1;
+        idColCount = monthCols[0].col;
+      } else {
+        idColCount = 1;
+        var firstDataCols = rows[0].slice(1, 13);
+        var looksNumeric = firstDataCols.length > 0 && firstDataCols.every(function(c){ return c === '' || _sgaIsErrorCell(c) || !isNaN(parseFloat(c)); });
+        startRow = looksNumeric ? 0 : 1;
+        monthCols = MONTHS.map(function(m, i){ return { col: idColCount + i, monthIdx: m.idx }; });
+      }
 
       var norm = typeof _zsuNormText === 'function' ? _zsuNormText : function(s){ return String(s||'').trim(); };
       var areas = _sgaAllAreas();
@@ -22846,25 +22882,37 @@ function _sgaHandleUploadFile(file) {
 
       var parsed = [];
       for (var i = startRow; i < rows.length; i++) {
-        var nameRaw = norm(String(rows[i][0]||''));
-        if (!nameRaw) continue;
-        var key = nameRaw.toLowerCase();
-        var matchedArea = areaCodeMap[key] || areaNameMap[key] || null;
+        // 식별자 칸(코드/영역명 등)을 앞에서부터 모아, 칸 위치와 무관하게 코드든 이름이든 매칭 시도
+        var idCells = [];
+        for (var c = 0; c < idColCount; c++) {
+          var idc = norm(String(rows[i][c] || ''));
+          if (idc) idCells.push(idc);
+        }
+        if (!idCells.length) continue;
+        var nameRaw = idCells.join(' / ');
+        var matchedArea = null;
+        for (var c2 = 0; c2 < idCells.length && !matchedArea; c2++) {
+          var key = idCells[c2].toLowerCase();
+          matchedArea = areaCodeMap[key] || areaNameMap[key] || null;
+        }
         if (!matchedArea) {
           var bestScore = 0;
-          areas.forEach(function(a) {
-            var ak = a.name.toLowerCase();
-            var score = (ak.includes(key)||key.includes(ak)) ? Math.min(ak.length,key.length)/Math.max(ak.length,key.length) : 0;
-            if (score > bestScore && score > 0.7) { bestScore = score; matchedArea = a; }
+          idCells.forEach(function(idc2) {
+            var key2 = idc2.toLowerCase();
+            areas.forEach(function(a) {
+              var ak = a.name.toLowerCase();
+              var score = (ak.includes(key2)||key2.includes(ak)) ? Math.min(ak.length,key2.length)/Math.max(ak.length,key2.length) : 0;
+              if (score > bestScore && score > 0.7) { bestScore = score; matchedArea = a; }
+            });
           });
         }
-        var rates = [];
-        for (var m = 0; m < 12; m++) {
-          var raw = rows[i][m+1];
-          if (raw === '' || raw == null || _sgaIsErrorCell(raw)) { rates.push(null); continue; }
+        var rates = new Array(12).fill(null);
+        monthCols.forEach(function(mc) {
+          var raw = rows[i][mc.col];
+          if (raw === '' || raw == null || _sgaIsErrorCell(raw)) return;
           var num = parseFloat(raw);
-          rates.push(isNaN(num) ? null : num);
-        }
+          if (!isNaN(num)) rates[mc.monthIdx] = num;
+        });
         parsed.push({ nameRaw: nameRaw, matchedArea: matchedArea, rates: rates });
       }
       if (!parsed.length) { showToast('인식된 항목이 없습니다.'); return; }
