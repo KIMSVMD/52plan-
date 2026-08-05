@@ -2023,6 +2023,12 @@ body.viewer-mode #salesMonthNav > div > button:not(#salesSubTab_perSales):not(#s
  if (!window.marginGroupData) window.marginGroupData = {};
  if (!window.storeMarginGroupDataMap) window.storeMarginGroupDataMap = {};
  if (data.marginGroupData) window.storeMarginGroupDataMap[store] = JSON.parse(JSON.stringify(data.marginGroupData));
+ if (!window.sgaRateData) window.sgaRateData = {};
+ if (!window.storeSgaRateDataMap) window.storeSgaRateDataMap = {};
+ if (data.sgaRateData) {
+   window.sgaRateData[store] = JSON.parse(JSON.stringify(data.sgaRateData));
+   window.storeSgaRateDataMap[store] = JSON.parse(JSON.stringify(data.sgaRateData));
+ }
  // 현재 지점이면 활성 변수에도 즉시 적용
  if (store === (window.currentStore || 'gs')) {
  window.salesData = JSON.parse(JSON.stringify(data.salesData || {}));
@@ -2255,6 +2261,12 @@ body.viewer-mode #salesMonthNav > div > button:not(#salesSubTab_perSales):not(#s
  if (data.marginGroupData) {
    window.storeMarginGroupDataMap[store] = JSON.parse(JSON.stringify(data.marginGroupData));
    if (store === (window.currentStore || 'gs')) window.marginGroupData = JSON.parse(JSON.stringify(data.marginGroupData));
+ }
+ if (!window.sgaRateData) window.sgaRateData = {};
+ if (!window.storeSgaRateDataMap) window.storeSgaRateDataMap = {};
+ if (data.sgaRateData) {
+   window.sgaRateData[store] = JSON.parse(JSON.stringify(data.sgaRateData));
+   window.storeSgaRateDataMap[store] = JSON.parse(JSON.stringify(data.sgaRateData));
  }
  // ── window.salesData/areaData/salesGroups/salesGroupData는 stale top-level(data.salesData)로
  //    덮어쓰지 않는다. monthlySalesStore/weeklySalesStore(위에서 Firebase 최신값으로 갱신됨)
@@ -3197,6 +3209,10 @@ window.onerror = function(msg, src, line, col, err) {
   <button class="draw-edit-item" onclick="openZoningMcMapModal();closeSalInputDrop();">
   <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M1.5 3l3.5-1 4 1 3.5-1v9l-3.5 1-4-1-3.5 1V3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 2v9M9 3v9" stroke="currentColor" stroke-width="1" stroke-dasharray="1.4,1.4"/></svg>
   MC 매핑표
+  </button>
+  <button class="draw-edit-item" onclick="openSgaRateModal();closeSalInputDrop();">
+  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="3.5" cy="3.5" r="2" stroke="currentColor" stroke-width="1.3"/><circle cx="10.5" cy="10.5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M11 2L2 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+  판관비율 관리표
   </button>
   <div class="draw-edit-sep"></div>
   <button class="draw-edit-item" onclick="openSalesDataModal();closeSalInputDrop();">
@@ -9238,6 +9254,8 @@ function applyPendingJson() {
   if (!window.storeMarginTargetsMap) window.storeMarginTargetsMap = {};
   if (!window.marginGroupData) window.marginGroupData = {};
   if (!window.storeMarginGroupDataMap) window.storeMarginGroupDataMap = {};
+  if (!window.sgaRateData) window.sgaRateData = {};
+  if (!window.storeSgaRateDataMap) window.storeSgaRateDataMap = {};
   if (!window._issueSelectionsStore) window._issueSelectionsStore = {};
   if (!window.storeMonthZoneOverrides) window.storeMonthZoneOverrides = {};
   if (!window.storeSeasonOverrides) window.storeSeasonOverrides = {};
@@ -9263,6 +9281,10 @@ function applyPendingJson() {
    window.marginTargets[code] = JSON.parse(JSON.stringify(sd.marginTargets));
   }
   if (sd.marginGroupData) window.storeMarginGroupDataMap[code] = JSON.parse(JSON.stringify(sd.marginGroupData));
+  if (sd.sgaRateData) {
+   window.storeSgaRateDataMap[code] = JSON.parse(JSON.stringify(sd.sgaRateData));
+   window.sgaRateData[code] = JSON.parse(JSON.stringify(sd.sgaRateData));
+  }
   if (sd.issueSelections) window._issueSelectionsStore[code] = JSON.parse(JSON.stringify(sd.issueSelections));
   if (sd.monthZoneOverrides) {
    window.storeMonthZoneOverrides[code] = JSON.parse(JSON.stringify(sd.monthZoneOverrides));
@@ -12027,27 +12049,41 @@ function _getGroupForZone(zoneId) {
  return null;
 }
 
+/* ── 판관비율(SGA) 조회 — 구역(그룹)×월 단위로 저장된 값, 없으면 기본 22%로 fallback.
+   "판관비율 관리표"(openSgaRateModal)에서 관리. monthIdx 생략 시 현재 보고 있는 월(curMonthIdx) 기준. ── */
+var SGA_RATE_FALLBACK = 22;
+function _getSgaRate(gid, monthIdx) {
+ var store = window.currentStore || 'gs';
+ var mi = (monthIdx != null) ? monthIdx : (typeof curMonthIdx !== 'undefined' ? curMonthIdx : null);
+ var byGid = gid && window.sgaRateData && window.sgaRateData[store] && window.sgaRateData[store][gid];
+ if (byGid && mi != null && byGid[mi] != null && byGid[mi] !== '') return Number(byGid[mi]);
+ return SGA_RATE_FALLBACK;
+}
+
 /* ── 그룹의 이익율(%) 조회 — sales와 대칭 구조: 저장은 원본(mgnWtSum/sales)만,
-   가중평균·−22% 계산은 항상 이 함수(조회 시점)에서 수행.
+   가중평균·판관비율 차감 계산은 항상 이 함수(조회 시점)에서 수행 (write 시점 계산 금지).
    수동 입력값(margin)이 있으면 그게 우선(업로드 가중평균보다 사람이 직접 넣은 값 우선). ── */
-function _computeMarginFromSgdEntry(sgd) {
+function _computeMarginFromSgdEntry(sgd, gid, monthIdx) {
  if (!sgd) return null;
  if (sgd.margin != null) return sgd.margin;
  if (sgd.mgnWtSum == null) return null;
  var weekTotal = (sgd.sales || 0) * 7;
  if (weekTotal <= 0) return null;
  var grossMargin = sgd.mgnWtSum / weekTotal;
- return Math.round((grossMargin - 22) * 10) / 10;
+ var sgaRate = _getSgaRate(gid, monthIdx);
+ return Math.round((grossMargin - sgaRate) * 10) / 10;
 }
-function _getGroupMarginPct(gid) {
- return _computeMarginFromSgdEntry(window.salesGroupData && window.salesGroupData[gid]);
+function _getGroupMarginPct(gid, monthIdx) {
+ return _computeMarginFromSgdEntry(window.salesGroupData && window.salesGroupData[gid], gid, monthIdx);
 }
 
-/* ── 그룹의 매총율(%, −22% 차감 전 원값) 조회 — 이익 기여도(원화) 계산용.
-   수동 입력값(순이익율)에 대해서도 앱 전역 관례(매총율−22%=이익율)대로 +22 환산해 근사치 제공. ── */
-function _getGroupGrossMarginPct(gid) {
- var net = _getGroupMarginPct(gid);
- return net != null ? Math.round((net + 22) * 10) / 10 : null;
+/* ── 그룹의 매총율(%, 판관비율 차감 전 원값) 조회 — 이익 기여도(원화) 계산용.
+   수동 입력값(순이익율)에 대해서도 그룹·월별 판관비율을 되짚어 더해 근사치 제공. ── */
+function _getGroupGrossMarginPct(gid, monthIdx) {
+ var net = _getGroupMarginPct(gid, monthIdx);
+ if (net == null) return null;
+ var sgaRate = _getSgaRate(gid, monthIdx);
+ return Math.round((net + sgaRate) * 10) / 10;
 }
 
 /* ── 매장 전체 추정 순이익(하루) 합계 + 매출가중평균 이익율 — 이익율 팝업 카드의
@@ -12204,6 +12240,8 @@ if (!window.marginTargets) window.marginTargets = {};
 if (!window.storeMarginTargetsMap) window.storeMarginTargetsMap = {};
 if (!window.marginGroupData) window.marginGroupData = {};
 if (!window.storeMarginGroupDataMap) window.storeMarginGroupDataMap = {};
+if (!window.sgaRateData) window.sgaRateData = {};
+if (!window.storeSgaRateDataMap) window.storeSgaRateDataMap = {};
 window._salesSubTab = window._salesSubTab || 'perSales';
 
 /* ── 숫자 탭 서브탭 전환 ── */
@@ -12352,6 +12390,7 @@ function _salesSaveAllToFirebase() {
   _salesUpd.salesTargets     = JSON.parse(JSON.stringify((window.salesTargets && window.salesTargets[store]) || {}));
   _salesUpd.marginTargets    = JSON.parse(JSON.stringify((window.marginTargets && window.marginTargets[store]) || {}));
   _salesUpd.marginGroupData  = JSON.parse(JSON.stringify(window.marginGroupData || {}));
+  _salesUpd.sgaRateData      = JSON.parse(JSON.stringify((window.sgaRateData && window.sgaRateData[store]) || {}));
   window._firebaseSavePartial(store, _salesUpd);
  }
  setTimeout(function() {
@@ -15574,7 +15613,7 @@ function renderSalesPanel(container, metrics, maxPerSales, avgPerSales, totalSal
  var g = sgd[gid];
  var sales = Number(g.sales) || 0, area = Number(g.area) || 0;
  totalSales += sales; totalArea += area;
- return { gid: gid, sales: sales, area: area, margin: _computeMarginFromSgdEntry(g), visits: g.visits };
+ return { gid: gid, sales: sales, area: area, margin: _computeMarginFromSgdEntry(g, gid, w.mo), visits: g.visits };
  });
  var gradeACount = 0;
  rows.forEach(function(r) {
@@ -16958,8 +16997,8 @@ function renderChangeTab(container, metrics, avgPerSales) {
 
     var curSales  = cur.sales  != null ? cur.sales  : 0;
     var prevSales = prev.sales != null ? prev.sales : 0;
-    var curMgn    = _computeMarginFromSgdEntry(cur);
-    var prevMgn   = _computeMarginFromSgdEntry(prev);
+    var curMgn    = _computeMarginFromSgdEntry(cur, gid, ws[curIdx] ? ws[curIdx].mo : null);
+    var prevMgn   = _computeMarginFromSgdEntry(prev, gid, ws[prevIdx] ? ws[prevIdx].mo : null);
 
     var curPS  = curSales  / area;
     var prevPS = prevSales / area;
@@ -22534,6 +22573,295 @@ function openZoneSalesUploadModal() {
       }
     });
   }
+}
+
+/* ═══════════════════════════════════════════════
+   판관비율(SGA) 관리표 — 구역(그룹) × 월별 판관비율(%) 관리.
+   이익율 = 매총율 − 해당 그룹·해당 월의 판관비율(값 없으면 SGA_RATE_FALLBACK).
+   조회 시점 계산은 _getSgaRate/_computeMarginFromSgdEntry(코드 앞부분)에서 수행 ── */
+function openSgaRateModal() {
+  if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+  var ex = document.getElementById('sgaRateModal');
+  if (ex) ex.remove();
+  var modal = document.createElement('div');
+  modal.id = 'sgaRateModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9700;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+  var store = window.currentStore || 'gs';
+  var storeName = ((window.storeNames || {})[store]) || store;
+
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:820px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#0f766e,#0d9488);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:15px;font-weight:900;color:#fff;">판관비율 관리표</div>'
+    + '<div style="font-size:10px;color:#ccfbf1;margin-top:2px;">' + storeName + ' · 구역(그룹) × 월별 판관비율(%) — 값 없으면 기본 ' + SGA_RATE_FALLBACK + '% 적용</div></div>'
+    + '<button onclick="document.getElementById(\'sgaRateModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="padding:10px 16px;background:#f0fdfa;border-bottom:1px solid #99f6e4;flex-shrink:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<button onclick="syncSgaRateData();showToast(\'☁️ Firebase 저장 완료\');" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0d9488;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">☁️ Firebase 저장</button>'
+    + '<button onclick="_sgaOpenUploadModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0369a1;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📥 엑셀 업로드</button>'
+    + '<button onclick="_sgaDownloadXlsx()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📤 엑셀 다운로드</button>'
+    + '<span style="font-size:9px;color:#0f766e;margin-left:auto;">셀을 비워두면 기본값 ' + SGA_RATE_FALLBACK + '%가 자동 적용됩니다</span>'
+    + '</div>'
+    + '<div id="sgaTableWrap" style="flex:1;overflow:auto;padding:0 4px 8px;"></div>'
+    + '<div style="padding:8px 16px;border-top:1px solid #f1f5f9;background:#f0fdfa;font-size:10px;color:#9ca3af;flex-shrink:0;">수정 후 반드시 ☁️ Firebase 저장을 눌러주세요</div>'
+    + '</div>';
+
+  document.body.appendChild(modal);
+  _renderSgaRateTable();
+}
+
+function _renderSgaRateTable() {
+  var wrap = document.getElementById('sgaTableWrap');
+  if (!wrap) return;
+  var store = window.currentStore || 'gs';
+  if (!window.sgaRateData) window.sgaRateData = {};
+  if (!window.sgaRateData[store]) window.sgaRateData[store] = {};
+  var groups = window.salesGroups || {};
+  var gids = Object.keys(groups);
+
+  if (!gids.length) {
+    wrap.innerHTML = '<div style="padding:40px 20px;text-align:center;font-size:12px;color:#9ca3af;">구역 그룹이 없습니다. 먼저 "구역 그룹"에서 그룹을 만들어주세요.</div>';
+    return;
+  }
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+  html += '<thead><tr style="position:sticky;top:0;background:#fff;z-index:1;">';
+  html += '<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;min-width:110px;">그룹명</th>';
+  MONTHS.forEach(function(m) {
+    html += '<th style="text-align:center;padding:8px 4px;border-bottom:2px solid #e5e7eb;color:#374151;font-weight:800;min-width:52px;">' + m.label + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  gids.forEach(function(gid) {
+    var g = groups[gid];
+    html += '<tr style="border-bottom:1px solid #f1f5f9;">';
+    html += '<td style="padding:5px 10px;font-weight:700;color:#111827;white-space:nowrap;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (g.color || '#9ca3af') + ';margin-right:5px;"></span>' + (g.label || gid) + '</td>';
+    MONTHS.forEach(function(m) {
+      var val = (window.sgaRateData[store][gid] && window.sgaRateData[store][gid][m.idx] != null) ? window.sgaRateData[store][gid][m.idx] : '';
+      html += '<td style="padding:3px 2px;text-align:center;">'
+        + '<input type="number" step="0.1" value="' + val + '" placeholder="' + SGA_RATE_FALLBACK + '" '
+        + 'onchange="_sgaSetRate(\'' + gid + '\',' + m.idx + ',this.value)" '
+        + 'style="width:44px;text-align:center;font-family:inherit;font-size:10.5px;padding:4px 2px;border:1.5px solid #d1d5db;border-radius:5px;color:#111827;"/>'
+        + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function _sgaSetRate(gid, monthIdx, val) {
+  var store = window.currentStore || 'gs';
+  if (!window.sgaRateData) window.sgaRateData = {};
+  if (!window.sgaRateData[store]) window.sgaRateData[store] = {};
+  if (!window.sgaRateData[store][gid]) window.sgaRateData[store][gid] = {};
+  var num = parseFloat(val);
+  if (val === '' || isNaN(num)) {
+    delete window.sgaRateData[store][gid][monthIdx];
+  } else {
+    window.sgaRateData[store][gid][monthIdx] = num;
+  }
+  _markSalesDirty();
+  if (typeof renderSalesView === 'function') {
+    var gc = document.getElementById('gc-sales');
+    var panel = document.querySelector('#salesWrap [data-sales-panel]');
+    if (gc && panel && typeof refreshSalesContent === 'function') refreshSalesContent(gc, panel);
+    else renderSalesView();
+  }
+}
+
+function syncSgaRateData() {
+  var store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (typeof window._firebaseSaveStoreField === 'function') {
+    window._firebaseSaveStoreField(store, 'sgaRateData', JSON.parse(JSON.stringify((window.sgaRateData && window.sgaRateData[store]) || {})));
+  } else {
+    console.warn('[판관비율] _firebaseSaveStoreField 미정의 — 저장 불가');
+  }
+  _markSalesClean();
+}
+
+function _sgaDownloadXlsx() {
+  if (typeof XLSX === 'undefined') { showToast('XLSX 라이브러리가 로드되지 않았습니다'); return; }
+  var store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  var groups = window.salesGroups || {};
+  var gids = Object.keys(groups);
+  if (!gids.length) { showToast('다운로드할 그룹이 없습니다'); return; }
+
+  var rows = [['그룹명'].concat(MONTHS.map(function(m){ return m.label; }))];
+  gids.forEach(function(gid) {
+    var g = groups[gid];
+    var byGid = (window.sgaRateData && window.sgaRateData[store] && window.sgaRateData[store][gid]) || {};
+    var row = [g.label || gid];
+    MONTHS.forEach(function(m) { row.push(byGid[m.idx] != null ? byGid[m.idx] : ''); });
+    rows.push(row);
+  });
+
+  var wb = XLSX.utils.book_new();
+  var sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet['!cols'] = [{ wch: 16 }].concat(MONTHS.map(function(){ return { wch: 7 }; }));
+  XLSX.utils.book_append_sheet(wb, sheet, '판관비율표');
+
+  var storeName = ((window.storeNames || {})[store]) || store;
+  var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  XLSX.writeFile(wb, storeName + '_판관비율표_' + dateStr + '.xlsx');
+}
+
+/* ── 판관비율 엑셀/CSV 업로드 — A열=그룹명(또는 조닝번호), B열~=1월~12월 판관비율.
+   그룹 매칭: ①조닝번호(그룹 number) 정확 ②그룹명 정확 ③그룹명 fuzzy — 구역 매출 업로드와 동일한 우선순위 ── */
+function _sgaOpenUploadModal() {
+  if (!window._salesIAmEditor) { showToast('수정하기를 눌러 편집 권한을 먼저 받으세요'); return; }
+  var ex = document.getElementById('sgaUploadModal');
+  if (ex) ex.remove();
+  window._sgaParsed = null;
+  var modal = document.createElement('div');
+  modal.id = 'sgaUploadModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9900;display:flex;align-items:center;justify-content:center;';
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  var storeName = ((window.storeNames||{})[typeof currentStore!=='undefined'?currentStore:'gs'] || '현재 지점');
+  modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:640px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+    + '<div style="background:linear-gradient(135deg,#0369a1,#0284c7);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+    + '<div><div style="font-size:14px;font-weight:900;color:#fff;">📥 판관비율 엑셀 업로드</div>'
+    + '<div style="font-size:10px;color:#bae6fd;margin-top:2px;">' + storeName + ' 전용 경로에만 저장됩니다</div></div>'
+    + '<button onclick="document.getElementById(\'sgaUploadModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+    + '</div>'
+    + '<div style="padding:16px 20px;flex-shrink:0;">'
+    + '<label id="sgaDropZone" style="display:flex;flex-direction:column;align-items:center;gap:8px;border:2.5px dashed #38bdf8;border-radius:12px;padding:20px;cursor:pointer;background:#f0f9ff;" ondragover="event.preventDefault();this.style.borderColor=\'#0284c7\'" ondragleave="this.style.borderColor=\'#38bdf8\'" ondrop="event.preventDefault();this.style.borderColor=\'#38bdf8\';_sgaHandleUploadFile(event.dataTransfer.files[0]);">'
+    + '<span style="font-size:28px;">📂</span>'
+    + '<span style="font-size:12px;font-weight:700;color:#0369a1;">xlsx / csv 파일을 드롭하거나 클릭해서 선택</span>'
+    + '<span style="font-size:10px;color:#64748b;">A열=그룹명 또는 조닝번호, B열~=1월~12월 판관비율(%) (헤더 있어도 없어도 OK)</span>'
+    + '<input type="file" accept=".xlsx,.xls,.csv" style="display:none;" onchange="_sgaHandleUploadFile(this.files[0])">'
+    + '</label>'
+    + '</div>'
+    + '<div id="sgaUploadPreview" style="flex:1;overflow-y:auto;padding:0 20px 8px;display:none;"></div>'
+    + '<div id="sgaUploadActions" style="padding:12px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:none;flex-shrink:0;">'
+    + '<div style="display:flex;gap:16px;align-items:center;">'
+    + '<span style="font-size:10px;color:#6b7280;">매칭된 그룹만 반영되고, 매칭 실패 행은 무시됩니다.</span>'
+    + '<button id="sgaApplyBtn" onclick="_sgaApplyUpload()" style="margin-left:auto;font-family:inherit;font-size:12px;font-weight:800;padding:8px 20px;background:#0369a1;border:none;color:#fff;border-radius:8px;cursor:pointer;">등록하기</button>'
+    + '</div></div>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+function _sgaHandleUploadFile(file) {
+  if (!file) return;
+  var ext = file.name.split('.').pop().toLowerCase();
+  var reader = new FileReader();
+  reader.onerror = function(){ showToast('파일 읽기 실패'); };
+  reader.onload = function(ev) {
+    try {
+      var rows = [];
+      if (ext === 'csv') {
+        rows = ev.target.result.split(/\r?\n/).map(function(l){ return l.split(',').map(function(c){ return c.trim().replace(/^"|"$/g,''); }); });
+      } else {
+        if (typeof XLSX === 'undefined') { showToast('XLSX 라이브러리 미로드'); return; }
+        var wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:false, defval:''});
+      }
+      rows = rows.filter(function(r){ return r.some(function(c){ return String(c||'').trim(); }); });
+      if (!rows.length) { showToast('데이터가 없습니다'); return; }
+
+      // 첫 행이 헤더인지 판단: B~M열이 전부 숫자로 안 읽히면 헤더로 간주하고 스킵
+      var startRow = 0;
+      var firstDataCols = rows[0].slice(1, 13);
+      var looksNumeric = firstDataCols.length > 0 && firstDataCols.every(function(c){ return c === '' || !isNaN(parseFloat(c)); });
+      if (!looksNumeric) startRow = 1;
+
+      var norm = typeof _zsuNormText === 'function' ? _zsuNormText : function(s){ return String(s||'').trim(); };
+      var groupNameMap = {}, groupNumberMap = {};
+      Object.entries(window.salesGroups || {}).forEach(function(entry) {
+        var gid = entry[0], g = entry[1];
+        var key = norm(String(g.label||'')).toLowerCase();
+        if (key) groupNameMap[key] = { gid: gid, label: g.label };
+        var numKey = norm(String(g.number||'')).toLowerCase();
+        if (numKey) groupNumberMap[numKey] = { gid: gid, label: g.label };
+      });
+
+      var parsed = [];
+      for (var i = startRow; i < rows.length; i++) {
+        var nameRaw = norm(String(rows[i][0]||''));
+        if (!nameRaw) continue;
+        var key = nameRaw.toLowerCase();
+        var matchedGroup = groupNumberMap[key] || groupNameMap[key] || null;
+        if (!matchedGroup) {
+          var bestScore = 0;
+          Object.values(groupNameMap).forEach(function(g) {
+            var gk = g.label.toLowerCase();
+            var score = (gk.includes(key)||key.includes(gk)) ? Math.min(gk.length,key.length)/Math.max(gk.length,key.length) : 0;
+            if (score > bestScore && score > 0.7) { bestScore = score; matchedGroup = g; }
+          });
+        }
+        var rates = [];
+        for (var m = 0; m < 12; m++) {
+          var raw = rows[i][m+1];
+          var num = parseFloat(raw);
+          rates.push((raw === '' || raw == null || isNaN(num)) ? null : num);
+        }
+        parsed.push({ nameRaw: nameRaw, matchedGroup: matchedGroup, rates: rates });
+      }
+      if (!parsed.length) { showToast('인식된 항목이 없습니다.'); return; }
+
+      window._sgaParsed = parsed;
+      _sgaRenderUploadPreview(parsed);
+    } catch(e) {
+      showToast('파일 오류: ' + e.message);
+    }
+  };
+  if (ext === 'csv') reader.readAsText(file, 'utf-8');
+  else reader.readAsArrayBuffer(file);
+}
+
+function _sgaRenderUploadPreview(parsed) {
+  var preview = document.getElementById('sgaUploadPreview');
+  var actions = document.getElementById('sgaUploadActions');
+  if (!preview) return;
+  var matched = parsed.filter(function(p){ return p.matchedGroup; });
+  var unmatched = parsed.filter(function(p){ return !p.matchedGroup; });
+  var html = '<div style="margin-bottom:10px;padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:11px;line-height:1.8;">'
+    + '<b style="font-size:12px;color:#1e40af;">📊 파싱 결과: 총 ' + parsed.length + '행</b><br>'
+    + '<span style="color:#059669;">✅ 매칭: ' + matched.length + '개</span> &nbsp;'
+    + '<span style="color:#dc2626;">❌ 매칭 실패: ' + unmatched.length + '개</span>'
+    + '</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:6px;">'
+    + '<thead><tr style="background:#e0f2fe;"><th style="padding:5px 6px;text-align:left;color:#0369a1;">입력값</th><th style="padding:5px 6px;text-align:left;color:#0369a1;">매칭 그룹</th>'
+    + MONTHS.map(function(m){ return '<th style="padding:5px 4px;color:#0369a1;">' + m.label.replace('월','') + '</th>'; }).join('')
+    + '</tr></thead><tbody>';
+  parsed.slice(0,30).forEach(function(p) {
+    html += '<tr style="border-bottom:1px solid #f1f5f9;">'
+      + '<td style="padding:3px 6px;">' + p.nameRaw + '</td>'
+      + '<td style="padding:3px 6px;">' + (p.matchedGroup ? '<span style="color:#059669;font-weight:700;">' + p.matchedGroup.label + '</span>' : '<span style="color:#dc2626;">매칭 실패</span>') + '</td>'
+      + p.rates.map(function(r){ return '<td style="padding:3px 2px;text-align:center;color:#374151;">' + (r==null?'—':r) + '</td>'; }).join('')
+      + '</tr>';
+  });
+  html += '</tbody></table>';
+  if (parsed.length > 30) html += '<div style="font-size:10px;color:#6b7280;padding:4px 8px;">... 외 ' + (parsed.length-30) + '행 (미리보기는 30행까지)</div>';
+  preview.innerHTML = html;
+  preview.style.display = 'block';
+  if (actions) actions.style.display = 'flex';
+}
+
+function _sgaApplyUpload() {
+  var parsed = window._sgaParsed;
+  if (!parsed || !parsed.length) { showToast('업로드할 데이터가 없습니다'); return; }
+  var store = typeof currentStore !== 'undefined' ? currentStore : 'gs';
+  if (!window.sgaRateData) window.sgaRateData = {};
+  if (!window.sgaRateData[store]) window.sgaRateData[store] = {};
+  var applied = 0;
+  parsed.forEach(function(p) {
+    if (!p.matchedGroup) return;
+    var gid = p.matchedGroup.gid;
+    if (!window.sgaRateData[store][gid]) window.sgaRateData[store][gid] = {};
+    p.rates.forEach(function(r, monthIdx) {
+      if (r == null) return;
+      window.sgaRateData[store][gid][monthIdx] = r;
+      applied++;
+    });
+  });
+  _markSalesDirty();
+  var m = document.getElementById('sgaUploadModal');
+  if (m) m.remove();
+  _renderSgaRateTable();
+  showToast('✅ ' + applied + '개 셀 반영 완료 · Firebase 저장을 눌러주세요');
 }
 
 /* ═══════════════════════════════════════════════
