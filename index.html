@@ -22685,6 +22685,7 @@ function openSgaRateModal() {
     + '<button onclick="openGroupAreaMapModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#7c3aed;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">🗂️ 구역-영역 배정</button>'
     + '<button onclick="_sgaOpenUploadModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#0369a1;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📥 영역별 업로드</button>'
     + '<button onclick="_sgaDownloadXlsx()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#059669;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">📤 영역별 다운로드</button>'
+    + '<button onclick="openSgaBackfillModal()" style="font-family:inherit;font-size:10px;font-weight:800;padding:5px 14px;background:#7c3aed;border:none;color:#fff;border-radius:7px;cursor:pointer;white-space:nowrap;">⏪ 6-7월 소급 재계산</button>'
     + '<span style="font-size:9px;color:#0f766e;margin-left:auto;">영역 값이 없으면 기본값 ' + SGA_RATE_FALLBACK + '%가 자동 적용됩니다</span>'
     + '</div>'
     + '<div id="sgaTableWrap" style="flex:1;overflow:auto;padding:0 4px 8px;"></div>'
@@ -22746,6 +22747,199 @@ function syncSgaRateData() {
     console.warn('[판관비율] _firebaseSaveStoreField 미정의 — 저장 불가');
   }
   _markSalesClean();
+}
+
+/* ═══════════════════════════════════════════════
+   판관비율 소급 재계산 (6-7월) — 재업로드 없이 과거 저장 데이터에 최신 판관비율을 반영.
+
+   전제: 그룹의 이익율은 두 가지 방식으로 저장된다.
+   ① 자동계산(엑셀 업로드) — salesGroupData[gid].mgnWtSum(원본 매총율 가중합)만 저장되고,
+      이익율은 항상 조회 시점에 _computeMarginFromSgdEntry()가 (매총율 − 그때그때의 판관비율)로
+      다시 계산한다("write 시점 계산 금지" 원칙, 12102행 주석 참고). 즉 이 방식은 이미 배포된
+      _getSgaRate() 수정만으로 6-7월 과거 데이터에도 자동으로 소급 반영되어 있다 — 손댈 필요 없음.
+   ② 수동 입력(카드 "실이익율%" 직접 입력) — salesGroupData[gid].margin에 최종 순이익율만
+      저장되고 원본 매총율은 남지 않는다. 이 방식만 "저장값+22=원본 매총율"이라는 가정으로
+      역산한 뒤 실제 판관비율로 재계산해야 한다 — 지금까지 전부 22% 고정이었다는 전제가
+      깨지면(즉 과거에도 이미 다른 판관비율을 적용해 수동 입력했다면) 이 역산은 틀릴 수 있으므로,
+      적용 전 미리보기 표로 반드시 사람이 확인하도록 설계됨. ── */
+var SGA_BACKFILL_MONTHS = [5, 6]; // 6월, 7월 (MONTHS idx, 0-based)
+
+/* 6-7월에 해당하는 주차별·월별 salesGroupData 항목을 전부 모음 ── */
+function _sgaBackfillCollectTargets(store) {
+ var targets = [];
+ var ws = (window.weeklySalesStore && window.weeklySalesStore[store]) || {};
+ (typeof WEEKS !== 'undefined' ? WEEKS : []).forEach(function(w) {
+  if (SGA_BACKFILL_MONTHS.indexOf(w.mo) === -1) return;
+  var wd = ws[w.id];
+  if (!wd || !wd.salesGroupData) return;
+  var grpMap = (wd.salesGroups && Object.keys(wd.salesGroups).length) ? wd.salesGroups : (window.salesGroups || {});
+  Object.keys(wd.salesGroupData).forEach(function(gid) {
+   var sgd = wd.salesGroupData[gid];
+   if (!sgd) return;
+   targets.push({ scope: 'week', weekId: w.id, weekLabel: w.label, monthIdx: w.mo, gid: gid, sgd: sgd, label: (grpMap[gid] && grpMap[gid].label) || gid });
+  });
+ });
+ var ms = (window.monthlySalesStore && window.monthlySalesStore[store]) || {};
+ SGA_BACKFILL_MONTHS.forEach(function(mo) {
+  var mk = _salesMonthKey(mo);
+  var md = ms[mk];
+  if (!md || !md.salesGroupData) return;
+  var grpMap = (md.salesGroups && Object.keys(md.salesGroups).length) ? md.salesGroups : (window.salesGroups || {});
+  Object.keys(md.salesGroupData).forEach(function(gid) {
+   var sgd = md.salesGroupData[gid];
+   if (!sgd) return;
+   targets.push({ scope: 'month', monthKey: mk, monthIdx: mo, gid: gid, sgd: sgd, label: (grpMap[gid] && grpMap[gid].label) || gid });
+  });
+ });
+ return targets;
+}
+
+/* 진단 전용 — 아무 것도 쓰지 않고, 역산·재계산 미리보기 값까지 계산해서 반환 ── */
+function _sgaBackfillDiagnose(store) {
+ store = store || window.currentStore || 'gs';
+ var targets = _sgaBackfillCollectTargets(store);
+ var autoCnt = 0, noneCnt = 0;
+ var manualRows = [];
+ targets.forEach(function(t) {
+  var sgd = t.sgd;
+  if (sgd.mgnWtSum != null) { autoCnt++; return; } // 원본 매총율 보존 → 조회 시점에 이미 최신 판관비율 반영 중
+  if (sgd.margin == null) { noneCnt++; return; }
+  var oldMargin = sgd.margin;
+  var grossMargin = Math.round((oldMargin + SGA_RATE_FALLBACK) * 10) / 10; // 역산 전제: 지금까지 전부 22% 고정
+  var newRate = _getSgaRate(t.gid, t.monthIdx);
+  var newMargin = Math.round((grossMargin - newRate) * 10) / 10;
+  manualRows.push(Object.assign({}, t, { oldMargin: oldMargin, grossMargin: grossMargin, newRate: newRate, newMargin: newMargin, changed: newRate !== SGA_RATE_FALLBACK }));
+ });
+ return { store: store, targets: targets, autoCnt: autoCnt, noneCnt: noneCnt, manualRows: manualRows };
+}
+
+/* 적용 전 현재 상태를 JSON 파일로 다운로드 — Firebase 실제 반영 여부와 무관하게
+   지금 메모리(=Firebase에서 로드된 최신 상태)에 있는 6-7월 데이터를 그대로 스냅샷 ── */
+function _sgaBackfillDownloadBackup(store) {
+ store = store || window.currentStore || 'gs';
+ var snapshot = { store: store, exportedAt: new Date().toISOString(), months: {}, weeks: {} };
+ SGA_BACKFILL_MONTHS.forEach(function(mo) {
+  var mk = _salesMonthKey(mo);
+  var md = (window.monthlySalesStore && window.monthlySalesStore[store] && window.monthlySalesStore[store][mk]) || null;
+  snapshot.months[mk] = md ? JSON.parse(JSON.stringify(md)) : null;
+ });
+ (typeof WEEKS !== 'undefined' ? WEEKS : []).forEach(function(w) {
+  if (SGA_BACKFILL_MONTHS.indexOf(w.mo) === -1) return;
+  var wd = window.weeklySalesStore && window.weeklySalesStore[store] && window.weeklySalesStore[store][w.id];
+  if (wd) snapshot.weeks[w.id] = JSON.parse(JSON.stringify(wd));
+ });
+ var blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+ var url = URL.createObjectURL(blob);
+ var a = document.createElement('a');
+ var storeName = ((window.storeNames || {})[store]) || store;
+ var dateStr = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '').replace(/-/g, '');
+ a.href = url;
+ a.download = storeName + '_6-7월_판관비율소급_백업_' + dateStr + '.json';
+ document.body.appendChild(a); a.click(); document.body.removeChild(a);
+ setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+}
+
+/* 실제 적용 — openSgaBackfillModal이 만들어둔 미리보기(window._sgaBackfillLastDiag)를
+   그대로 써서 쓴다(재계산하지 않음 — 화면에 보여준 값과 실제 적용값이 반드시 같아야 하므로) ── */
+function _sgaBackfillApply() {
+ if (!isAdmin) { showToast('관리자만 실행할 수 있습니다'); return; }
+ var diag = window._sgaBackfillLastDiag;
+ if (!diag || !diag.manualRows.length) { showToast('적용할 대상이 없습니다'); return; }
+ var store = diag.store;
+
+ _sgaBackfillDownloadBackup(store);
+
+ diag.manualRows.forEach(function(t) { t.sgd.margin = t.newMargin; });
+
+ /* 현재 화면에 로드된 활성 데이터도 즉시 갱신 (새로고침 없이 바로 반영) */
+ if (window.currentSalesWeek && window.weeklySalesStore[store] && window.weeklySalesStore[store][window.currentSalesWeek]) {
+  window.salesGroupData = JSON.parse(JSON.stringify(window.weeklySalesStore[store][window.currentSalesWeek].salesGroupData || {}));
+ } else if (window.currentSalesMonth != null && window.monthlySalesStore[store] && window.monthlySalesStore[store][_salesMonthKey(window.currentSalesMonth)]) {
+  window.salesGroupData = JSON.parse(JSON.stringify(window.monthlySalesStore[store][_salesMonthKey(window.currentSalesMonth)].salesGroupData || {}));
+ }
+
+ if (typeof _salesSaveAllToFirebase === 'function') _salesSaveAllToFirebase();
+
+ console.table(diag.manualRows.map(function(r) {
+  return { 구분: r.scope === 'week' ? r.weekLabel : (MONTHS[r.monthIdx].label + '(월합계)'), 구역: r.label, 기존이익율: r.oldMargin, 역산매총율: r.grossMargin, 적용판관비율: r.newRate, 새이익율: r.newMargin };
+ }));
+
+ showToast('✅ ' + diag.manualRows.length + '건 재계산 완료 — Firebase 저장됨');
+ openSgaBackfillModal(); // 적용 후 상태로 미리보기 재갱신 (재실행 시 changed 대상 0건이어야 정상)
+}
+
+function openSgaBackfillModal() {
+ if (!isAdmin) { showToast('관리자만 접근할 수 있습니다'); return; }
+ var ex = document.getElementById('sgaBackfillModal');
+ if (ex) ex.remove();
+ var store = window.currentStore || 'gs';
+ var storeName = ((window.storeNames || {})[store]) || store;
+ var diag = _sgaBackfillDiagnose(store);
+ window._sgaBackfillLastDiag = diag;
+
+ var modal = document.createElement('div');
+ modal.id = 'sgaBackfillModal';
+ modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9800;display:flex;align-items:center;justify-content:center;';
+ modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+
+ var monthLabels = SGA_BACKFILL_MONTHS.map(function(mo) { return MONTHS[mo].label; }).join('·');
+
+ var summaryHtml = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">'
+   + '<div style="flex:1;min-width:140px;padding:8px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">'
+   + '<div style="font-size:9px;color:#166534;font-weight:700;">✅ 자동계산(원본 매총율 보존)</div>'
+   + '<div style="font-size:16px;font-weight:900;color:#166534;">' + diag.autoCnt + '건</div>'
+   + '<div style="font-size:8px;color:#166534;">조회 시점에 이미 최신 판관비율 반영 중 — 손댈 필요 없음</div></div>'
+   + '<div style="flex:1;min-width:140px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;">'
+   + '<div style="font-size:9px;color:#92400e;font-weight:700;">⚠️ 수동 입력(원본 없음)</div>'
+   + '<div style="font-size:16px;font-weight:900;color:#92400e;">' + diag.manualRows.length + '건</div>'
+   + '<div style="font-size:8px;color:#92400e;">"저장값+22=원본 매총율" 가정으로 역산 필요</div></div>'
+   + '<div style="flex:1;min-width:140px;padding:8px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">'
+   + '<div style="font-size:9px;color:#475569;font-weight:700;">데이터 없음</div>'
+   + '<div style="font-size:16px;font-weight:900;color:#475569;">' + diag.noneCnt + '건</div></div>'
+   + '</div>';
+
+ var tableHtml;
+ if (!diag.manualRows.length) {
+  tableHtml = '<div style="padding:20px;text-align:center;font-size:12px;color:#059669;font-weight:700;">🎉 수동 입력 이익율 데이터가 없습니다 — ' + monthLabels + ' 전체가 이미 자동으로 정확한 판관비율을 반영 중입니다. 추가 작업이 필요 없습니다.</div>';
+ } else {
+  tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:10px;">'
+    + '<thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:5px 8px;border-bottom:2px solid #e5e7eb;">시점</th><th style="text-align:left;padding:5px 8px;border-bottom:2px solid #e5e7eb;">구역</th>'
+    + '<th style="text-align:right;padding:5px 8px;border-bottom:2px solid #e5e7eb;">기존 이익율</th><th style="text-align:right;padding:5px 8px;border-bottom:2px solid #e5e7eb;">역산 매총율(+22)</th>'
+    + '<th style="text-align:right;padding:5px 8px;border-bottom:2px solid #e5e7eb;">적용 판관비율</th><th style="text-align:right;padding:5px 8px;border-bottom:2px solid #e5e7eb;">새 이익율</th></tr></thead><tbody>';
+  diag.manualRows.forEach(function(r) {
+   var timeLabel = r.scope === 'week' ? r.weekLabel : (MONTHS[r.monthIdx].label + '(월합계)');
+   tableHtml += '<tr style="border-bottom:1px solid #f1f5f9;' + (r.changed ? '' : 'color:#9ca3af;') + '">'
+     + '<td style="padding:4px 8px;">' + timeLabel + '</td>'
+     + '<td style="padding:4px 8px;font-weight:700;">' + r.label + '</td>'
+     + '<td style="padding:4px 8px;text-align:right;">' + r.oldMargin.toFixed(1) + '%</td>'
+     + '<td style="padding:4px 8px;text-align:right;">' + r.grossMargin.toFixed(1) + '%</td>'
+     + '<td style="padding:4px 8px;text-align:right;' + (r.changed ? 'font-weight:800;color:#7c3aed;' : '') + '">' + r.newRate + '%</td>'
+     + '<td style="padding:4px 8px;text-align:right;font-weight:800;">' + r.newMargin.toFixed(1) + '%' + (r.changed ? '' : ' <span style="font-size:8px;color:#9ca3af;">(변동없음)</span>') + '</td>'
+     + '</tr>';
+  });
+  tableHtml += '</tbody></table>';
+ }
+
+ modal.innerHTML = '<div style="background:#fff;border-radius:16px;width:760px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.4);">'
+   + '<div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">'
+   + '<div><div style="font-size:15px;font-weight:900;color:#fff;">⏪ ' + monthLabels + ' 판관비율 소급 재계산</div>'
+   + '<div style="font-size:10px;color:#ede9fe;margin-top:2px;">' + storeName + ' · 재업로드 없이 저장된 이익율을 최신 판관비율 기준으로 다시 계산합니다</div></div>'
+   + '<button onclick="document.getElementById(\'sgaBackfillModal\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;width:32px;height:32px;border-radius:8px;cursor:pointer;">✕</button>'
+   + '</div>'
+   + '<div style="padding:14px 20px;overflow:auto;flex:1;">'
+   + summaryHtml
+   + (diag.manualRows.length ? '<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-bottom:6px;">📊 아래 표는 미리보기입니다 — 아직 아무 것도 저장되지 않았습니다. "백업 후 적용하기"를 눌러야 반영됩니다.</div>' : '')
+   + tableHtml
+   + '</div>'
+   + (diag.manualRows.length ? (
+     '<div style="padding:12px 20px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:10px;align-items:center;flex-shrink:0;">'
+     + '<span style="font-size:9px;color:#6b7280;">적용 전 현재 상태가 JSON 파일로 자동 다운로드됩니다.</span>'
+     + '<button onclick="if(confirm(\'' + monthLabels + ' 수동 입력 이익율 ' + diag.manualRows.length + '건을 재계산해 덮어씁니다.\\n적용 전 백업 파일이 자동 다운로드됩니다.\\n\\n계속할까요?\')) _sgaBackfillApply();" style="margin-left:auto;font-family:inherit;font-size:12px;font-weight:800;padding:8px 20px;background:#7c3aed;border:none;color:#fff;border-radius:8px;cursor:pointer;">💾 백업 후 적용하기</button>'
+     + '</div>'
+   ) : '')
+   + '</div>';
+
+ document.body.appendChild(modal);
 }
 
 function _sgaDownloadXlsx() {
