@@ -21790,6 +21790,7 @@ function _zsuRenderPreview(parsed) {
       var wGid = weekGids[wid];
       var sales = (rr.weekSales||{})[wid];
       var mgn   = (rr.weekMargins||{})[wid];
+      var wObj  = wsArr.find(function(x) { return x.id === wid; });
       var dailyAvg = (sales != null && sales > 0) ? (Math.round(sales / 7 * 10) / 10) : null;
       var hasData = dailyAvg || mgn != null;
       var wkBorder = wGid ? '#e5e7eb' : '#fca5a5';
@@ -21806,8 +21807,9 @@ function _zsuRenderPreview(parsed) {
       html += '<td style="padding:3px 5px;text-align:center;' + cellBg + 'border-right:1px solid #f1f5f9;">';
       html += '<div style="font-size:9px;font-weight:700;color:' + (dailyAvg ? '#059669' : '#d1d5db') + ';margin-bottom:1px;">' + (dailyAvg ? dailyAvg + '만/일' : '—') + '</div>';
       if (mgn != null) {
-        var net = Math.round((mgn - 22) * 10) / 10;
-        html += '<div style="font-size:8px;color:#7c3aed;margin-bottom:1px;">' + mgn.toFixed(1) + '%→<b>' + net.toFixed(1) + '%</b></div>';
+        var sgaRate = _getSgaRate(wGid, wObj ? wObj.mo : null);
+        var net = Math.round((mgn - sgaRate) * 10) / 10;
+        html += '<div style="font-size:8px;color:#7c3aed;margin-bottom:1px;">' + mgn.toFixed(1) + '%→<b>' + net.toFixed(1) + '%</b> <span style="color:#9ca3af;">(−' + sgaRate + '%)</span></div>';
       }
       var qty = (rr.weekQty||{})[wid];
       if (qty != null) {
