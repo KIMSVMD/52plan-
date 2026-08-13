@@ -21708,7 +21708,7 @@ function _zsuRenderPreview(parsed) {
     + '<span style="font-size:11px;font-weight:800;color:' + (allOk?'#065f46':'#92400e') + ';">✅ ' + matchedRows + '개 품목 매칭 | ⚠️ ' + unmatchedCnt + '개 미매칭</span>'
     + ((parsed.unmatchedHeaders||[]).length ? '<div style="font-size:9px;color:#92400e;margin-top:2px;">인식 안된 주차 헤더: ' + parsed.unmatchedHeaders.join(', ') + '</div>' : '')
     + ((parsed.ambiguousHeaders||[]).length ? '<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px;">⚠️ "' + parsed.ambiguousHeaders.join(', ') + '" — 매출/매총율 구분 접미사가 없어 매출로 처리됩니다. 매총율이었다면 헤더를 "N월M주 매총율"로 바꿔 다시 업로드하세요.</div>' : '')
-    + (_hasMgnCols ? '<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">📊 매총율 열 감지 — 매출 가중 평균 후 −22% 차감해 이익율로 반영</div>' : '')
+    + (_hasMgnCols ? '<div style="font-size:9px;color:#7c3aed;font-weight:700;margin-top:2px;">📊 매총율 열 감지 — 매출 가중 평균 후 해당 구역의 판관비율(영역별 설정값, 없으면 기본 ' + SGA_RATE_FALLBACK + '%) 차감해 이익율로 반영</div>' : '')
     + (_hasQtyCols  ? '<div style="font-size:9px;color:#0369a1;font-weight:700;margin-top:2px;">📦 판매수량 열 감지 — 그룹·주차별 수량 저장 (이익 기여도·회전율 분석에 활용)</div>' : '')
     + '<div style="font-size:9px;color:#6b7280;margin-top:2px;">구역·유지 여부를 자유롭게 수정 가능 — 아직 반영 안 됨. 하단 <b style="color:#059669;">도면에 적용하기</b> 버튼을 눌러야 저장됩니다.</div>'
     + '</div>';
